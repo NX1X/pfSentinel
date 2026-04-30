@@ -4,7 +4,7 @@
 [![GitHub Release](https://img.shields.io/github/v/release/NX1X/pfSentinel)](https://github.com/NX1X/pfSentinel/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.13-blue.svg)](https://www.python.org/)
-![Views](https://komarev.com/ghpvc/?username=NX1X&repo=pfSentinel&label=views&color=brightgreen)
+![Views](https://komarev.com/ghpvc/?username=NX1X-pfSentinel&label=views&color=brightgreen)
 
 Automated backup and monitoring tool for pfSense firewalls. Built for homelabs.
 
