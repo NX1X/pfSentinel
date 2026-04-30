@@ -132,6 +132,20 @@ pfSentinel does **not** require or request administrator/root privileges for nor
 
 ---
 
+## Incident Response
+
+This is a solo-maintained community project. The following is a best-effort process for handling security incidents.
+
+1. **Triage** — When a vulnerability report is received (via private reporting or contact form), I will acknowledge receipt and assess severity.
+2. **Fix** — A patch is developed in a private fork or branch. For critical/high severity issues, this takes priority over other work.
+3. **Release** — A new patch release is published with the fix. The security changelog below is updated.
+4. **Disclosure** — A GitHub Security Advisory is published with details, affected versions, and upgrade instructions. If the vulnerability was reported by a researcher, they are credited (unless they prefer anonymity).
+5. **Notification** — Release notes and the advisory will describe the fix. Users on older versions should upgrade promptly.
+
+For critical vulnerabilities with evidence of active exploitation, a fix will be released as quickly as possible and the advisory will note the urgency.
+
+---
+
 ## Security Changelog
 
 A living record of security findings, fixes, and hardening measures.
