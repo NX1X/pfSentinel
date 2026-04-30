@@ -1,0 +1,42 @@
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.env
+.venv
+venv/
+env/
+*.spec
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+*.log
+.venv-linux/
+.venv-*/
+.vscode*/
+
+# Internal AI/IDE tooling (used locally, not published)
+.github/instructions/
+
+# Security audit (private — findings tracked in SECURITY.md changelog)
+docs/security-audit.md
+
+# Private keys and certificates — never commit these
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+id_rsa
+id_ed25519
+id_ecdsa
+docs/PUBLIC_REPO_GUIDE.md

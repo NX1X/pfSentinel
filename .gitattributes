@@ -1,0 +1,30 @@
+# Auto detect text files and ensure LF line endings
+* text=auto eol=lf
+
+# Explicitly declare text files
+*.py text diff=python
+*.md text diff=markdown
+*.toml text
+*.yml text
+*.yaml text
+*.json text
+*.cfg text
+*.txt text
+*.ini text
+*.sh text eol=lf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary files
+*.ico binary
+*.png binary
+*.jpg binary
+*.exe binary
+*.gz binary
+*.tar binary
+*.zip binary
+*.zfs binary
+
+# GitHub linguist overrides
+tests/ linguist-detectable=false
+docs/ linguist-documentation

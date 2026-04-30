@@ -1,0 +1,476 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: 'Release version (e.g. 0.5.1) — leave empty for CI-only run'
+        required: false
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Lint — runs once on Ubuntu (ruff is cross-platform)
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+          cache: 'pip'
+
+      - name: Install ruff
+        run: pip install "ruff>=0.11,<0.12"
+
+      - name: Run ruff lint
+        run: ruff check src/ tests/
+
+      - name: Run ruff format check
+        run: ruff format --check src/ tests/
+
+      - name: Run ShellCheck on shell scripts
+        uses: ludeeus/action-shellcheck@2.0.0
+        with:
+          scandir: '.'
+          ignore_paths: '.venv'
+          severity: warning
+
+  # ---------------------------------------------------------------------------
+  # 2. Tests — matrix: Ubuntu + Windows × Python 3.13 + 3.14
+  # ---------------------------------------------------------------------------
+  test:
+    name: Test (${{ matrix.os }} / Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    needs: lint
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ['3.13', '3.14']
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+
+      - name: Install package with dev dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run pytest with coverage
+        shell: bash
+        run: |
+          pytest tests/ \
+            --tb=short \
+            --cov=src/pfsentinel \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml \
+            -v
+
+      - name: Upload coverage report (Ubuntu / Python 3.14 only)
+        if: matrix.python-version == '3.14' && matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v6
+        with:
+          name: coverage-report
+          path: |
+            coverage.xml
+            htmlcov/
+          retention-days: 14
+
+      - name: Upload coverage to Codecov (Ubuntu / Python 3.14 / push only)
+        if: >
+          matrix.python-version == '3.14' &&
+          matrix.os == 'ubuntu-latest' &&
+          github.event_name == 'push'
+        uses: codecov/codecov-action@v6
+        with:
+          files: coverage.xml
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  # ---------------------------------------------------------------------------
+  # 3. Resolve version — decide whether to release
+  # ---------------------------------------------------------------------------
+  resolve-version:
+    name: Resolve Version
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    outputs:
+      should_release: ${{ steps.decide.outputs.should_release }}
+      version: ${{ steps.decide.outputs.version }}
+      tag: ${{ steps.decide.outputs.tag }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: decide
+        shell: bash
+        run: |
+          # --- Manual release: use the provided version ---
+          MANUAL="${{ github.event.inputs.release_version }}"
+          if [[ -n "$MANUAL" ]]; then
+            VERSION="${MANUAL#v}"
+            if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
+              echo "::error::Invalid version format: '$VERSION'"
+              exit 1
+            fi
+            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "Manual release: v$VERSION"
+            exit 0
+          fi
+
+          # --- Auto release: parse CHANGELOG.md ---
+          CHANGELOG_FILE="CHANGELOG.md"
+          if [[ ! -f "$CHANGELOG_FILE" ]]; then
+            echo "No CHANGELOG.md — skipping release."
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          VERSIONED_HEADER=$(grep -n '^## \[' "$CHANGELOG_FILE" \
+            | grep -iv '\[unreleased\]' \
+            | head -n 1)
+
+          if [[ -z "$VERSIONED_HEADER" ]]; then
+            echo "No versioned header in CHANGELOG.md — skipping."
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          VERSION=$(echo "$VERSIONED_HEADER" | sed -E 's/.*## \[([^]]+)\].*/\1/')
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+'; then
+            echo "Version '$VERSION' is not semver — skipping."
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          TAG="v$VERSION"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists — skipping."
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "should_release=true" >> "$GITHUB_OUTPUT"
+          echo "Auto release: $TAG"
+
+      - name: Extract release notes
+        if: steps.decide.outputs.should_release == 'true'
+        shell: bash
+        run: |
+          VERSION="${{ steps.decide.outputs.version }}"
+          CHANGELOG_FILE="CHANGELOG.md"
+
+          FIRST_LINE=$(grep -n "## \[$VERSION\]" "$CHANGELOG_FILE" | head -n 1 | cut -d: -f1)
+          NEXT_LINE=$(grep -n '^## \[' "$CHANGELOG_FILE" \
+            | awk -F: -v start="$FIRST_LINE" '$1 > start {print $1; exit}')
+
+          if [[ -z "$NEXT_LINE" ]]; then
+            NOTES=$(tail -n "+$((FIRST_LINE + 1))" "$CHANGELOG_FILE")
+          else
+            NOTES=$(sed -n "$((FIRST_LINE + 1)),$((NEXT_LINE - 1))p" "$CHANGELOG_FILE")
+          fi
+
+          echo "$NOTES" | sed '/^\[.*\]:.*$/d' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
+            > /tmp/release_notes.md
+
+      - name: Upload release notes
+        if: steps.decide.outputs.should_release == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: release-notes
+          path: /tmp/release_notes.md
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------
+  # 4. Build Linux binary (PyInstaller)
+  # ---------------------------------------------------------------------------
+  build-linux:
+    name: Build Linux Binary
+    runs-on: ubuntu-latest
+    needs: resolve-version
+    if: needs.resolve-version.outputs.should_release == 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+          cache: 'pip'
+
+      - name: Install dependencies and PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "." pyinstaller
+
+      - name: Patch version
+        shell: bash
+        run: |
+          VERSION="${{ needs.resolve-version.outputs.version }}"
+          sed -i "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" \
+            src/pfsentinel/__init__.py
+
+      - name: Build Linux binary
+        run: |
+          pyinstaller \
+            --onefile \
+            --console \
+            --name pfs \
+            --hidden-import paramiko \
+            --hidden-import paramiko.transport \
+            --hidden-import paramiko.sftp_client \
+            --hidden-import paramiko.sftp_handle \
+            --hidden-import paramiko.server \
+            --hidden-import paramiko.auth_handler \
+            --hidden-import cryptography.hazmat.backends \
+            --hidden-import cryptography.hazmat.backends.openssl \
+            --hidden-import keyring.backends.fail \
+            --hidden-import keyrings.alt \
+            --hidden-import keyrings.alt.file \
+            --hidden-import rich \
+            --hidden-import pydantic \
+            --hidden-import lxml \
+            --hidden-import lxml.etree \
+            --hidden-import lxml._elementpath \
+            --hidden-import schedule \
+            --hidden-import loguru \
+            --hidden-import pfsentinel.cli.commands.backup \
+            --hidden-import pfsentinel.cli.commands.config \
+            --hidden-import pfsentinel.cli.commands.device \
+            --hidden-import pfsentinel.cli.commands.update \
+            --exclude-module tkinter \
+            --exclude-module customtkinter \
+            src/pfsentinel/__main__.py
+
+      - name: Make binary executable
+        run: chmod +x dist/pfs
+
+      - name: Smoke test
+        run: dist/pfs --version
+
+      - name: Upload Linux binary
+        uses: actions/upload-artifact@v6
+        with:
+          name: binary-linux
+          path: dist/pfs
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # 5. Build Windows binary (PyInstaller)
+  # ---------------------------------------------------------------------------
+  build-windows:
+    name: Build Windows Binary
+    runs-on: windows-latest
+    needs: resolve-version
+    if: needs.resolve-version.outputs.should_release == 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+          cache: 'pip'
+
+      - name: Install dependencies and PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "." pyinstaller winotify
+
+      - name: Patch version
+        shell: bash
+        run: |
+          VERSION="${{ needs.resolve-version.outputs.version }}"
+          sed -i "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" \
+            src/pfsentinel/__init__.py
+
+      - name: Build Windows .exe
+        shell: bash
+        run: python scripts/build_exe.py
+
+      - name: Upload Windows binary
+        uses: actions/upload-artifact@v6
+        with:
+          name: binary-windows
+          path: dist/pfs.exe
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # 6. Build Python wheel + sdist
+  # ---------------------------------------------------------------------------
+  build-wheel:
+    name: Build Python Package
+    runs-on: ubuntu-latest
+    needs: resolve-version
+    if: needs.resolve-version.outputs.should_release == 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+          cache: 'pip'
+
+      - name: Install build tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
+
+      - name: Patch version
+        shell: bash
+        run: |
+          VERSION="${{ needs.resolve-version.outputs.version }}"
+          sed -i "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" \
+            src/pfsentinel/__init__.py
+
+      - name: Build source and wheel distributions
+        run: python -m build
+
+      - name: Verify dist artifacts
+        run: twine check dist/*
+
+      - name: Upload wheel artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: dist-wheel
+          path: dist/
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # 7. Create GitHub Release
+  # ---------------------------------------------------------------------------
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [resolve-version, build-linux, build-windows, build-wheel]
+    if: needs.resolve-version.outputs.should_release == 'true'
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v6
+        with:
+          path: artifacts/
+
+      - name: Collect release files
+        shell: bash
+        run: |
+          mkdir -p release_files
+          cp artifacts/dist-wheel/*.whl    release_files/ 2>/dev/null || true
+          cp artifacts/dist-wheel/*.tar.gz release_files/ 2>/dev/null || true
+          cp artifacts/binary-linux/*      release_files/ 2>/dev/null || true
+          cp artifacts/binary-windows/*    release_files/ 2>/dev/null || true
+          echo "Release files:"
+          ls -lh release_files/
+
+      - name: Generate SHA256 checksums
+        shell: bash
+        run: |
+          cd release_files
+          sha256sum * > checksums-sha256.txt
+          cat checksums-sha256.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.resolve-version.outputs.tag }}
+          name: pfSentinel ${{ needs.resolve-version.outputs.tag }}
+          body_path: artifacts/release-notes/release_notes.md
+          draft: false
+          prerelease: false
+          files: release_files/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ---------------------------------------------------------------------------
+  # 8. Publish to TestPyPI (trusted publishing / OIDC)
+  # ---------------------------------------------------------------------------
+  publish-testpypi:
+    name: Publish to TestPyPI
+    runs-on: ubuntu-latest
+    needs: [resolve-version, build-wheel, release]
+    if: needs.resolve-version.outputs.should_release == 'true'
+    environment: testpypi
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Download dist artifacts
+        uses: actions/download-artifact@v6
+        with:
+          name: dist-wheel
+          path: dist/
+
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  # ---------------------------------------------------------------------------
+  # 9. Publish to PyPI (trusted publishing / OIDC)
+  # ---------------------------------------------------------------------------
+  publish-pypi:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    needs: [resolve-version, build-wheel, release, publish-testpypi]
+    if: needs.resolve-version.outputs.should_release == 'true'
+    environment: pypi
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Download dist artifacts
+        uses: actions/download-artifact@v6
+        with:
+          name: dist-wheel
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

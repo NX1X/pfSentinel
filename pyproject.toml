@@ -1,0 +1,108 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pfsentinel"
+dynamic = ["version"]
+description = "Automated pfSense backup management tool"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.13"
+authors = [{ name = "nx1x" }]
+keywords = ["pfsense", "backup", "firewall", "network", "cli"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: System :: Systems Administration",
+]
+
+[project.urls]
+Homepage = "https://github.com/NX1X/pfSentinel"
+Repository = "https://github.com/NX1X/pfSentinel"
+"Bug Tracker" = "https://github.com/NX1X/pfSentinel/issues"
+Changelog = "https://github.com/NX1X/pfSentinel/blob/main/CHANGELOG.md"
+
+dependencies = [
+    "typer>=0.15.0",
+    "rich>=13.9.0",
+    "pydantic>=2.10.0",
+    "paramiko>=3.5.0",
+    "httpx>=0.28.0",
+    "pyyaml>=6.0.0",
+    "cryptography>=44.0.0",
+    "loguru>=0.7",
+    "packaging>=24.0",
+    "requests>=2.31.0",
+    "keyring>=25.0",
+    "keyrings.alt>=5.0",
+    "lxml>=5.0",
+    "schedule>=1.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.11,<0.12",
+    "pytest>=8.3.0",
+    "pytest-cov>=6.0.0",
+    "responses>=0.25.0",
+    "mypy>=1.14.0",
+    "types-paramiko>=3.5.0",
+    "types-pyyaml>=6.0.0",
+]
+
+[project.scripts]
+pfs = "pfsentinel.cli.app:main_entry"
+
+[tool.hatch.version]
+path = "src/pfsentinel/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pfsentinel"]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "N"]
+ignore = ["UP040", "B904", "B008", "B017", "SIM102", "SIM105", "SIM108", "SIM117", "E501", "F841", "E402"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["pfsentinel"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = [
+    "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
+]
+addopts = "--strict-markers"
+
+[tool.coverage.run]
+source = ["pfsentinel"]
+
+[tool.coverage.report]
+fail_under = 60
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.",
+    "if TYPE_CHECKING:",
+]
+
+[tool.mypy]
+python_version = "3.13"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
