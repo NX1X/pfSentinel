@@ -48,6 +48,7 @@ def _checksums_body(*entries: tuple[str, bytes]) -> str:
         lines.append(f"{h}  {name}")
     return "\n".join(lines) + "\n"
 
+
 FAKE_RELEASE_CURRENT = {
     "tag_name": "v0.4.0",
     "html_url": "https://github.com/nx1x/pfSentinel/releases/tag/v0.4.0",
