@@ -21,13 +21,6 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Topic :: System :: Systems Administration",
 ]
-
-[project.urls]
-Homepage = "https://github.com/NX1X/pfSentinel"
-Repository = "https://github.com/NX1X/pfSentinel"
-"Bug Tracker" = "https://github.com/NX1X/pfSentinel/issues"
-Changelog = "https://github.com/NX1X/pfSentinel/blob/main/CHANGELOG.md"
-
 dependencies = [
     "typer>=0.15.0",
     "rich>=13.9.0",
@@ -44,6 +37,12 @@ dependencies = [
     "lxml>=5.0",
     "schedule>=1.2",
 ]
+
+[project.urls]
+Homepage = "https://github.com/NX1X/pfSentinel"
+Repository = "https://github.com/NX1X/pfSentinel"
+"Bug Tracker" = "https://github.com/NX1X/pfSentinel/issues"
+Changelog = "https://github.com/NX1X/pfSentinel/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = [
