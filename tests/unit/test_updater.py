@@ -535,7 +535,8 @@ class TestInstallBinary:
         binary_content = b"new-binary-content"
         responses.add(responses.GET, download_url, body=binary_content, status=200)
         responses.add(
-            responses.GET, CHECKSUMS_URL,
+            responses.GET,
+            CHECKSUMS_URL,
             body=_checksums_body(("pfs", binary_content)),
             status=200,
         )
@@ -566,7 +567,8 @@ class TestInstallBinary:
         binary_content = b"new-binary-content"
         responses.add(responses.GET, download_url, body=binary_content, status=200)
         responses.add(
-            responses.GET, CHECKSUMS_URL,
+            responses.GET,
+            CHECKSUMS_URL,
             body=_checksums_body(("pfs.exe", binary_content)),
             status=200,
         )
@@ -599,7 +601,8 @@ class TestInstallBinary:
         binary_content = b"new-binary-content"
         responses.add(responses.GET, download_url, body=binary_content, status=200)
         responses.add(
-            responses.GET, CHECKSUMS_URL,
+            responses.GET,
+            CHECKSUMS_URL,
             body=_checksums_body(("pfs.exe", binary_content)),
             status=200,
         )
@@ -648,7 +651,8 @@ class TestInstallBinary:
         binary_content = b"bad-binary"
         responses.add(responses.GET, download_url, body=binary_content, status=200)
         responses.add(
-            responses.GET, CHECKSUMS_URL,
+            responses.GET,
+            CHECKSUMS_URL,
             body=_checksums_body(("pfs", binary_content)),
             status=200,
         )
@@ -676,7 +680,8 @@ class TestInstallBinary:
         binary_content = b"bad-binary"
         responses.add(responses.GET, download_url, body=binary_content, status=200)
         responses.add(
-            responses.GET, CHECKSUMS_URL,
+            responses.GET,
+            CHECKSUMS_URL,
             body=_checksums_body(("pfs", binary_content)),
             status=200,
         )
@@ -702,7 +707,8 @@ class TestInstallBinary:
         binary_content = b"new-binary"
         responses.add(responses.GET, download_url, body=binary_content, status=200)
         responses.add(
-            responses.GET, CHECKSUMS_URL,
+            responses.GET,
+            CHECKSUMS_URL,
             body=_checksums_body(("pfs.exe", binary_content)),
             status=200,
         )
