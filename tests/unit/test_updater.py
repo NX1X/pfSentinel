@@ -50,8 +50,8 @@ def _checksums_body(*entries: tuple[str, bytes]) -> str:
 
 
 FAKE_RELEASE_CURRENT = {
-    "tag_name": "v0.4.0",
-    "html_url": "https://github.com/nx1x/pfSentinel/releases/tag/v0.4.0",
+    "tag_name": f"v{CURRENT_VERSION}",
+    "html_url": f"https://github.com/nx1x/pfSentinel/releases/tag/v{CURRENT_VERSION}",
     "assets": [],
 }
 
@@ -368,11 +368,11 @@ class TestCachedResult:
         assert result["latest"] == "99.0.0"
 
     def test_returns_none_when_current(self, tmp_path):
-        svc = _make_service(tmp_path, state={"latest_version": "0.4.0"})
+        svc = _make_service(tmp_path, state={"latest_version": CURRENT_VERSION})
         assert svc._cached_result() is None
 
     def test_returns_none_when_older(self, tmp_path):
-        svc = _make_service(tmp_path, state={"latest_version": "0.1.0"})
+        svc = _make_service(tmp_path, state={"latest_version": "0.0.1"})
         assert svc._cached_result() is None
 
     def test_returns_none_on_invalid_cached_version(self, tmp_path):
@@ -406,7 +406,7 @@ class TestAutoCheck:
         recent = datetime.now(UTC) - timedelta(hours=1)
         svc = _make_service(
             tmp_path,
-            state={"last_check_ts": recent.isoformat(), "latest_version": "0.4.0"},
+            state={"last_check_ts": recent.isoformat(), "latest_version": CURRENT_VERSION},
         )
         assert svc.auto_check() is None
 
