@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-05-07
+
+### Security
+
+- Add upper bound version caps to all dependencies to limit supply chain attack blast radius
+- Add `pip-audit` vulnerability scanning to CI pipeline
+- Add hash-pinned lock file verification (`requirements.lock`) in CI
+- Add Sigstore build provenance attestations to PyPI/TestPyPI publish steps
+- Configure Renovate to maintain lock file in sync with dependency updates
+
+### Added
+
+- `pip-audit` and `pip-tools` added to dev dependencies
+
 ## [0.1.1] - 2026-05-07
 
 ### Fixed

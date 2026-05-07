@@ -22,20 +22,20 @@ classifiers = [
     "Topic :: System :: Systems Administration",
 ]
 dependencies = [
-    "typer>=0.15.0",
-    "rich>=13.9.0",
-    "pydantic>=2.10.0",
-    "paramiko>=3.5.0",
-    "httpx>=0.28.0",
-    "pyyaml>=6.0.0",
-    "cryptography>=44.0.0",
-    "loguru>=0.7",
-    "packaging>=24.0",
-    "requests>=2.31.0",
-    "keyring>=25.0",
-    "keyrings.alt>=5.0",
-    "lxml>=5.0",
-    "schedule>=1.2",
+    "typer>=0.15.0,<1",
+    "rich>=13.9.0,<14",
+    "pydantic>=2.10.0,<3",
+    "paramiko>=3.5.0,<4",
+    "httpx>=0.28.0,<1",
+    "pyyaml>=6.0.0,<7",
+    "cryptography>=46.0.5,<47",
+    "loguru>=0.7,<1",
+    "packaging>=24.0,<25",
+    "requests>=2.31.0,<3",
+    "keyring>=25.0,<26",
+    "keyrings.alt>=5.0,<6",
+    "lxml>=6.1.0,<7",
+    "schedule>=1.2,<2",
 ]
 
 [project.urls]
@@ -47,12 +47,14 @@ Changelog = "https://github.com/NX1X/pfSentinel/blob/main/CHANGELOG.md"
 [project.optional-dependencies]
 dev = [
     "ruff>=0.11,<0.12",
-    "pytest>=8.3.0",
-    "pytest-cov>=6.0.0",
-    "responses>=0.25.0",
-    "mypy>=1.14.0",
-    "types-paramiko>=3.5.0",
-    "types-pyyaml>=6.0.0",
+    "pytest>=8.3.0,<9",
+    "pytest-cov>=6.0.0,<7",
+    "responses>=0.25.0,<1",
+    "mypy>=1.14.0,<2",
+    "types-paramiko>=3.5.0,<4",
+    "types-pyyaml>=6.0.0,<7",
+    "pip-audit>=2.7.0,<3",
+    "pip-tools>=7.4.0,<8",
 ]
 
 [project.scripts]
