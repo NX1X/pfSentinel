@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-05-07
+
+### Fixed
+
+- Slack webhook URL validation now uses exact domain matching to prevent spoofed hostnames (CWE-20)
+- Telegram API URL assertion in tests uses `startswith()` for stricter validation
+
 ### Removed
 
 - Unused TUI module (`pfsentinel.tui`) — the project uses CLI only
