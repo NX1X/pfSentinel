@@ -44,6 +44,12 @@
       "automerge": true,
       "schedule": ["at any time"],
       "prPriority": 10
+    },
+    {
+      "description": "Keep lock file in sync with pyproject.toml updates",
+      "matchManagers": ["pip-compile"],
+      "groupName": "lock file maintenance",
+      "automerge": true
     }
   ],
   "schedule": ["before 6am on monday"],
