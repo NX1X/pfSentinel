@@ -134,7 +134,10 @@ class NotificationService:
         parsed = urlparse(webhook_url)
         if parsed.scheme != "https":
             raise RuntimeError("Slack webhook must use HTTPS")
-        if not parsed.hostname or not parsed.hostname.endswith("hooks.slack.com"):
+        if not parsed.hostname or (
+            parsed.hostname != "hooks.slack.com"
+            and not parsed.hostname.endswith(".hooks.slack.com")
+        ):
             logger.warning(f"Slack webhook hostname is not hooks.slack.com: {parsed.hostname}")
 
         icon = ":white_check_mark:" if success else ":x:"

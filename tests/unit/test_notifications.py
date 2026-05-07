@@ -117,7 +117,7 @@ class TestSendTelegram:
         svc._send_telegram("Title", "Message")
         mock_requests.post.assert_called_once()
         call_kwargs = mock_requests.post.call_args
-        assert "api.telegram.org" in call_kwargs[0][0]
+        assert call_kwargs[0][0].startswith("https://api.telegram.org/")
 
 
 class TestSendSlack:
