@@ -1,12 +1,12 @@
 # pfSentinel — License Audit
 
 > Last updated: 2026-04-30
-> Project license: **MIT**
+> Project license: **Apache-2.0**
 
 ## Runtime Dependencies
 
-| Package | Version Req | License | MIT-Compatible | Notes |
-|---------|-------------|---------|----------------|-------|
+| Package | Version Req | License | Apache-2.0-Compatible | Notes |
+|---------|-------------|---------|----------------------|-------|
 | typer | >=0.15.0 | MIT | Yes | CLI framework |
 | click | (via typer) | BSD-3-Clause | Yes | Indirect dependency |
 | rich | >=13.9.0 | MIT | Yes | Terminal formatting |
@@ -63,7 +63,7 @@ The LGPL allows linking/using the library in non-GPL software, but the end user 
 
 ### Current approach
 
-pfSentinel uses `--onefile` builds for the best end-user experience (single executable download). Since pfSentinel is open-source (MIT), users can always build from source with a modified or replacement version of Paramiko, which satisfies the LGPL's requirement to allow library replacement. The `THIRD_PARTY_LICENSES.txt` file in the repository acknowledges Paramiko's LGPL-2.1 license.
+pfSentinel uses `--onefile` builds for the best end-user experience (single executable download). Since pfSentinel is open-source (Apache-2.0), users can always build from source with a modified or replacement version of Paramiko, which satisfies the LGPL's requirement to allow library replacement. The `THIRD_PARTY_LICENSES.txt` file in the repository acknowledges Paramiko's LGPL-2.1 license.
 
 ---
 
@@ -80,4 +80,4 @@ PyInstaller is GPL-licensed but includes a **special exception** that explicitly
 - All runtime dependencies except one are permissive (MIT, BSD, Apache-2.0)
 - **Paramiko (LGPL-2.1)** is the only copyleft dependency — mitigated by open-source availability
 - **PyInstaller GPL exception** covers binary distribution
-- The project is safe to publish as MIT on PyPI and as `--onefile` binaries
+- The project is safe to publish as Apache-2.0 on PyPI and as `--onefile` binaries
