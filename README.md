@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/NX1X/pfSentinel/actions/workflows/ci.yml/badge.svg)](https://github.com/NX1X/pfSentinel/actions/workflows/ci.yml)
 [![GitHub Release](https://img.shields.io/github/v/release/NX1X/pfSentinel)](https://github.com/NX1X/pfSentinel/releases)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.13-blue.svg)](https://www.python.org/)
 ![Views](https://komarev.com/ghpvc/?username=NX1X-pfSentinel&label=views&color=brightgreen)
 
@@ -99,4 +99,4 @@ If you find a bug or have a feature request, [open an issue](https://github.com/
 
 ## License
 
-[MIT](LICENSE)
+[Apache 2.0](LICENSE)
