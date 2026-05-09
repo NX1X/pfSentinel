@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-05-09
+
 ### Changed
 
 - Project license changed from MIT to Apache License 2.0 (applies retroactively to all prior versions)
