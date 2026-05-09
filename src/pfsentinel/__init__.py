@@ -1,3 +1,3 @@
 """pfSentinel - pfSense Backup Solution for Homelabs."""
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
