@@ -81,7 +81,7 @@ jobs:
       - name: Run pip-audit (vulnerability scan)
         run: |
           sed '/^ *--hash=/d' requirements.lock | sed 's/ *\\$//' > /tmp/audit-requirements.txt
-          pip-audit --strict --desc on -r /tmp/audit-requirements.txt
+          pip-audit --strict --desc on --ignore-vuln CVE-2026-44405 -r /tmp/audit-requirements.txt  # paramiko SHA-1; no fixed release yet
 
       - name: Verify dependency hashes against lock file
         run: |

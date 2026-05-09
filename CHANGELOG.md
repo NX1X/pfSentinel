@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Bump paramiko from 3.x to 4.0.0 (CVE-2026-44405 — SHA-1 in RSA keys; no fully patched release yet, ignored in CI until upstream fix ships)
+
 ## [0.1.2] - 2026-05-07
 
 ### Security
