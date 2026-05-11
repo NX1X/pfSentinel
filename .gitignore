@@ -26,9 +26,6 @@ htmlcov/
 # Internal AI/IDE tooling (used locally, not published)
 .github/instructions/
 
-# Security audit (private — findings tracked in SECURITY.md changelog)
-docs/security-audit.md
-
 # Private keys and certificates — never commit these
 *.pem
 *.key
@@ -39,5 +36,11 @@ docs/security-audit.md
 id_rsa
 id_ed25519
 id_ecdsa
-docs/PUBLIC_REPO_GUIDE.md
+
+# Internal-only docs — never published
+docs-internal/
+
+# Claude Code — local AI assistant state, never published
+CLAUDE.md
+CLAUDE.local.md
 .claude/

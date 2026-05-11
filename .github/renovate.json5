@@ -1,0 +1,93 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    "helpers:pinGitHubActionDigests"
+  ],
+
+  // Supply-chain defence: wait 7 days after a release before opening a PR.
+  // A freshly-published malicious version is the threat — slow > fast.
+  "minimumReleaseAge": "7 days",
+
+  // Single in-repo Dependency Dashboard issue is the operator UI.
+  "dependencyDashboard": true,
+  "dependencyDashboardTitle": "Dependency Dashboard",
+  "dependencyDashboardLabels": ["dependencies"],
+
+  "labels": ["dependencies"],
+  "assignees": ["NX1X"],
+  "reviewers": ["NX1X"],
+
+  "prConcurrentLimit": 10,
+  "prHourlyLimit": 2,
+  "rangeStrategy": "bump",
+
+  // Security PRs still respect cooldown — pfSentinel is a client-side CLI
+  // with no public attack surface, so supply-chain risk > unpatched-CVE risk.
+  // For a server with active exploitation risk, drop this to "1 day"–"3 days".
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "minimumReleaseAge": "7 days",
+    "labels": ["dependencies", "security"]
+  },
+  "osvVulnerabilityAlerts": true,
+
+  "ignorePaths": [
+    "**/vendor/**",
+    "**/build/**",
+    "**/dist/**",
+    "**/.venv/**",
+    "**/htmlcov/**"
+  ],
+
+  "packageRules": [
+    {
+      "description": "Group Python runtime deps (pyproject.toml [project.dependencies])",
+      "matchManagers": ["pep621"],
+      "matchDepTypes": ["project.dependencies"],
+      "groupName": "python runtime deps",
+      "labels": ["dependencies", "python"]
+    },
+    {
+      "description": "Group Python dev deps separately",
+      "matchManagers": ["pep621"],
+      "matchDepTypes": ["project.optional-dependencies"],
+      "groupName": "python dev deps",
+      "labels": ["dependencies", "python", "dev"]
+    },
+    {
+      "description": "Slow down major Python bumps — they break C-extension wheels (lxml/cryptography/paramiko)",
+      "matchManagers": ["pep621"],
+      "matchUpdateTypes": ["major"],
+      "minimumReleaseAge": "14 days"
+    },
+    {
+      "description": "Group GitHub Actions updates",
+      "matchManagers": ["github-actions"],
+      "groupName": "github-actions",
+      "labels": ["dependencies", "github-actions"]
+    },
+    {
+      "description": "Pin GitHub Actions to immutable SHAs (supply-chain hardening)",
+      "matchManagers": ["github-actions"],
+      "pinDigests": true
+    }
+  ],
+
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "actions/setup-python python-version pin in workflow files",
+      "managerFilePatterns": ["^\\.github/workflows/[^/]+\\.ya?ml$"],
+      "matchStrings": [
+        "python-version:\\s*['\"]?(?<currentValue>\\d+\\.\\d+(?:\\.\\d+)?)['\"]?"
+      ],
+      "depNameTemplate": "python",
+      "packageNameTemplate": "actions/python-versions",
+      "datasourceTemplate": "github-tags",
+      "versioningTemplate": "loose"
+    }
+  ]
+}
