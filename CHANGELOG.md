@@ -13,6 +13,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-05-11
+
+### Fixed
+
+- Scheduled Windows tasks failed silently every run with `ERROR_INVALID_PARAMETER` (`0x80070057`) due to a double-quoted command line in the task registration. As a result, daily and weekly backups created via `pfs schedule enable` did not execute on Windows.
+
+### Security
+
+- Migrate dependency management from Dependabot to Renovate with a **7-day cooldown** on all updates (including vulnerability alerts) to defend against malicious upstream releases (supply-chain attacks)
+- Pin GitHub Actions to immutable commit SHAs (`pinDigests`) — hardens against tag-rewrite attacks
+- Enable OSV vulnerability feed (`osvVulnerabilityAlerts`) for broader CVE coverage beyond GHSA
+
+### Added
+
+- `.github/renovate.json5` — Renovate config with in-repo Dependency Dashboard, grouped pep621/github-actions updates, 14-day cooldown on major Python deps (lxml/cryptography/paramiko break frequently on majors), and a customManager tracking the `python-version` pin in CI workflows
+
+### Changed
+
+- `.gitignore`: ignore internal-only docs (`docs-internal/`)
+- Scheduled tasks are now registered via XML with `LogonType=S4U`, so they run whether the user is signed in, locked, or signed out — no stored password required
+- Scheduled tasks no longer skip on battery power (`DisallowStartIfOnBatteries=false`, `StopIfGoingOnBatteries=false`) and now wake the machine from sleep at the scheduled time (`WakeToRun=true`)
+- Missed scheduled runs (e.g. machine powered off at the scheduled time) are now caught up on next availability (`StartWhenAvailable=true`)
+
 ## [0.1.3] - 2026-05-09
 
 ### Changed

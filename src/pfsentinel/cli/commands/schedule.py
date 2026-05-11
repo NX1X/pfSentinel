@@ -59,7 +59,10 @@ def schedule_enable(
 
         if use_task_scheduler and is_windows():
             print_error("Failed to register Windows Task Scheduler tasks.")
-            print_info("  Try running as Administrator, or use --no-task-scheduler")
+            print_info("  Tasks run as your user with LogonType=S4U so they fire when")
+            print_info("  you are signed out. This requires the 'Log on as a batch job'")
+            print_info("  privilege (default for local Administrators).")
+            print_info("  Try running PowerShell as Administrator, or use --no-task-scheduler.")
         else:
             print_error("Failed to start in-process scheduler.")
             print_info("  Install the 'schedule' package: pip install schedule")

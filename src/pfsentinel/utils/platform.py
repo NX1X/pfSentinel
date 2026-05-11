@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import getpass
+import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
+from xml.sax.saxutils import escape as xml_escape
 
 
 def is_windows() -> bool:
@@ -41,6 +45,82 @@ def run_command(args: list[str], check: bool = True) -> subprocess.CompletedProc
     )
 
 
+_TASK_XML_TEMPLATE = """<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Author>pfSentinel</Author>
+    <Description>{description}</Description>
+  </RegistrationInfo>
+  <Triggers>
+    {trigger}
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <UserId>{user_id}</UserId>
+      <LogonType>S4U</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <IdleSettings>
+      <StopOnIdleEnd>false</StopOnIdleEnd>
+      <RestartOnIdle>false</RestartOnIdle>
+    </IdleSettings>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <WakeToRun>true</WakeToRun>
+    <ExecutionTimeLimit>PT1H</ExecutionTimeLimit>
+    <Priority>7</Priority>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>{command}</Command>
+      <Arguments>{arguments}</Arguments>
+    </Exec>
+  </Actions>
+</Task>
+"""
+
+
+def _current_user_id() -> str:
+    """Return the current user as 'DOMAIN\\Username' (or just 'Username' if no domain)."""
+    domain = os.environ.get("USERDOMAIN", "")
+    user = os.environ.get("USERNAME", "") or getpass.getuser()
+    return f"{domain}\\{user}" if domain else user
+
+
+def _daily_trigger_xml(start_time: str) -> str:
+    return (
+        "<CalendarTrigger>"
+        f"<StartBoundary>2025-01-01T{start_time}:00</StartBoundary>"
+        "<Enabled>true</Enabled>"
+        "<ScheduleByDay><DaysInterval>1</DaysInterval></ScheduleByDay>"
+        "</CalendarTrigger>"
+    )
+
+
+def _weekly_trigger_xml(start_time: str, day_of_week: str) -> str:
+    day_tag = day_of_week.strip().capitalize() or "Sunday"
+    return (
+        "<CalendarTrigger>"
+        f"<StartBoundary>2025-01-01T{start_time}:00</StartBoundary>"
+        "<Enabled>true</Enabled>"
+        "<ScheduleByWeek>"
+        f"<DaysOfWeek><{day_tag}/></DaysOfWeek>"
+        "<WeeksInterval>1</WeeksInterval>"
+        "</ScheduleByWeek>"
+        "</CalendarTrigger>"
+    )
+
+
 def create_windows_task(
     task_name: str,
     executable: str,
@@ -49,32 +129,56 @@ def create_windows_task(
     start_time: str,
     day_of_week: str = "",
 ) -> bool:
-    """Create a Windows Task Scheduler task using schtasks.exe."""
+    """Create a Windows Task Scheduler task via XML registration.
+
+    The task is registered with LogonType=S4U so it runs whether the user is
+    signed in or not (no stored password), wakes the machine if asleep, and
+    ignores battery state. Returns True on success.
+    """
     if not is_windows():
         return False
 
-    cmd = [
-        "schtasks",
-        "/Create",
-        "/TN",
-        task_name,
-        "/TR",
-        f'"{executable}" {args}',
-        "/SC",
-        schedule_type,
-        "/ST",
-        start_time,
-        "/F",  # Force overwrite
-    ]
+    if schedule_type == "DAILY":
+        trigger = _daily_trigger_xml(start_time)
+    elif schedule_type == "WEEKLY":
+        trigger = _weekly_trigger_xml(start_time, day_of_week)
+    else:
+        return False
 
-    if schedule_type == "WEEKLY" and day_of_week:
-        cmd.extend(["/D", day_of_week.upper()[:3]])
+    description = f"pfSentinel scheduled backup ({schedule_type.lower()})"
+    xml_doc = _TASK_XML_TEMPLATE.format(
+        description=xml_escape(description),
+        trigger=trigger,
+        user_id=xml_escape(_current_user_id()),
+        command=xml_escape(executable),
+        arguments=xml_escape(args),
+    )
 
+    # schtasks expects task XML in UTF-16 LE with BOM.
+    tmp = tempfile.NamedTemporaryFile(
+        mode="wb", suffix=".xml", delete=False, prefix="pfsentinel-task-"
+    )
     try:
-        result = run_command(cmd, check=False)
+        tmp.write(xml_doc.encode("utf-16"))
+        tmp.flush()
+        tmp.close()
+        result = run_command(
+            ["schtasks", "/Create", "/TN", task_name, "/XML", tmp.name, "/F"],
+            check=False,
+        )
+        if result.returncode != 0:
+            from loguru import logger
+
+            stderr = (result.stderr or "").strip() or (result.stdout or "").strip()
+            logger.error(f"schtasks /Create failed for '{task_name}': {stderr}")
         return result.returncode == 0
     except FileNotFoundError:
         return False
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
 
 
 def delete_windows_task(task_name: str) -> bool:
@@ -109,9 +213,13 @@ def query_windows_task(task_name: str) -> dict:
         return {"exists": False}
 
 
-def get_executable_path() -> str:
-    """Get path to the current executable or python script."""
+def get_executable_path() -> tuple[str, str]:
+    """Get the executable path and any prefix args needed to invoke pfSentinel.
+
+    Returns (executable, prefix_args). The executable is returned unquoted; the
+    caller is responsible for quoting it when building a command line.
+    """
     if getattr(sys, "frozen", False):
         # PyInstaller bundle
-        return sys.executable
-    return f'"{sys.executable}" -m pfsentinel'
+        return sys.executable, ""
+    return sys.executable, "-m pfsentinel"
