@@ -28,6 +28,7 @@ jobs:
         with:
           languages: python
           build-mode: none
+          queries: security-extended
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
