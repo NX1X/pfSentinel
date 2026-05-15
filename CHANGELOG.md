@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Bump `urllib3` 2.6.3 → 2.7.0 (CVE-2026-44431: sensitive headers leaked on cross-origin redirects via low-level `ProxyManager` API; CVE-2026-44432: streaming API could decompress full response instead of requested portion)
+- Pin explicit `urllib3>=2.7.0,<3` floor in `pyproject.toml` so future lock regenerations cannot drift back below the patched version
 - Migrate dependency management from Dependabot to Renovate with a **7-day cooldown** on all updates (including vulnerability alerts) to defend against malicious upstream releases (supply-chain attacks)
 - Pin GitHub Actions to immutable commit SHAs (`pinDigests`) — hardens against tag-rewrite attacks
 - Enable OSV vulnerability feed (`osvVulnerabilityAlerts`) for broader CVE coverage beyond GHSA
