@@ -154,16 +154,17 @@ def create_windows_task(
         arguments=xml_escape(args),
     )
 
-    # schtasks expects task XML in UTF-16 LE with BOM.
-    tmp = tempfile.NamedTemporaryFile(
+    # schtasks expects task XML in UTF-16 LE with BOM. We write+close via a
+    # context manager (delete=False keeps the file around for schtasks to read).
+    with tempfile.NamedTemporaryFile(
         mode="wb", suffix=".xml", delete=False, prefix="pfsentinel-task-"
-    )
-    try:
+    ) as tmp:
         tmp.write(xml_doc.encode("utf-16"))
-        tmp.flush()
-        tmp.close()
+        tmp_name = tmp.name
+
+    try:
         result = run_command(
-            ["schtasks", "/Create", "/TN", task_name, "/XML", tmp.name, "/F"],
+            ["schtasks", "/Create", "/TN", task_name, "/XML", tmp_name, "/F"],
             check=False,
         )
         if result.returncode != 0:
@@ -176,7 +177,7 @@ def create_windows_task(
         return False
     finally:
         try:
-            os.unlink(tmp.name)
+            os.unlink(tmp_name)
         except OSError:
             pass
 
