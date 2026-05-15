@@ -23,6 +23,24 @@ def is_macos() -> bool:
     return sys.platform == "darwin"
 
 
+def is_elevated() -> bool:
+    """Return True if the process can register Windows scheduled tasks.
+
+    On Windows, registering an S4U task requires Administrator rights — without
+    them schtasks fails with "Access is denied" and the (possibly stale, broken)
+    task is left in place. On non-Windows there is no Task Scheduler path, so
+    this is not a gate.
+    """
+    if not is_windows():
+        return True
+    try:
+        import ctypes
+
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return False
+
+
 def app_config_dir() -> Path:
     """Return the application config directory (cross-platform)."""
     return Path.home() / ".pfsentinel"
@@ -194,21 +212,47 @@ def delete_windows_task(task_name: str) -> bool:
 
 
 def query_windows_task(task_name: str) -> dict:
-    """Query status of a Windows Task Scheduler task."""
+    """Query status of a Windows Task Scheduler task.
+
+    Uses verbose CSV so the caller can see whether the task is actually
+    healthy (last run result) rather than merely registered. A task can exist
+    yet fail every run with 0x80070057 (ERROR_INVALID_PARAMETER) from a
+    malformed command line — that must not look "OK".
+    """
     if not is_windows():
         return {"exists": False}
     try:
         result = run_command(
-            ["schtasks", "/Query", "/TN", task_name, "/FO", "CSV", "/NH"], check=False
+            ["schtasks", "/Query", "/TN", task_name, "/FO", "CSV", "/NH", "/V"],
+            check=False,
         )
         if result.returncode != 0:
             return {"exists": False}
-        parts = result.stdout.strip().strip('"').split('","')
+        line = next((ln for ln in result.stdout.splitlines() if ln.strip()), "")
+        if not line:
+            return {"exists": False}
+        # schtasks /V /FO CSV column order is fixed (values are localized,
+        # positions are not): 1=TaskName 2=Next Run Time 3=Status
+        # 5=Last Run Time 6=Last Result 8=Task To Run
+        cols = [c.strip('"') for c in line.split('","')]
+
+        def _col(i: int) -> str | None:
+            return cols[i] if len(cols) > i else None
+
+        raw = _col(6)
+        try:
+            last_result = int(raw) if raw not in (None, "", "N/A") else None
+        except ValueError:
+            last_result = None
+
         return {
             "exists": True,
-            "name": parts[0] if parts else task_name,
-            "next_run": parts[1] if len(parts) > 1 else None,
-            "status": parts[2] if len(parts) > 2 else None,
+            "name": _col(1) or task_name,
+            "next_run": _col(2),
+            "status": _col(3),
+            "last_run": _col(5),
+            "last_result": last_result,
+            "task_to_run": _col(8),
         }
     except Exception:
         return {"exists": False}

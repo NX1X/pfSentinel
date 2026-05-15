@@ -28,6 +28,18 @@ def schedule_enable(
     ),
 ) -> None:
     """Enable scheduled backups."""
+    from pfsentinel.utils.platform import is_elevated, is_windows
+
+    if use_task_scheduler and is_windows() and not is_elevated():
+        print_error("Administrator privileges are required to register Windows scheduled tasks.")
+        print_info("  Tasks use LogonType=S4U so they run while you are signed out; creating")
+        print_info("  or repairing them needs an elevated shell. Nothing was changed.")
+        print_info("  Re-run from an Administrator PowerShell:  pfs schedule enable")
+        print_info(
+            "  Or skip Task Scheduler entirely:          pfs schedule enable --no-task-scheduler"
+        )
+        raise typer.Exit(1)
+
     config = AppConfig.load()
     config.schedule.enabled = True
     config.schedule.daily_enabled = True
@@ -81,6 +93,38 @@ def schedule_disable() -> None:
     print_success("Scheduling disabled")
 
 
+def _format_windows_task(label: str, task: dict) -> list[str]:
+    """Render a Windows task's real health, not just whether it's registered."""
+    if not task or not task.get("exists"):
+        return [f"[bold]{label}:[/] [yellow]Not registered[/]"]
+
+    out = [f"[bold]{label}:[/] Registered"]
+    if task.get("next_run"):
+        out.append(f"  Next run: {task['next_run']}")
+    if task.get("last_run"):
+        out.append(f"  Last run: {task['last_run']}")
+
+    lr = task.get("last_result")
+    if lr is None:
+        return out
+    if lr == 0:
+        out.append("  Last result: [green]OK[/]")
+    elif lr & 0x80000000:
+        code = f"0x{lr & 0xFFFFFFFF:08X}"
+        if (lr & 0xFFFFFFFF) == 0x80070057:
+            out.append(f"  Last result: [red]FAILED {code} (ERROR_INVALID_PARAMETER)[/]")
+            out.append(
+                "  [red]Task command line is malformed[/] — re-run"
+                " 'pfs schedule enable' from an [bold]Administrator[/] shell"
+                " to re-register it with the correct command."
+            )
+        else:
+            out.append(f"  Last result: [red]FAILED {code}[/]")
+    else:
+        out.append(f"  Last result: [dim]{lr} (informational)[/]")
+    return out
+
+
 @app.command("status")
 def schedule_status() -> None:
     """Show scheduling status."""
@@ -98,11 +142,11 @@ def schedule_status() -> None:
     ]
 
     if "windows_daily" in status:
-        wd = status["windows_daily"]
-        wd_status = "Created" if wd.get("exists") else "Not found"
-        lines.append(f"[bold]Windows task (daily):[/] {wd_status}")
-        if wd.get("next_run"):
-            lines.append(f"  Next run: {wd['next_run']}")
+        lines.append("")
+        lines.extend(_format_windows_task("Windows task (daily)", status["windows_daily"]))
+        lines.extend(
+            _format_windows_task("Windows task (weekly)", status.get("windows_weekly", {}))
+        )
 
     console.print(Panel("\n".join(lines), title="Scheduler Status", border_style="cyan"))
 
