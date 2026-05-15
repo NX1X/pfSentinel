@@ -210,6 +210,4 @@ class TestCreateWindowsTaskXml:
 
     def test_invalid_schedule_type_returns_false(self, monkeypatch):
         monkeypatch.setattr(platform_mod, "is_windows", lambda: True)
-        assert (
-            create_windows_task("test", "pfs", "backup", "MONTHLY", "02:00") is False
-        )
+        assert create_windows_task("test", "pfs", "backup", "MONTHLY", "02:00") is False
