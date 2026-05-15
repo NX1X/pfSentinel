@@ -38,7 +38,7 @@ The following behaviors are intentional design decisions for homelab use cases. 
 
 **Risk:** An attacker on your local network capable of ARP spoofing could perform a man-in-the-middle attack on SSH connections. This is unlikely in a typical homelab but is a real threat on untrusted networks.
 
-**Mitigation:** Set `strict_host_keys: true` in your device config (or use `--strict-host-keys` when adding a device). This uses `paramiko.RejectPolicy` — the host must already be in `~/.ssh/known_hosts` or the connection is refused.
+**Mitigation:** Set `strict_host_keys: true` in your device config (or use `--strict-host-keys` when adding a device). This uses `paramiko.RejectPolicy` - the host must already be in `~/.ssh/known_hosts` or the connection is refused.
 
 Additional steps:
 1. Pre-populate `~/.ssh/known_hosts` for your pfSense device: `ssh-keyscan -p 22 <host> >> ~/.ssh/known_hosts`
@@ -82,13 +82,13 @@ Passwords and tokens are stored in the OS-native keyring:
 **Note on headless/WSL fallback:** When no native keyring is available, pfSentinel
 tries backends in this order:
 
-1. **`EncryptedKeyring`** — encrypts credentials with a master password at
+1. **`EncryptedKeyring`** - encrypts credentials with a master password at
    `~/.local/share/python_keyring/crypted_pass.cfg`. You will be prompted for
    the master password on first use.
-2. **`PlaintextKeyring`** — stores credentials unencrypted at
+2. **`PlaintextKeyring`** - stores credentials unencrypted at
    `~/.local/share/python_keyring/keyring_pass.cfg`. File permissions are
    automatically set to `0o600` (owner-only). A warning is logged.
-3. **In-memory** — credentials are lost when the process exits.
+3. **In-memory** - credentials are lost when the process exits.
 
 If you are on `PlaintextKeyring`, consider installing a system keyring backend
 or verify permissions manually:
@@ -136,11 +136,11 @@ pfSentinel does **not** require or request administrator/root privileges for nor
 
 This is a solo-maintained community project. The following is a best-effort process for handling security incidents.
 
-1. **Triage** — When a vulnerability report is received (via private reporting or contact form), I will acknowledge receipt and assess severity.
-2. **Fix** — A patch is developed in a private fork or branch. For critical/high severity issues, this takes priority over other work.
-3. **Release** — A new patch release is published with the fix. The security changelog below is updated.
-4. **Disclosure** — A GitHub Security Advisory is published with details, affected versions, and upgrade instructions. If the vulnerability was reported by a researcher, they are credited (unless they prefer anonymity).
-5. **Notification** — Release notes and the advisory will describe the fix. Users on older versions should upgrade promptly.
+1. **Triage** - When a vulnerability report is received (via private reporting or contact form), I will acknowledge receipt and assess severity.
+2. **Fix** - A patch is developed in a private fork or branch. For critical/high severity issues, this takes priority over other work.
+3. **Release** - A new patch release is published with the fix. The security changelog below is updated.
+4. **Disclosure** - A GitHub Security Advisory is published with details, affected versions, and upgrade instructions. If the vulnerability was reported by a researcher, they are credited (unless they prefer anonymity).
+5. **Notification** - Release notes and the advisory will describe the fix. Users on older versions should upgrade promptly.
 
 For critical vulnerabilities with evidence of active exploitation, a fix will be released as quickly as possible and the advisory will note the urgency.
 
@@ -151,7 +151,7 @@ For critical vulnerabilities with evidence of active exploitation, a fix will be
 A living record of security findings, fixes, and hardening measures.
 For the full initial audit report, see [docs/security-audit.md](docs/security-audit.md).
 
-### 2026-04-30 — v0.1.0 (first public release)
+### 2026-04-30 - v0.1.0 (first public release)
 
 **Fixes applied from pre-release audit (19 findings, all fixed):**
 

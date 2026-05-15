@@ -1,4 +1,4 @@
-# pfSentinel — License Audit
+# pfSentinel - License Audit
 
 > Last updated: 2026-04-30
 > Project license: **Apache-2.0**
@@ -45,7 +45,7 @@
 
 ---
 
-## Paramiko — LGPL-2.1 Implications
+## Paramiko - LGPL-2.1 Implications
 
 Paramiko is the **only runtime dependency with a copyleft license** (LGPL-2.1+).
 
@@ -67,7 +67,7 @@ pfSentinel uses `--onefile` builds for the best end-user experience (single exec
 
 ---
 
-## PyInstaller — GPL with Special Exception
+## PyInstaller - GPL with Special Exception
 
 PyInstaller is GPL-licensed but includes a **special exception** that explicitly permits building and distributing non-free executables. The generated binaries can use any license.
 
@@ -78,6 +78,6 @@ PyInstaller is GPL-licensed but includes a **special exception** that explicitly
 ## Summary
 
 - All runtime dependencies except one are permissive (MIT, BSD, Apache-2.0)
-- **Paramiko (LGPL-2.1)** is the only copyleft dependency — mitigated by open-source availability
+- **Paramiko (LGPL-2.1)** is the only copyleft dependency - mitigated by open-source availability
 - **PyInstaller GPL exception** covers binary distribution
 - The project is safe to publish as Apache-2.0 on PyPI and as `--onefile` binaries
