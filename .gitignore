@@ -40,3 +40,4 @@ id_rsa
 id_ed25519
 id_ecdsa
 docs/PUBLIC_REPO_GUIDE.md
+.claude/
