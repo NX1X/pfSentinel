@@ -57,6 +57,7 @@ dev = [
     "types-pyyaml>=6.0.0,<7",
     "pip-audit>=2.7.0,<3",
     "pip-tools>=7.4.0,<8",
+    "bandit[toml]>=1.8,<2",
 ]
 
 [project.scripts]
@@ -79,6 +80,9 @@ ignore = ["UP040", "B904", "B008", "B017", "SIM102", "SIM105", "SIM108", "SIM117
 
 [tool.ruff.lint.isort]
 known-first-party = ["pfsentinel"]
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv", "build", "dist"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

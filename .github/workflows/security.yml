@@ -1,0 +1,128 @@
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '0 5 * * 6'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Bandit — Python SAST (insecure patterns: subprocess, weak crypto, etc.)
+  # ---------------------------------------------------------------------------
+  bandit:
+    name: Bandit (Python SAST)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+          cache: 'pip'
+
+      - name: Install Bandit
+        run: pip install "bandit[toml]>=1.8,<2"
+
+      - name: Run Bandit
+        run: bandit -c pyproject.toml -r src/ --severity-level medium --confidence-level medium
+
+  # ---------------------------------------------------------------------------
+  # 2. zizmor — GitHub Actions workflow security auditor
+  # ---------------------------------------------------------------------------
+  zizmor:
+    name: zizmor (Actions audit)
+    runs-on: ubuntu-latest
+    # Non-blocking for now: surfaces findings in the Security tab for review
+    # before being promoted to a required check.
+    continue-on-error: true
+
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+          cache: 'pip'
+
+      - name: Install zizmor
+        run: pip install "zizmor>=1.5,<2"
+
+      - name: Run zizmor
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: zizmor --persona regular --format sarif . > zizmor.sarif
+
+      - name: Upload zizmor SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: zizmor.sarif
+          category: zizmor
+
+  # ---------------------------------------------------------------------------
+  # 3. Dependency Review — block PRs adding vulnerable / bad-license deps
+  # ---------------------------------------------------------------------------
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Review dependencies
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: moderate
+          comment-summary-in-pr: on-failure
+
+  # ---------------------------------------------------------------------------
+  # 4. OpenSSF Scorecard — supply-chain posture (publishes to Security tab)
+  # ---------------------------------------------------------------------------
+  scorecard:
+    name: OpenSSF Scorecard
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+
+    permissions:
+      contents: read
+      security-events: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Run Scorecard analysis
+        uses: ossf/scorecard-action@v2
+        with:
+          results_file: scorecard.sarif
+          results_format: sarif
+          publish_results: true
+
+      - name: Upload Scorecard SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: scorecard.sarif
+          category: scorecard
