@@ -38,6 +38,8 @@ dependencies = [
     "keyrings.alt>=5.0,<6",
     "lxml>=6.1.0,<7",
     "schedule>=1.2,<2",
+    # defusedxml: hardens config.xml parsing against XXE / entity-expansion attacks
+    "defusedxml>=0.7.1,<1",
 ]
 
 [project.urls]
