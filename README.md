@@ -97,6 +97,10 @@ Contributions are welcome! Please read the [Contributing Guide](CONTRIBUTING.md)
 
 If you find a bug or have a feature request, [open an issue](https://github.com/NX1X/pfSentinel/issues).
 
+## Support
+
+pfSentinel is free and open source. If it saves you time or you'd like to support continued development, you can [sponsor on GitHub](https://github.com/sponsors/NX1X) or [buy me a coffee](https://buymeacoffee.com/nx1x). Thank you!
+
 ## License
 
 [Apache 2.0](LICENSE)
