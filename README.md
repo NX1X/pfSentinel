@@ -10,6 +10,12 @@ Automated backup and monitoring tool for pfSense firewalls. Built for homelabs.
 
 pfSentinel connects to your pfSense devices over SSH or HTTPS and backs up configuration files, RRD data, package configs, DHCP leases, certificates, logs, ZFS snapshots, and full filesystem archives. It includes change detection, compression, scheduled backups, and notifications via Telegram, Slack, or Windows toast.
 
+## A Word From the Developer
+
+I was looking for a feature-rich, modern pfSense backup tool and only found projects that were no longer maintained. Since pfSense backups are part of my own [homelab backup infrastructure](https://github.com/NX1X/homelab), I decided to build pfSentinel and share it with the pfSense community.
+
+If you have a request or an idea, I'd love to hear it — please [open a feature request](https://github.com/NX1X/pfSentinel/issues). You can also reach me on [LinkedIn](https://www.linkedin.com/in/edenporat) or through my [website](https://nx1xlab.dev/contact).
+
 ## Features
 
 - **Full config backup** via SSH (SFTP) or HTTPS with CSRF-aware login

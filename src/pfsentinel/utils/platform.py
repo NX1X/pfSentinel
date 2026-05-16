@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import getpass
+import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
+from xml.sax.saxutils import escape as xml_escape
 
 
 def is_windows() -> bool:
@@ -17,6 +21,24 @@ def is_linux() -> bool:
 
 def is_macos() -> bool:
     return sys.platform == "darwin"
+
+
+def is_elevated() -> bool:
+    """Return True if the process can register Windows scheduled tasks.
+
+    On Windows, registering an S4U task requires Administrator rights — without
+    them schtasks fails with "Access is denied" and the (possibly stale, broken)
+    task is left in place. On non-Windows there is no Task Scheduler path, so
+    this is not a gate.
+    """
+    if not is_windows():
+        return True
+    try:
+        import ctypes
+
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return False
 
 
 def app_config_dir() -> Path:
@@ -41,6 +63,82 @@ def run_command(args: list[str], check: bool = True) -> subprocess.CompletedProc
     )
 
 
+_TASK_XML_TEMPLATE = """<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Author>pfSentinel</Author>
+    <Description>{description}</Description>
+  </RegistrationInfo>
+  <Triggers>
+    {trigger}
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <UserId>{user_id}</UserId>
+      <LogonType>S4U</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <IdleSettings>
+      <StopOnIdleEnd>false</StopOnIdleEnd>
+      <RestartOnIdle>false</RestartOnIdle>
+    </IdleSettings>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <WakeToRun>true</WakeToRun>
+    <ExecutionTimeLimit>PT1H</ExecutionTimeLimit>
+    <Priority>7</Priority>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>{command}</Command>
+      <Arguments>{arguments}</Arguments>
+    </Exec>
+  </Actions>
+</Task>
+"""
+
+
+def _current_user_id() -> str:
+    """Return the current user as 'DOMAIN\\Username' (or just 'Username' if no domain)."""
+    domain = os.environ.get("USERDOMAIN", "")
+    user = os.environ.get("USERNAME", "") or getpass.getuser()
+    return f"{domain}\\{user}" if domain else user
+
+
+def _daily_trigger_xml(start_time: str) -> str:
+    return (
+        "<CalendarTrigger>"
+        f"<StartBoundary>2025-01-01T{start_time}:00</StartBoundary>"
+        "<Enabled>true</Enabled>"
+        "<ScheduleByDay><DaysInterval>1</DaysInterval></ScheduleByDay>"
+        "</CalendarTrigger>"
+    )
+
+
+def _weekly_trigger_xml(start_time: str, day_of_week: str) -> str:
+    day_tag = day_of_week.strip().capitalize() or "Sunday"
+    return (
+        "<CalendarTrigger>"
+        f"<StartBoundary>2025-01-01T{start_time}:00</StartBoundary>"
+        "<Enabled>true</Enabled>"
+        "<ScheduleByWeek>"
+        f"<DaysOfWeek><{day_tag}/></DaysOfWeek>"
+        "<WeeksInterval>1</WeeksInterval>"
+        "</ScheduleByWeek>"
+        "</CalendarTrigger>"
+    )
+
+
 def create_windows_task(
     task_name: str,
     executable: str,
@@ -49,32 +147,57 @@ def create_windows_task(
     start_time: str,
     day_of_week: str = "",
 ) -> bool:
-    """Create a Windows Task Scheduler task using schtasks.exe."""
+    """Create a Windows Task Scheduler task via XML registration.
+
+    The task is registered with LogonType=S4U so it runs whether the user is
+    signed in or not (no stored password), wakes the machine if asleep, and
+    ignores battery state. Returns True on success.
+    """
     if not is_windows():
         return False
 
-    cmd = [
-        "schtasks",
-        "/Create",
-        "/TN",
-        task_name,
-        "/TR",
-        f'"{executable}" {args}',
-        "/SC",
-        schedule_type,
-        "/ST",
-        start_time,
-        "/F",  # Force overwrite
-    ]
+    if schedule_type == "DAILY":
+        trigger = _daily_trigger_xml(start_time)
+    elif schedule_type == "WEEKLY":
+        trigger = _weekly_trigger_xml(start_time, day_of_week)
+    else:
+        return False
 
-    if schedule_type == "WEEKLY" and day_of_week:
-        cmd.extend(["/D", day_of_week.upper()[:3]])
+    description = f"pfSentinel scheduled backup ({schedule_type.lower()})"
+    xml_doc = _TASK_XML_TEMPLATE.format(
+        description=xml_escape(description),
+        trigger=trigger,
+        user_id=xml_escape(_current_user_id()),
+        command=xml_escape(executable),
+        arguments=xml_escape(args),
+    )
+
+    # schtasks expects task XML in UTF-16 LE with BOM. We write+close via a
+    # context manager (delete=False keeps the file around for schtasks to read).
+    with tempfile.NamedTemporaryFile(
+        mode="wb", suffix=".xml", delete=False, prefix="pfsentinel-task-"
+    ) as tmp:
+        tmp.write(xml_doc.encode("utf-16"))
+        tmp_name = tmp.name
 
     try:
-        result = run_command(cmd, check=False)
+        result = run_command(
+            ["schtasks", "/Create", "/TN", task_name, "/XML", tmp_name, "/F"],
+            check=False,
+        )
+        if result.returncode != 0:
+            from loguru import logger
+
+            stderr = (result.stderr or "").strip() or (result.stdout or "").strip()
+            logger.error(f"schtasks /Create failed for '{task_name}': {stderr}")
         return result.returncode == 0
     except FileNotFoundError:
         return False
+    finally:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
 
 
 def delete_windows_task(task_name: str) -> bool:
@@ -89,29 +212,59 @@ def delete_windows_task(task_name: str) -> bool:
 
 
 def query_windows_task(task_name: str) -> dict:
-    """Query status of a Windows Task Scheduler task."""
+    """Query status of a Windows Task Scheduler task.
+
+    Uses verbose CSV so the caller can see whether the task is actually
+    healthy (last run result) rather than merely registered. A task can exist
+    yet fail every run with 0x80070057 (ERROR_INVALID_PARAMETER) from a
+    malformed command line — that must not look "OK".
+    """
     if not is_windows():
         return {"exists": False}
     try:
         result = run_command(
-            ["schtasks", "/Query", "/TN", task_name, "/FO", "CSV", "/NH"], check=False
+            ["schtasks", "/Query", "/TN", task_name, "/FO", "CSV", "/NH", "/V"],
+            check=False,
         )
         if result.returncode != 0:
             return {"exists": False}
-        parts = result.stdout.strip().strip('"').split('","')
+        line = next((ln for ln in result.stdout.splitlines() if ln.strip()), "")
+        if not line:
+            return {"exists": False}
+        # schtasks /V /FO CSV column order is fixed (values are localized,
+        # positions are not): 1=TaskName 2=Next Run Time 3=Status
+        # 5=Last Run Time 6=Last Result 8=Task To Run
+        cols = [c.strip('"') for c in line.split('","')]
+
+        def _col(i: int) -> str | None:
+            return cols[i] if len(cols) > i else None
+
+        raw = _col(6)
+        try:
+            last_result = int(raw) if raw not in (None, "", "N/A") else None
+        except ValueError:
+            last_result = None
+
         return {
             "exists": True,
-            "name": parts[0] if parts else task_name,
-            "next_run": parts[1] if len(parts) > 1 else None,
-            "status": parts[2] if len(parts) > 2 else None,
+            "name": _col(1) or task_name,
+            "next_run": _col(2),
+            "status": _col(3),
+            "last_run": _col(5),
+            "last_result": last_result,
+            "task_to_run": _col(8),
         }
     except Exception:
         return {"exists": False}
 
 
-def get_executable_path() -> str:
-    """Get path to the current executable or python script."""
+def get_executable_path() -> tuple[str, str]:
+    """Get the executable path and any prefix args needed to invoke pfSentinel.
+
+    Returns (executable, prefix_args). The executable is returned unquoted; the
+    caller is responsible for quoting it when building a command line.
+    """
     if getattr(sys, "frozen", False):
         # PyInstaller bundle
-        return sys.executable
-    return f'"{sys.executable}" -m pfsentinel'
+        return sys.executable, ""
+    return sys.executable, "-m pfsentinel"

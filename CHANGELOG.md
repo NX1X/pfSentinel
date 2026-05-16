@@ -13,6 +13,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-05-11
+
+### Fixed
+
+- Scheduled Windows tasks failed silently every run with `ERROR_INVALID_PARAMETER` (`0x80070057`) due to a double-quoted command line in the task registration. As a result, daily and weekly backups created via `pfs schedule enable` did not execute on Windows.
+- `pfs schedule status` now reports the live Task Scheduler state — last run time and last run result — for **both** the daily and weekly tasks (previously only the daily task was shown, and a task failing every run with `0x80070057` was still displayed as healthy). A failed last result is now flagged with remediation guidance instead of appearing as "Created".
+
+### Security
+
+- Bump `urllib3` 2.6.3 → 2.7.0 (CVE-2026-44431: sensitive headers leaked on cross-origin redirects via low-level `ProxyManager` API; CVE-2026-44432: streaming API could decompress full response instead of requested portion)
+- Pin explicit `urllib3>=2.7.0,<3` floor in `pyproject.toml` so future lock regenerations cannot drift back below the patched version
+- Migrate dependency management from Dependabot to Renovate with a **7-day cooldown** on all updates (including vulnerability alerts) to defend against malicious upstream releases (supply-chain attacks)
+- Pin GitHub Actions to immutable commit SHAs (`pinDigests`) - hardens against tag-rewrite attacks
+- Enable OSV vulnerability feed (`osvVulnerabilityAlerts`) for broader CVE coverage beyond GHSA
+
+### Added
+
+- `renovate.json` - Renovate config with in-repo Dependency Dashboard, grouped pep621/github-actions updates, 14-day cooldown on major Python deps (lxml/cryptography/paramiko break frequently on majors), and a customManager tracking the `python-version` pin in CI workflows
+
+### Changed
+
+- `.gitignore`: ignore internal-only docs (`docs-internal/`)
+- Scheduled tasks are now registered via XML with `LogonType=S4U`, so they run whether the user is signed in, locked, or signed out - no stored password required
+- Scheduled tasks no longer skip on battery power (`DisallowStartIfOnBatteries=false`, `StopIfGoingOnBatteries=false`) and now wake the machine from sleep at the scheduled time (`WakeToRun=true`)
+- Missed scheduled runs (e.g. machine powered off at the scheduled time) are now caught up on next availability (`StartWhenAvailable=true`)
+
 ## [0.1.3] - 2026-05-09
 
 ### Changed
@@ -21,7 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- Bump paramiko from 3.x to 4.0.0 (CVE-2026-44405 — SHA-1 in RSA keys; no fully patched release yet, ignored in CI until upstream fix ships)
+- Bump paramiko from 3.x to 4.0.0 (CVE-2026-44405 - SHA-1 in RSA keys; no fully patched release yet, ignored in CI until upstream fix ships)
 
 ## [0.1.2] - 2026-05-07
 
@@ -46,7 +72,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
-- Unused TUI module (`pfsentinel.tui`) — the project uses CLI only
+- Unused TUI module (`pfsentinel.tui`) - the project uses CLI only
 
 ## [0.1.0] - 2026-04-30
 

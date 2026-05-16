@@ -88,7 +88,7 @@ class SSHConnector:
             # Pragmatic default for homelab use where host keys change on firmware
             # updates / reinstalls. Do NOT use AutoAddPolicy — it silently accepts
             # any key without logging.
-            client.set_missing_host_key_policy(paramiko.WarningPolicy())  # type: ignore[attr-defined]
+            client.set_missing_host_key_policy(paramiko.WarningPolicy())  # type: ignore[attr-defined]  # nosec B507
             logger.warning(
                 f"strict_host_keys is disabled for '{self.device.id}'. "
                 "Unknown SSH host keys will be accepted with a warning. "
@@ -170,7 +170,9 @@ class SSHConnector:
             self.connect()
 
         try:
-            _, stdout, stderr = self._client.exec_command(  # type: ignore[union-attr]
+            # Suppression note (B601): command is allowlist-validated via
+            # _validate_command() against ALLOWED_COMMAND_PREFIXES; not from untrusted input.
+            _, stdout, stderr = self._client.exec_command(  # type: ignore[union-attr]  # nosec B601
                 command, timeout=timeout
             )
             exit_code = stdout.channel.recv_exit_status()
@@ -264,7 +266,9 @@ class SSHConnector:
         local_path.parent.mkdir(parents=True, exist_ok=True)
 
         try:
-            _, stdout, stderr = self._client.exec_command(  # type: ignore[union-attr]
+            # Suppression note (B601): command is allowlist-validated via
+            # _validate_command() against ALLOWED_COMMAND_PREFIXES; not from untrusted input.
+            _, stdout, stderr = self._client.exec_command(  # type: ignore[union-attr]  # nosec B601
                 command, timeout=timeout
             )
             # Set socket-level read timeout to prevent indefinite blocking

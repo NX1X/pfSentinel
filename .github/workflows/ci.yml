@@ -177,9 +177,11 @@ jobs:
       - name: Resolve version
         id: decide
         shell: bash
+        env:
+          RELEASE_VERSION_INPUT: ${{ github.event.inputs.release_version }}
         run: |
           # --- Manual release: use the provided version ---
-          MANUAL="${{ github.event.inputs.release_version }}"
+          MANUAL="$RELEASE_VERSION_INPUT"
           if [[ -n "$MANUAL" ]]; then
             VERSION="${MANUAL#v}"
             if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
@@ -233,8 +235,10 @@ jobs:
       - name: Extract release notes
         if: steps.decide.outputs.should_release == 'true'
         shell: bash
+        env:
+          RELEASE_VERSION: ${{ steps.decide.outputs.version }}
         run: |
-          VERSION="${{ steps.decide.outputs.version }}"
+          VERSION="$RELEASE_VERSION"
           CHANGELOG_FILE="CHANGELOG.md"
 
           FIRST_LINE=$(grep -n "## \[$VERSION\]" "$CHANGELOG_FILE" | head -n 1 | cut -d: -f1)
@@ -284,9 +288,10 @@ jobs:
 
       - name: Patch version
         shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
         run: |
-          VERSION="${{ needs.resolve-version.outputs.version }}"
-          sed -i "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" \
+          sed -i "s/__version__ = \".*\"/__version__ = \"$RELEASE_VERSION\"/" \
             src/pfsentinel/__init__.py
 
       - name: Build Linux binary
@@ -360,9 +365,10 @@ jobs:
 
       - name: Patch version
         shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
         run: |
-          VERSION="${{ needs.resolve-version.outputs.version }}"
-          sed -i "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" \
+          sed -i "s/__version__ = \".*\"/__version__ = \"$RELEASE_VERSION\"/" \
             src/pfsentinel/__init__.py
 
       - name: Build Windows .exe
@@ -402,9 +408,10 @@ jobs:
 
       - name: Patch version
         shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
         run: |
-          VERSION="${{ needs.resolve-version.outputs.version }}"
-          sed -i "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" \
+          sed -i "s/__version__ = \".*\"/__version__ = \"$RELEASE_VERSION\"/" \
             src/pfsentinel/__init__.py
 
       - name: Build source and wheel distributions
