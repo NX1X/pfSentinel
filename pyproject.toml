@@ -91,8 +91,15 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 markers = [
     "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
+    "e2e: marks tests as end-to-end (real local SSH server; deselect with '-m \"not e2e\"')",
 ]
 addopts = "--strict-markers"
+filterwarnings = [
+    # The e2e suite uses the project's default WarningPolicy on a fresh
+    # 127.0.0.1 fake SSH server. Production-correct behavior; not what we
+    # are testing.
+    "ignore:Unknown .* host key for \\[127\\.0\\.0\\.1\\]:UserWarning:paramiko.client",
+]
 
 [tool.coverage.run]
 source = ["pfsentinel"]
