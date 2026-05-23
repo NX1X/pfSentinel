@@ -1,0 +1,16 @@
+# Sponsorship buttons for the pfSentinel repository.
+# Docs: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/displaying-a-sponsor-button-in-your-repository
+#
+# Dropdown order shown to visitors:
+#   1. GitHub Sponsors (NX1X)        <- requires an active GitHub Sponsors
+#                                       profile on the NX1X account; until that
+#                                       is set up this entry will not render.
+#   2. Buy Me a Coffee (nx1x)        <- native button, no duplicate custom link
+#   3. NXTools project hub           <- custom link
+
+github: [NX1X]
+
+buy_me_a_coffee: nx1x
+
+custom:
+  - "https://nx1xlab.dev/nxtools"
