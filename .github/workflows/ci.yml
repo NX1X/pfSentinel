@@ -31,10 +31,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
 
       - name: Set up Python 3.14
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: '3.14'
           cache: 'pip'
@@ -49,7 +49,7 @@ jobs:
         run: ruff format --check src/ tests/
 
       - name: Run ShellCheck on shell scripts
-        uses: ludeeus/action-shellcheck@2.0.0
+        uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38  # 2.0.0
         with:
           scandir: '.'
           ignore_paths: '.venv'
@@ -65,10 +65,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
 
       - name: Set up Python 3.14
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: '3.14'
           cache: 'pip'
@@ -109,10 +109,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: ${{ matrix.python-version }}
           cache: 'pip'
@@ -135,7 +135,7 @@ jobs:
 
       - name: Upload coverage report (Ubuntu / Python 3.14 only)
         if: matrix.python-version == '3.14' && matrix.os == 'ubuntu-latest'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
         with:
           name: coverage-report
           path: |
@@ -148,7 +148,7 @@ jobs:
           matrix.python-version == '3.14' &&
           matrix.os == 'ubuntu-latest' &&
           github.event_name == 'push'
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354  # v6
         with:
           files: coverage.xml
           fail_ci_if_error: false
@@ -170,7 +170,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
         with:
           fetch-depth: 0
 
@@ -256,7 +256,7 @@ jobs:
 
       - name: Upload release notes
         if: steps.decide.outputs.should_release == 'true'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
         with:
           name: release-notes
           path: /tmp/release_notes.md
@@ -273,10 +273,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
 
       - name: Set up Python 3.14
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: '3.14'
           cache: 'pip'
@@ -333,7 +333,7 @@ jobs:
         run: dist/pfs --version
 
       - name: Upload Linux binary
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
         with:
           name: binary-linux
           path: dist/pfs
@@ -350,10 +350,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
 
       - name: Set up Python 3.14
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: '3.14'
           cache: 'pip'
@@ -376,7 +376,7 @@ jobs:
         run: python scripts/build_exe.py
 
       - name: Upload Windows binary
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
         with:
           name: binary-windows
           path: dist/pfs.exe
@@ -393,10 +393,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
 
       - name: Set up Python 3.14
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: '3.14'
           cache: 'pip'
@@ -421,7 +421,7 @@ jobs:
         run: twine check dist/*
 
       - name: Upload wheel artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
         with:
           name: dist-wheel
           path: dist/
@@ -440,7 +440,7 @@ jobs:
 
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53  # v6
         with:
           path: artifacts/
 
@@ -463,7 +463,7 @@ jobs:
           cat checksums-sha256.txt
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2
         with:
           tag_name: ${{ needs.resolve-version.outputs.tag }}
           name: pfSentinel ${{ needs.resolve-version.outputs.tag }}
@@ -489,18 +489,18 @@ jobs:
 
     steps:
       - name: Download dist artifacts
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53  # v6
         with:
           name: dist-wheel
           path: dist/
 
       - name: Generate Sigstore attestations
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be  # v2
         with:
           subject-path: dist/*
 
       - name: Publish to TestPyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
           attestations: true
@@ -520,12 +520,12 @@ jobs:
 
     steps:
       - name: Download dist artifacts
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53  # v6
         with:
           name: dist-wheel
           path: dist/
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # release/v1
         with:
           attestations: true
