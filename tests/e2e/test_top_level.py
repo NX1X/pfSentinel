@@ -28,9 +28,7 @@ def test_version_flag_prints_pfsentinel_version(cli_runner: CliRunner) -> None:
     """`pfs --version` exits 0 and emits the version string via typer.echo."""
     result = cli_runner.invoke(app, ["--version"])
 
-    assert result.exit_code == 0, (
-        f"CLI exit={result.exit_code}\n--- stdout ---\n{result.stdout}"
-    )
+    assert result.exit_code == 0, f"CLI exit={result.exit_code}\n--- stdout ---\n{result.stdout}"
     assert "pfSentinel v" in result.stdout
     assert __version__ in result.stdout
 
@@ -42,9 +40,7 @@ def test_status_with_no_devices_reports_empty_state(
     """`pfs status` on a fresh config tells the user no devices are configured."""
     result = cli_runner.invoke(app, ["status"])
 
-    assert result.exit_code == 0, (
-        f"CLI exit={result.exit_code}\n--- stdout ---\n{result.stdout}"
-    )
+    assert result.exit_code == 0, f"CLI exit={result.exit_code}\n--- stdout ---\n{result.stdout}"
     assert "No devices configured" in result.stdout
 
 
@@ -55,9 +51,7 @@ def test_status_with_seeded_device_lists_home_fw(
     """`pfs status` renders the devices table including the seeded device."""
     result = cli_runner.invoke(app, ["status"])
 
-    assert result.exit_code == 0, (
-        f"CLI exit={result.exit_code}\n--- stdout ---\n{result.stdout}"
-    )
+    assert result.exit_code == 0, f"CLI exit={result.exit_code}\n--- stdout ---\n{result.stdout}"
     assert "home-fw" in result.stdout
 
 
@@ -68,7 +62,5 @@ def test_list_root_shortcut_with_no_backups(
     """`pfs list` (the root shortcut for backup list) reports no backups when empty."""
     result = cli_runner.invoke(app, ["list"])
 
-    assert result.exit_code == 0, (
-        f"CLI exit={result.exit_code}\n--- stdout ---\n{result.stdout}"
-    )
+    assert result.exit_code == 0, f"CLI exit={result.exit_code}\n--- stdout ---\n{result.stdout}"
     assert "No backups" in result.stdout

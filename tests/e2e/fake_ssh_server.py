@@ -27,7 +27,6 @@ from typing import Self
 
 import paramiko
 
-
 # Host key generated once per process. ECDSA P-256 is ~10x faster than RSA-2048.
 _HOST_KEY: paramiko.PKey | None = None
 

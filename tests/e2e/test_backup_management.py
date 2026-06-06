@@ -21,7 +21,6 @@ from pfsentinel.cli.app import app
 from pfsentinel.models.backup import BackupRecord
 from pfsentinel.models.config import AppConfig
 from pfsentinel.services.retention import RetentionService
-
 from tests.e2e.fake_ssh_server import FakeSSHServer
 
 pytestmark = pytest.mark.e2e
@@ -34,8 +33,7 @@ def _seed_one(cli_runner: CliRunner) -> None:
         ["backup", "run", "-d", "home-fw", "--config-only", "--no-notify"],
     )
     assert result.exit_code == 0, (
-        f"Seed backup failed: exit={result.exit_code}\n"
-        f"--- stdout ---\n{result.stdout}\n"
+        f"Seed backup failed: exit={result.exit_code}\n--- stdout ---\n{result.stdout}\n"
     )
 
 
@@ -310,8 +308,7 @@ def test_backup_diff_between_two_records_shows_changes(
 
     records = _load_records(seeded_config)
     assert len(records) == 2, (
-        f"Expected 2 records after two seeds, got {len(records)}: "
-        f"{[r.filename for r in records]}"
+        f"Expected 2 records after two seeds, got {len(records)}: {[r.filename for r in records]}"
     )
     # sorted newest-first by retention.sorted_by_date(), but the index
     # records list itself is the in-order list. Sort by created_at so

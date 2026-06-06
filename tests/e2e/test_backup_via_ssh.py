@@ -56,8 +56,7 @@ def test_backup_run_via_real_ssh(
     index = retention.load_index("home-fw")
 
     assert len(index.records) == 1, (
-        f"Expected 1 record, got {len(index.records)}: "
-        f"{[r.filename for r in index.records]}"
+        f"Expected 1 record, got {len(index.records)}: {[r.filename for r in index.records]}"
     )
 
     record = index.records[0]

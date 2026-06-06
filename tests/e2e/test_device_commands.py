@@ -34,9 +34,7 @@ def test_device_list_with_no_devices_reports_empty(
     """`pfs device list` on an empty config prints a helpful 'no devices' notice."""
     result = cli_runner.invoke(app, ["device", "list"])
 
-    assert result.exit_code == 0, (
-        f"CLI exit={result.exit_code}\n--- stdout ---\n{result.stdout}"
-    )
+    assert result.exit_code == 0, f"CLI exit={result.exit_code}\n--- stdout ---\n{result.stdout}"
     assert "No devices configured" in result.stdout
 
 
@@ -47,9 +45,7 @@ def test_device_list_with_seeded_device_shows_home_fw(
     """`pfs device list` renders a table that includes the configured device."""
     result = cli_runner.invoke(app, ["device", "list"])
 
-    assert result.exit_code == 0, (
-        f"CLI exit={result.exit_code}\n--- stdout ---\n{result.stdout}"
-    )
+    assert result.exit_code == 0, f"CLI exit={result.exit_code}\n--- stdout ---\n{result.stdout}"
     assert "home-fw" in result.stdout
 
 
@@ -60,9 +56,7 @@ def test_device_remove_existing_device_succeeds(
     """`pfs device remove home-fw -y` removes the device and survives a list call."""
     result = cli_runner.invoke(app, ["device", "remove", "home-fw", "-y"])
 
-    assert result.exit_code == 0, (
-        f"CLI exit={result.exit_code}\n--- stdout ---\n{result.stdout}"
-    )
+    assert result.exit_code == 0, f"CLI exit={result.exit_code}\n--- stdout ---\n{result.stdout}"
     assert "home-fw" in result.stdout
     assert "removed" in result.stdout.lower()
 
@@ -99,9 +93,7 @@ def test_device_test_reports_ssh_ok_against_fake_server(
     """
     result = cli_runner.invoke(app, ["device", "test", "-d", "home-fw"])
 
-    assert result.exit_code == 0, (
-        f"CLI exit={result.exit_code}\n--- stdout ---\n{result.stdout}"
-    )
+    assert result.exit_code == 0, f"CLI exit={result.exit_code}\n--- stdout ---\n{result.stdout}"
     # The SSH line is rendered as "SSH  : ✓ OK" (with rich markup stripped).
     assert "SSH" in result.stdout
     assert "OK" in result.stdout
@@ -139,9 +131,7 @@ def test_device_add_via_https_with_crafted_input(
         input="hunter2\nhunter2\nn\n",
     )
 
-    assert result.exit_code == 0, (
-        f"CLI exit={result.exit_code}\n--- stdout ---\n{result.stdout}"
-    )
+    assert result.exit_code == 0, f"CLI exit={result.exit_code}\n--- stdout ---\n{result.stdout}"
     assert "test-fw" in result.stdout
     assert "added" in result.stdout.lower()
 
@@ -181,9 +171,7 @@ def test_device_edit_changes_label(
         input="Edited Label\n\n\n\n\n\n\n",
     )
 
-    assert result.exit_code == 0, (
-        f"CLI exit={result.exit_code}\n--- stdout ---\n{result.stdout}"
-    )
+    assert result.exit_code == 0, f"CLI exit={result.exit_code}\n--- stdout ---\n{result.stdout}"
     assert "updated" in result.stdout.lower()
 
     reloaded = AppConfig.load().get_device("home-fw")

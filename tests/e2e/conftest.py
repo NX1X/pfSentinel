@@ -18,7 +18,6 @@ from typer.testing import CliRunner
 from pfsentinel.models.config import AppConfig, BackupPolicy, NotificationConfig
 from pfsentinel.models.device import ConnectionMethod, DeviceConfig
 from pfsentinel.services.credentials import CredentialService
-
 from tests.e2e.fake_ssh_server import FakeSSHServer
 
 
