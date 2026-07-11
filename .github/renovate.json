@@ -115,6 +115,13 @@
       "matchDepNames": ["python"],
       "matchManagers": ["custom.regex"],
       "matchUpdateTypes": ["minor", "patch"]
+    },
+    {
+      "description": "Block major Python version-manager jumps (e.g. 3.x -> 4.x) until wheels/support exist",
+      "matchDepNames": ["python"],
+      "matchManagers": ["custom.regex"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
     }
   ],
 

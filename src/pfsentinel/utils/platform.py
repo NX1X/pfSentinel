@@ -126,7 +126,21 @@ def _daily_trigger_xml(start_time: str) -> str:
 
 
 def _weekly_trigger_xml(start_time: str, day_of_week: str) -> str:
-    day_tag = day_of_week.strip().capitalize() or "Sunday"
+    # Task Scheduler only accepts these seven day element names; anything else
+    # (typo, empty, injection attempt) would produce invalid XML, so fall back
+    # to Sunday rather than emit a malformed <DaysOfWeek> tag.
+    valid_days = {
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday",
+    }
+    day_tag = day_of_week.strip().capitalize()
+    if day_tag not in valid_days:
+        day_tag = "Sunday"
     return (
         "<CalendarTrigger>"
         f"<StartBoundary>2025-01-01T{start_time}:00</StartBoundary>"

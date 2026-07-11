@@ -13,12 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.1.4] - 2026-05-11
+## [0.1.4] - 2026-07-11
 
 ### Fixed
 
 - Scheduled Windows tasks failed silently every run with `ERROR_INVALID_PARAMETER` (`0x80070057`) due to a double-quoted command line in the task registration. As a result, daily and weekly backups created via `pfs schedule enable` did not execute on Windows.
 - `pfs schedule status` now reports the live Task Scheduler state — last run time and last run result — for **both** the daily and weekly tasks (previously only the daily task was shown, and a task failing every run with `0x80070057` was still displayed as healthy). A failed last result is now flagged with remediation guidance instead of appearing as "Created".
+- An invalid `--weekly-day` value (typo or unexpected input) no longer produces a malformed Task Scheduler XML element name; unrecognized days now fall back to Sunday so weekly task registration cannot fail on bad input.
 
 ### Security
 
@@ -32,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enable **Ruff `S` (flake8-bandit) rules** for inline SAST at lint time (hardcoded secrets, `shell=True`, pickle, weak hashes, `verify=False`, SQL injection), complementing Bandit and CodeQL
 - Add a **detect-secrets** pre-commit hook (`.pre-commit-config.yaml` + `.secrets.baseline`) for local secret scanning before push, complementing server-side GitGuardian
 - Harden the self-update flow: the downloaded binary is now `chmod 0o700` (owner-only) instead of `0o755`, removing group/world access (resolves CodeQL `py/overly-permissive-file`)
+- Set `persist-credentials: false` on all `actions/checkout` steps in the security workflow so the `GITHUB_TOKEN` is not left on disk after checkout (zizmor `artipacked` hardening)
+- Renovate now explicitly blocks major Python version-manager jumps (e.g. 3.x → 4.x) until wheel/support exists, instead of only limiting the minor/patch rule
 
 ### Added
 

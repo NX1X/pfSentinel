@@ -127,6 +127,18 @@ class TestTaskXmlBuilders:
         xml = _weekly_trigger_xml("03:00", "")
         assert "<Sunday/>" in xml
 
+    def test_weekly_trigger_rejects_invalid_day(self):
+        # A typo or injection attempt must not leak into the XML tag name;
+        # it falls back to Sunday so Task Scheduler receives valid XML.
+        for bad in ("notaday", "mon day", "sun/><evil", "Funday"):
+            xml = _weekly_trigger_xml("03:00", bad)
+            assert "<Sunday/>" in xml
+            assert bad.capitalize() not in xml
+
+    def test_weekly_trigger_normalizes_case(self):
+        assert "<Monday/>" in _weekly_trigger_xml("03:00", "MONDAY")
+        assert "<Friday/>" in _weekly_trigger_xml("03:00", "friday")
+
     def test_current_user_id_uses_env(self, monkeypatch):
         monkeypatch.setenv("USERDOMAIN", "TESTHOST")
         monkeypatch.setenv("USERNAME", "tester")
