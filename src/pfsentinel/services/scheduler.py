@@ -54,8 +54,8 @@ class SchedulerService:
         return success
 
     def _apply_windows_schedule(self) -> bool:
-        executable = get_executable_path()
-        args = "backup run"
+        executable, prefix_args = get_executable_path()
+        args = f"{prefix_args} backup run".strip()
         success = True
 
         if self._config.daily_enabled:

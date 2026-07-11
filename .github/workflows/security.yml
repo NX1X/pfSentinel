@@ -1,0 +1,157 @@
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '0 5 * * 6'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Bandit — Python SAST (insecure patterns: subprocess, weak crypto, etc.)
+  # ---------------------------------------------------------------------------
+  bandit:
+    name: Bandit (Python SAST)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
+        with:
+          python-version: '3.14'
+          cache: 'pip'
+
+      - name: Install Bandit
+        run: pip install "bandit[toml]>=1.8,<2"
+
+      - name: Run Bandit
+        run: bandit -c pyproject.toml -r src/ --severity-level medium --confidence-level medium
+
+  # ---------------------------------------------------------------------------
+  # 2. zizmor — GitHub Actions workflow security auditor
+  # ---------------------------------------------------------------------------
+  zizmor:
+    name: zizmor (Actions audit)
+    runs-on: ubuntu-latest
+    # Non-blocking for now: surfaces findings in the Security tab for review
+    # before being promoted to a required check.
+    continue-on-error: true
+
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
+        with:
+          python-version: '3.14'
+          cache: 'pip'
+
+      - name: Install zizmor
+        run: pip install "zizmor>=1.5,<2"
+
+      - name: Run zizmor
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: zizmor --persona regular --format sarif . > zizmor.sarif
+
+      - name: Upload zizmor SARIF
+        uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357  # v3
+        with:
+          sarif_file: zizmor.sarif
+          category: zizmor
+
+  # ---------------------------------------------------------------------------
+  # 3. Dependency Review — block PRs adding vulnerable / bad-license deps
+  # ---------------------------------------------------------------------------
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
+        with:
+          persist-credentials: false
+
+      - name: Review dependencies
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48  # v4
+        with:
+          fail-on-severity: moderate
+          comment-summary-in-pr: on-failure
+
+  # ---------------------------------------------------------------------------
+  # 4. OpenSSF Scorecard — supply-chain posture (publishes to Security tab)
+  # ---------------------------------------------------------------------------
+  scorecard:
+    name: OpenSSF Scorecard
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+
+    permissions:
+      contents: read
+      security-events: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
+        with:
+          persist-credentials: false
+
+      - name: Run Scorecard analysis
+        uses: ossf/scorecard-action@4eaacf0543bb3f2c246792bd56e8cdeffafb205a  # v2.4.3
+        with:
+          results_file: scorecard.sarif
+          results_format: sarif
+          publish_results: true
+
+      - name: Upload Scorecard SARIF
+        uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357  # v3
+        with:
+          sarif_file: scorecard.sarif
+          category: scorecard
+
+  # ---------------------------------------------------------------------------
+  # 6. OSV-Scanner — scan the pinned lockfile against the OSV vulnerability DB
+  # ---------------------------------------------------------------------------
+  osv-scanner:
+    name: OSV-Scanner
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
+        with:
+          persist-credentials: false
+
+      - name: Scan requirements.lock against OSV
+        uses: google/osv-scanner-action/osv-scanner-action@9a498708959aeaef5ef730655706c5a1df1edbc2  # v2.3.8
+        with:
+          scan-args: |-
+            --config=osv-scanner.toml
+            --lockfile=requirements.txt:requirements.lock

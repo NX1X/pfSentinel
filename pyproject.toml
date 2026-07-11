@@ -28,7 +28,7 @@ dependencies = [
     "paramiko>=4.0.0,<5",
     "httpx>=0.28.0,<1",
     "pyyaml>=6.0.0,<7",
-    "cryptography>=46.0.5,<47",
+    "cryptography>=48.0.1,<49",
     "loguru>=0.7,<1",
     "packaging>=24.0,<25",
     "requests>=2.31.0,<3",
@@ -38,6 +38,8 @@ dependencies = [
     "keyrings.alt>=5.0,<6",
     "lxml>=6.1.0,<7",
     "schedule>=1.2,<2",
+    # defusedxml: hardens config.xml parsing against XXE / entity-expansion attacks
+    "defusedxml>=0.7.1,<1",
 ]
 
 [project.urls]
@@ -57,6 +59,7 @@ dev = [
     "types-pyyaml>=6.0.0,<7",
     "pip-audit>=2.7.0,<3",
     "pip-tools>=7.4.0,<8",
+    "bandit[toml]>=1.8,<2",
 ]
 
 [project.scripts]
@@ -74,19 +77,43 @@ line-length = 100
 src = ["src", "tests"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "N"]
-ignore = ["UP040", "B904", "B008", "B017", "SIM102", "SIM105", "SIM108", "SIM117", "E501", "F841", "E402"]
+# "S" = flake8-bandit (inline SAST). High-value rules (hardcoded secrets,
+# shell=True, pickle, weak hashes, requests verify=False, SQL injection) stay on;
+# the noisy always-fires ones are ignored below.
+select = ["E", "F", "I", "UP", "B", "SIM", "N", "S"]
+ignore = [
+    "UP040", "B904", "B008", "B017", "SIM102", "SIM105", "SIM108", "SIM117",
+    "E501", "F841", "E402",
+    # flake8-bandit noise: every subprocess.run (S603) and partial-path exec
+    # (S607) fires regardless of safety, and best-effort try/except/pass (S110)
+    # is an intentional pattern here. All subprocess calls use list args, no shell.
+    "S603", "S607", "S110",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests legitimately use asserts, throwaway credentials, and temp files.
+"tests/**" = ["S101", "S105", "S106", "S107", "S108"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["pfsentinel"]
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv", "build", "dist"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
 markers = [
     "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
+    "e2e: marks tests as end-to-end (real local SSH server; deselect with '-m \"not e2e\"')",
 ]
 addopts = "--strict-markers"
+filterwarnings = [
+    # The e2e suite uses the project's default WarningPolicy on a fresh
+    # 127.0.0.1 fake SSH server. Production-correct behavior; not what we
+    # are testing.
+    "ignore:Unknown .* host key for \\[127\\.0\\.0\\.1\\]:UserWarning:paramiko.client",
+]
 
 [tool.coverage.run]
 source = ["pfsentinel"]

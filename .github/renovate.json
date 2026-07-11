@@ -1,0 +1,153 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:best-practices",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    "helpers:pinGitHubActionDigests"
+  ],
+
+  "timezone": "America/New_York",
+  "schedule": ["before 6am on monday"],
+
+  "minimumReleaseAge": "14 days",
+
+  "labels": ["dependencies"],
+  "assignees": ["NX1X"],
+  "reviewers": ["NX1X"],
+
+  "dependencyDashboard": true,
+  "dependencyDashboardTitle": "Dependency Dashboard",
+  "dependencyDashboardLabels": ["dependencies"],
+  "dependencyDashboardAutoclose": true,
+
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 2,
+  "prCreation": "not-pending",
+  "rangeStrategy": "bump",
+
+  "platformAutomerge": true,
+  "automergeStrategy": "squash",
+
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "minimumReleaseAge": "3 days",
+    "labels": ["dependencies", "security"]
+  },
+  "osvVulnerabilityAlerts": true,
+
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on monday"],
+    "automerge": true
+  },
+
+  "pip-compile": {
+    "fileMatch": ["(^|/)requirements\\.lock$"]
+  },
+
+  "ignorePaths": [
+    "**/vendor/**",
+    "**/build/**",
+    "**/dist/**",
+    "**/.venv/**",
+    "**/htmlcov/**"
+  ],
+
+  "packageRules": [
+    {
+      "description": "Group non-major Python runtime deps from pyproject.toml [project.dependencies]",
+      "matchManagers": ["pep621"],
+      "matchDepTypes": ["project.dependencies"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "python runtime deps",
+      "labels": ["dependencies", "python"],
+      "automerge": true
+    },
+    {
+      "description": "Group non-major Python dev deps from [project.optional-dependencies]",
+      "matchManagers": ["pep621"],
+      "matchDepTypes": ["project.optional-dependencies"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "python dev deps",
+      "labels": ["dependencies", "python", "dev"],
+      "automerge": true
+    },
+    {
+      "description": "Major Python bumps: extra cooldown + manual review (C-extension wheel risk for lxml/cryptography/paramiko)",
+      "matchManagers": ["pep621"],
+      "matchUpdateTypes": ["major"],
+      "minimumReleaseAge": "14 days",
+      "automerge": false
+    },
+    {
+      "description": "GitHub Actions: pin to SHA + group minor/patch/digest",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "groupName": "github-actions",
+      "labels": ["dependencies", "github-actions"],
+      "automerge": true
+    },
+    {
+      "description": "GitHub Actions major updates require manual review",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["major"],
+      "automerge": false
+    },
+    {
+      "description": "Security-critical packages: ungroup, raise priority, keep cooldown",
+      "matchPackageNames": [
+        "paramiko",
+        "cryptography",
+        "requests",
+        "urllib3",
+        "httpx",
+        "lxml",
+        "pyyaml"
+      ],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": null,
+      "prPriority": 10,
+      "automerge": true
+    },
+    {
+      "description": "Constrain custom Python version manager to minor/patch only (avoid 3.14 -> 3.15 jumps before wheels exist)",
+      "matchDepNames": ["python"],
+      "matchManagers": ["custom.regex"],
+      "matchUpdateTypes": ["minor", "patch"]
+    },
+    {
+      "description": "Block major Python version-manager jumps (e.g. 3.x -> 4.x) until wheels/support exist",
+      "matchDepNames": ["python"],
+      "matchManagers": ["custom.regex"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    }
+  ],
+
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "actions/setup-python python-version pin in workflow files",
+      "fileMatch": ["^\\.github/workflows/[^/]+\\.ya?ml$"],
+      "matchStrings": [
+        "python-version:\\s*['\"]?(?<currentValue>\\d+\\.\\d+(?:\\.\\d+)?)['\"]?"
+      ],
+      "depNameTemplate": "python",
+      "packageNameTemplate": "actions/python-versions",
+      "datasourceTemplate": "github-tags",
+      "versioningTemplate": "loose"
+    },
+    {
+      "customType": "regex",
+      "description": "ruff version pin in CI install step — keep in sync with pyproject.toml [dev]",
+      "fileMatch": ["^\\.github/workflows/ci\\.ya?ml$"],
+      "matchStrings": [
+        "pip install \"ruff(?<currentValue>[^\"]+)\""
+      ],
+      "depNameTemplate": "ruff",
+      "datasourceTemplate": "pypi",
+      "versioningTemplate": "pep440"
+    }
+  ]
+}

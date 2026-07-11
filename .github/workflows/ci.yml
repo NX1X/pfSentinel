@@ -31,10 +31,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
 
       - name: Set up Python 3.14
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: '3.14'
           cache: 'pip'
@@ -48,13 +48,6 @@ jobs:
       - name: Run ruff format check
         run: ruff format --check src/ tests/
 
-      - name: Run ShellCheck on shell scripts
-        uses: ludeeus/action-shellcheck@2.0.0
-        with:
-          scandir: '.'
-          ignore_paths: '.venv'
-          severity: warning
-
   # ---------------------------------------------------------------------------
   # 2. Security audit — dependency vulnerability scan + hash verification
   # ---------------------------------------------------------------------------
@@ -65,10 +58,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
 
       - name: Set up Python 3.14
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: '3.14'
           cache: 'pip'
@@ -109,10 +102,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: ${{ matrix.python-version }}
           cache: 'pip'
@@ -135,7 +128,7 @@ jobs:
 
       - name: Upload coverage report (Ubuntu / Python 3.14 only)
         if: matrix.python-version == '3.14' && matrix.os == 'ubuntu-latest'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
         with:
           name: coverage-report
           path: |
@@ -148,7 +141,7 @@ jobs:
           matrix.python-version == '3.14' &&
           matrix.os == 'ubuntu-latest' &&
           github.event_name == 'push'
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354  # v6
         with:
           files: coverage.xml
           fail_ci_if_error: false
@@ -170,16 +163,18 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
         with:
           fetch-depth: 0
 
       - name: Resolve version
         id: decide
         shell: bash
+        env:
+          RELEASE_VERSION_INPUT: ${{ github.event.inputs.release_version }}
         run: |
           # --- Manual release: use the provided version ---
-          MANUAL="${{ github.event.inputs.release_version }}"
+          MANUAL="$RELEASE_VERSION_INPUT"
           if [[ -n "$MANUAL" ]]; then
             VERSION="${MANUAL#v}"
             if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
@@ -233,8 +228,10 @@ jobs:
       - name: Extract release notes
         if: steps.decide.outputs.should_release == 'true'
         shell: bash
+        env:
+          RELEASE_VERSION: ${{ steps.decide.outputs.version }}
         run: |
-          VERSION="${{ steps.decide.outputs.version }}"
+          VERSION="$RELEASE_VERSION"
           CHANGELOG_FILE="CHANGELOG.md"
 
           FIRST_LINE=$(grep -n "## \[$VERSION\]" "$CHANGELOG_FILE" | head -n 1 | cut -d: -f1)
@@ -252,7 +249,7 @@ jobs:
 
       - name: Upload release notes
         if: steps.decide.outputs.should_release == 'true'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
         with:
           name: release-notes
           path: /tmp/release_notes.md
@@ -269,10 +266,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
 
       - name: Set up Python 3.14
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: '3.14'
           cache: 'pip'
@@ -284,9 +281,10 @@ jobs:
 
       - name: Patch version
         shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
         run: |
-          VERSION="${{ needs.resolve-version.outputs.version }}"
-          sed -i "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" \
+          sed -i "s/__version__ = \".*\"/__version__ = \"$RELEASE_VERSION\"/" \
             src/pfsentinel/__init__.py
 
       - name: Build Linux binary
@@ -328,7 +326,7 @@ jobs:
         run: dist/pfs --version
 
       - name: Upload Linux binary
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
         with:
           name: binary-linux
           path: dist/pfs
@@ -345,10 +343,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
 
       - name: Set up Python 3.14
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: '3.14'
           cache: 'pip'
@@ -360,9 +358,10 @@ jobs:
 
       - name: Patch version
         shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
         run: |
-          VERSION="${{ needs.resolve-version.outputs.version }}"
-          sed -i "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" \
+          sed -i "s/__version__ = \".*\"/__version__ = \"$RELEASE_VERSION\"/" \
             src/pfsentinel/__init__.py
 
       - name: Build Windows .exe
@@ -370,7 +369,7 @@ jobs:
         run: python scripts/build_exe.py
 
       - name: Upload Windows binary
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
         with:
           name: binary-windows
           path: dist/pfs.exe
@@ -387,10 +386,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
 
       - name: Set up Python 3.14
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
         with:
           python-version: '3.14'
           cache: 'pip'
@@ -402,9 +401,10 @@ jobs:
 
       - name: Patch version
         shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
         run: |
-          VERSION="${{ needs.resolve-version.outputs.version }}"
-          sed -i "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" \
+          sed -i "s/__version__ = \".*\"/__version__ = \"$RELEASE_VERSION\"/" \
             src/pfsentinel/__init__.py
 
       - name: Build source and wheel distributions
@@ -414,7 +414,7 @@ jobs:
         run: twine check dist/*
 
       - name: Upload wheel artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
         with:
           name: dist-wheel
           path: dist/
@@ -433,7 +433,7 @@ jobs:
 
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53  # v6
         with:
           path: artifacts/
 
@@ -456,7 +456,7 @@ jobs:
           cat checksums-sha256.txt
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2
         with:
           tag_name: ${{ needs.resolve-version.outputs.tag }}
           name: pfSentinel ${{ needs.resolve-version.outputs.tag }}
@@ -482,18 +482,18 @@ jobs:
 
     steps:
       - name: Download dist artifacts
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53  # v6
         with:
           name: dist-wheel
           path: dist/
 
       - name: Generate Sigstore attestations
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be  # v2
         with:
           subject-path: dist/*
 
       - name: Publish to TestPyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
           attestations: true
@@ -513,12 +513,12 @@ jobs:
 
     steps:
       - name: Download dist artifacts
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53  # v6
         with:
           name: dist-wheel
           path: dist/
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # release/v1
         with:
           attestations: true

@@ -71,7 +71,7 @@ URL tables and external alias files used by firewall rules.
 SSL/TLS certificates and keys from the filesystem.
 
 - Scans `/etc/ssl/` and `/usr/local/etc/ssl/` for `*.pem`, `*.crt`, `*.key`, `*.csr`
-- Note: Certificates are also stored in `config.xml` — this target captures filesystem-level copies
+- Note: Certificates are also stored in `config.xml` - this target captures filesystem-level copies
 
 ### System Logs
 

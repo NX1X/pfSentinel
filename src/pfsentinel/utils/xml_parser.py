@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from typing import Any
-from xml.etree import ElementTree as ET
+from xml.etree import (
+    ElementTree as ET,  # kept for tostring()/ParseError; all parsing goes via defusedxml
+)
+
+from defusedxml.common import DefusedXmlException
+from defusedxml.ElementTree import fromstring as _safe_fromstring
 
 
 class PfSenseXMLError(ValueError):
@@ -16,9 +21,11 @@ def validate_xml(xml_content: str) -> ET.Element:
         raise PfSenseXMLError("XML content is empty")
 
     try:
-        root = ET.fromstring(xml_content.encode("utf-8"))
+        root = _safe_fromstring(xml_content.encode("utf-8"))
     except ET.ParseError as e:
         raise PfSenseXMLError(f"XML parse error: {e}") from e
+    except DefusedXmlException as e:
+        raise PfSenseXMLError(f"Unsafe XML rejected (possible XXE/entity attack): {e}") from e
 
     if root.tag != "pfsense":
         raise PfSenseXMLError(f"Root element is '{root.tag}', expected 'pfsense'")
@@ -35,7 +42,7 @@ def extract_info(xml_content: str) -> dict[str, str | None]:
     root = validate_xml(xml_content)
 
     system = root.find("system")
-    assert system is not None  # validated above
+    assert system is not None  # validated above  # noqa: S101
 
     def _text(element: Any, tag: str) -> str | None:
         el = element.find(tag)
