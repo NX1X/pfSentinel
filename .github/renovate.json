@@ -10,7 +10,7 @@
   "timezone": "America/New_York",
   "schedule": ["before 6am on monday"],
 
-  "minimumReleaseAge": "7 days",
+  "minimumReleaseAge": "14 days",
 
   "labels": ["dependencies"],
   "assignees": ["NX1X"],
@@ -31,7 +31,7 @@
 
   "vulnerabilityAlerts": {
     "enabled": true,
-    "minimumReleaseAge": "7 days",
+    "minimumReleaseAge": "3 days",
     "labels": ["dependencies", "security"]
   },
   "osvVulnerabilityAlerts": true,
