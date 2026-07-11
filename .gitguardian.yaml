@@ -1,0 +1,15 @@
+# GitGuardian / ggshield configuration
+# https://docs.gitguardian.com/ggshield-docs/reference/configuration
+#
+# The e2e test suite spins up a fake in-process SSH server (tests/e2e/) that
+# authenticates with a throwaway password ("hunter2"). It is not a real
+# credential and never touches production. These entries stop ggshield from
+# flagging that fixture. Note: the GitGuardian GitHub App check is resolved
+# from the GitGuardian dashboard, not from this file.
+version: 2
+secret:
+  ignored-paths:
+    - "tests/e2e/**"
+  ignored-matches:
+    - name: "Fake SSH password for the e2e fake SSH server (not a real secret)"
+      match: "hunter2"

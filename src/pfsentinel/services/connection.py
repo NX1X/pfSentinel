@@ -357,8 +357,10 @@ class HTTPSConnector:
         try:
             from lxml import etree
 
+            # HTMLParser (not the XXE-prone XML parser) over the user's own
+            # firewall response fetched via TLS; no external entity resolution.
             parser = etree.HTMLParser()
-            tree = etree.fromstring(html.encode(), parser)
+            tree = etree.fromstring(html.encode(), parser)  # noqa: S320
             for el in tree.xpath('//input[@name="__csrf_magic"]'):
                 return el.get("value")
         except Exception:

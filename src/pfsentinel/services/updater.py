@@ -282,9 +282,9 @@ class UpdateService:
                     os.rename(old_path, current_exe)
                 raise UpdateError(f"Failed to replace binary: {e}") from e
         else:
-            # Suppression note (B103): standard exec perms (rwxr-xr-x, not world-writable)
-            # on a binary whose SHA-256 was verified by _verify_checksum() above.
-            os.chmod(temp_path, 0o755)  # nosec B103
+            # Owner-only rwx (rwx------); no group or world access. The binary's
+            # SHA-256 was verified by _verify_checksum() above.
+            os.chmod(temp_path, 0o700)
             os.replace(temp_path, current_exe)
 
         # Verify new binary

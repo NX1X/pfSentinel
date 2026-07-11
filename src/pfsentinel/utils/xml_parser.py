@@ -42,7 +42,7 @@ def extract_info(xml_content: str) -> dict[str, str | None]:
     root = validate_xml(xml_content)
 
     system = root.find("system")
-    assert system is not None  # validated above
+    assert system is not None  # validated above  # noqa: S101
 
     def _text(element: Any, tag: str) -> str | None:
         el = element.find(tag)

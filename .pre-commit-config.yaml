@@ -1,0 +1,23 @@
+# Pre-commit hooks. Install with: pre-commit install
+# Run against all files: pre-commit run --all-files
+# Update the secrets baseline: detect-secrets scan --baseline .secrets.baseline
+repos:
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        name: Detect hardcoded secrets
+        args: ["--baseline", ".secrets.baseline"]
+        exclude: '(^\.venv/|^uv\.lock$)'
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+      - id: check-merge-conflict
+      - id: detect-private-key

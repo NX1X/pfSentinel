@@ -22,15 +22,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Bump `cryptography` 46.0.7 → 48.0.1 (GHSA-537c-gmf6-5ccf: the OpenSSL statically linked into cryptography wheels prior to 48.0.1 was vulnerable to a High-severity issue, CVSS 7.5). Pin explicit `cryptography>=48.0.1,<49` floor in `pyproject.toml` and regenerate `requirements.lock` with hash verification
 - Bump `urllib3` 2.6.3 → 2.7.0 (CVE-2026-44431: sensitive headers leaked on cross-origin redirects via low-level `ProxyManager` API; CVE-2026-44432: streaming API could decompress full response instead of requested portion)
 - Pin explicit `urllib3>=2.7.0,<3` floor in `pyproject.toml` so future lock regenerations cannot drift back below the patched version
-- Migrate dependency management from Dependabot to Renovate with a **7-day cooldown** on all updates (including vulnerability alerts) to defend against malicious upstream releases (supply-chain attacks)
+- Migrate dependency management from Dependabot to Renovate with a **14-day cooldown** on regular updates (and 14 days on majors) to defend against malicious upstream releases (supply-chain attacks), while keeping vulnerability-alert updates on a short **3-day** cooldown so genuine CVE fixes still land quickly
 - Pin GitHub Actions to immutable commit SHAs (`pinDigests`) - hardens against tag-rewrite attacks
 - Enable OSV vulnerability feed (`osvVulnerabilityAlerts`) for broader CVE coverage beyond GHSA
+- Add **OSV-Scanner** CI gate that scans `requirements.lock` against the OSV database on every push/PR (`.github/workflows/security.yml`), with intentional ignores kept in sync via `osv-scanner.toml`
+- Enable **Ruff `S` (flake8-bandit) rules** for inline SAST at lint time (hardcoded secrets, `shell=True`, pickle, weak hashes, `verify=False`, SQL injection), complementing Bandit and CodeQL
+- Add a **detect-secrets** pre-commit hook (`.pre-commit-config.yaml` + `.secrets.baseline`) for local secret scanning before push, complementing server-side GitGuardian
+- Harden the self-update flow: the downloaded binary is now `chmod 0o700` (owner-only) instead of `0o755`, removing group/world access (resolves CodeQL `py/overly-permissive-file`)
 
 ### Added
 
-- `renovate.json` - Renovate config with in-repo Dependency Dashboard, grouped pep621/github-actions updates, 14-day cooldown on major Python deps (lxml/cryptography/paramiko break frequently on majors), and a customManager tracking the `python-version` pin in CI workflows
+- `.github/renovate.json` - Renovate config with in-repo Dependency Dashboard, grouped pep621/github-actions updates, 14-day cooldown on major Python deps (lxml/cryptography/paramiko break frequently on majors), and a customManager tracking the `python-version` pin in CI workflows
 
 ### Changed
 
