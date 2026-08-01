@@ -100,10 +100,6 @@ class SSHConnector:
             port=self.device.ssh_port,
             username=self.device.username,
             timeout=self.device.timeout,
-            # Refuse legacy SHA-1-based signature algorithms during kex/user-auth.
-            # Independent of paramiko>=5 CVE-2026-44405 fix — belt and suspenders.
-            # DevSkim: ignore DS126858 — algorithm names in a deny-list, not usage.
-            disabled_algorithms={"pubkeys": ["rsa-sha1", "ssh-rsa"]},
         )
 
         if self.device.ssh_key_path:

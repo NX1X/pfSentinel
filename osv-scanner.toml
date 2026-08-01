@@ -1,5 +1,9 @@
 # OSV-Scanner configuration
 # https://google.github.io/osv-scanner/configuration/
 #
-# No vulnerabilities are currently ignored. Keep any future [[IgnoredVulns]]
-# entries in sync with the pip-audit configuration in .github/workflows/ci.yml.
+# Vulnerabilities intentionally ignored, kept in sync with the pip-audit
+# --ignore-vuln list in .github/workflows/ci.yml.
+
+[[IgnoredVulns]]
+id = "GHSA-r374-rxx8-8654"          # alias: CVE-2026-44405
+reason = "paramiko SHA-1 signature verification weakness; no fixed paramiko release exists yet. Re-evaluate when an upstream fix ships."
