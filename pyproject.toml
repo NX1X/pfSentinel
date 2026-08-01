@@ -23,9 +23,12 @@ classifiers = [
 ]
 dependencies = [
     "typer>=0.15.0,<1",
+    # click is imported directly (cli/commands/notify.py, cli/commands/device.py);
+    # declare it explicitly since typer >=0.26 no longer pulls it transitively.
+    "click>=8.3.3,<9",
     "rich>=13.9.0,<14",
     "pydantic>=2.10.0,<3",
-    "paramiko>=4.0.0,<5",
+    "paramiko>=5,<6",
     "httpx>=0.28.1,<1",
     "pyyaml>=6.0.3,<7",
     "cryptography>=48.0.1,<49",
@@ -51,7 +54,7 @@ Changelog = "https://github.com/NX1X/pfSentinel/blob/main/CHANGELOG.md"
 [project.optional-dependencies]
 dev = [
     "ruff>=0.11,<0.12",
-    "pytest>=8.3.0,<9",
+    "pytest>=9,<10",
     "pytest-cov>=6.0.0,<7",
     "responses>=0.25.0,<1",
     "mypy>=1.14.0,<2",
@@ -60,6 +63,17 @@ dev = [
     "pip-audit>=2.7.0,<3",
     "pip-tools>=7.4.0,<8",
     "bandit[toml]>=1.8,<2",
+    # release/build tools — kept in dev so a single hash-verified lockfile
+    # covers every CI job (lint, test, security-audit, build-*).
+    "build>=1.2,<2",
+    "twine>=6.0,<7",
+    "pyinstaller>=6.10,<7",
+    "winotify>=1.1.0,<2; sys_platform == 'win32'",
+    # PEP 517 backend + editable helper, included so
+    # `pip install -e . --no-build-isolation` works after the lockfile install
+    # (Windows CI blocks pip's isolated fetch).
+    "hatchling>=1.25,<2",
+    "editables>=0.5,<1",
 ]
 
 [project.scripts]
