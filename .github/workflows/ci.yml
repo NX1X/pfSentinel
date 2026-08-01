@@ -73,7 +73,7 @@ jobs:
       - name: Install dev dependencies (hash-verified) + pfSentinel
         run: |
           pip install --only-binary :all: --require-hashes --no-deps -r requirements-dev.lock
-          pip install --no-deps -e .
+          pip install --no-deps --no-build-isolation -e .
 
       - name: Run pip-audit (vulnerability scan)
         run: |
@@ -120,7 +120,7 @@ jobs:
         shell: bash
         run: |
           pip install --only-binary :all: --require-hashes --no-deps -r requirements-dev.lock
-          pip install --no-deps -e .
+          pip install --no-deps --no-build-isolation -e .
 
       - name: Run pytest with coverage
         shell: bash
@@ -286,7 +286,7 @@ jobs:
       - name: Install dev dependencies (hash-verified) + pfSentinel
         run: |
           pip install --only-binary :all: --require-hashes --no-deps -r requirements-dev.lock
-          pip install --no-deps -e .
+          pip install --no-deps --no-build-isolation -e .
 
       - name: Patch version
         shell: bash
@@ -367,7 +367,7 @@ jobs:
         shell: bash
         run: |
           pip install --only-binary :all: --require-hashes --no-deps -r requirements-dev.lock
-          pip install --no-deps -e .
+          pip install --no-deps --no-build-isolation -e .
 
       - name: Patch version
         shell: bash

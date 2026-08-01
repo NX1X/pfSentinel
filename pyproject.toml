@@ -69,6 +69,11 @@ dev = [
     "twine>=6.0,<7",
     "pyinstaller>=6.10,<7",
     "winotify>=1.1.0,<2; sys_platform == 'win32'",
+    # PEP 517 backend + editable helper, included so
+    # `pip install -e . --no-build-isolation` works after the lockfile install
+    # (Windows CI blocks pip's isolated fetch).
+    "hatchling>=1.25,<2",
+    "editables>=0.5,<1",
 ]
 
 [project.scripts]
