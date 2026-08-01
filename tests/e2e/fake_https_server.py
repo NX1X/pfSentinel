@@ -211,6 +211,10 @@ class FakeHTTPSServer:
         httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler_cls)
 
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        # Refuse legacy TLS on the fake server (CodeQL py/insecure-protocol).
+        # Real pfSentinel does not negotiate <TLS 1.2 either.
+        # DevSkim: ignore DS440000 — test fake; TLS floor is the fix, not config.
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
         # Load cert/key from PEM bytes via a temp keypair file the SSL
         # context can consume. keyfile+certfile is simplest.
         ctx.load_cert_chain(
