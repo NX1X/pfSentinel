@@ -42,7 +42,7 @@ jobs:
           cache: 'pip'
 
       - name: Install dev dependencies (hash-verified)
-        run: 'pip install --require-hashes --no-deps -r requirements-dev.lock'
+        run: 'pip install --only-binary :all: --require-hashes --no-deps -r requirements-dev.lock'
 
       - name: Run ruff lint
         run: ruff check src/ tests/
@@ -72,8 +72,8 @@ jobs:
 
       - name: Install dev dependencies (hash-verified) + pfSentinel
         run: |
-          pip install --require-hashes --no-deps -r requirements-dev.lock
-          pip install -e . --no-deps
+          pip install --only-binary :all: --require-hashes --no-deps -r requirements-dev.lock
+          pip install --no-deps -e .
 
       - name: Run pip-audit (vulnerability scan)
         run: |
@@ -84,7 +84,7 @@ jobs:
         run: |
           if [ -f requirements.lock ]; then
             echo "Lock file found — verifying hashes..."
-            pip install --require-hashes --dry-run -r requirements.lock
+            pip install --only-binary :all: --require-hashes --dry-run -r requirements.lock
             echo "Hash verification passed."
           else
             echo "::warning::No requirements.lock found. Run 'pip-compile --generate-hashes pyproject.toml -o requirements.lock' to enable hash verification."
@@ -119,12 +119,8 @@ jobs:
       - name: Install dev dependencies (hash-verified) + pfSentinel
         shell: bash
         run: |
-          LOCK=requirements-dev.lock
-          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-            LOCK=requirements-dev-win.lock
-          fi
-          pip install --require-hashes --no-deps -r "$LOCK"
-          pip install -e . --no-deps
+          pip install --only-binary :all: --require-hashes --no-deps -r requirements-dev.lock
+          pip install --no-deps -e .
 
       - name: Run pytest with coverage
         shell: bash
@@ -289,8 +285,8 @@ jobs:
 
       - name: Install dev dependencies (hash-verified) + pfSentinel
         run: |
-          pip install --require-hashes --no-deps -r requirements-dev.lock
-          pip install -e . --no-deps
+          pip install --only-binary :all: --require-hashes --no-deps -r requirements-dev.lock
+          pip install --no-deps -e .
 
       - name: Patch version
         shell: bash
@@ -370,8 +366,8 @@ jobs:
       - name: Install dev dependencies (hash-verified) + pfSentinel
         shell: bash
         run: |
-          pip install --require-hashes --no-deps -r requirements-dev-win.lock
-          pip install -e . --no-deps
+          pip install --only-binary :all: --require-hashes --no-deps -r requirements-dev.lock
+          pip install --no-deps -e .
 
       - name: Patch version
         shell: bash
@@ -418,7 +414,7 @@ jobs:
           cache: 'pip'
 
       - name: Install build tooling (hash-verified)
-        run: 'pip install --require-hashes --no-deps -r requirements-dev.lock'
+        run: 'pip install --only-binary :all: --require-hashes --no-deps -r requirements-dev.lock'
 
       - name: Patch version
         shell: bash
