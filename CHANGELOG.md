@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - Bump `paramiko` 4.0.0 → 5.0.0 (fixes CVE-2026-44405 / GHSA-r374-rxx8-8654: SHA-1 signature verification weakness). This removes the temporary `pip-audit` / OSV-Scanner ignore for that advisory that was in place while no fixed paramiko release existed
+- Bump `pytest` 8 → `>=9.1.1,<10` (dev/test dependency; CVE-2025-71176 / GHSA-6w46-j5rx-g56g: predictable `/tmp/pytest-of-{user}` paths on UNIX allow a local user to cause a denial of service or possibly escalate privileges). Fixed upstream in 9.0.3; the floor is pinned so a lock regeneration cannot drift back onto a vulnerable 9.0.x
 - Bump `requests` → `>=2.34.2,<3` (precautionary security update)
 - Bump `cryptography` 46.0.7 → 48.0.1 (GHSA-537c-gmf6-5ccf: the OpenSSL statically linked into cryptography wheels prior to 48.0.1 was vulnerable to a High-severity issue, CVSS 7.5). Pin explicit `cryptography>=48.0.1,<49` floor in `pyproject.toml` and regenerate `requirements.lock` with hash verification
 - Bump `urllib3` 2.6.3 → 2.7.0 (CVE-2026-44431: sensitive headers leaked on cross-origin redirects via low-level `ProxyManager` API; CVE-2026-44432: streaming API could decompress full response instead of requested portion)
@@ -45,7 +46,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Bump `pytest` 8 → 9 (dev/test dependency)
 - Add a smoke test to the Windows binary build so a non-runnable `.exe` can no longer pass CI
 - Relocate the Renovate config to `.github/renovate.json` and migrate the deprecated `fileMatch` fields to `managerFilePatterns` (fixes the Renovate "pip-compile: dependency not found in lock file" repository warning)
 - `.gitignore`: ignore internal-only docs (`docs-internal/`)

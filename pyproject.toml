@@ -54,7 +54,9 @@ Changelog = "https://github.com/NX1X/pfSentinel/blob/main/CHANGELOG.md"
 [project.optional-dependencies]
 dev = [
     "ruff>=0.11,<0.12",
-    "pytest>=9,<10",
+    # pytest: floor enforces CVE-2025-71176 fix (>=9.0.3); predictable
+    # /tmp/pytest-of-{user} paths on UNIX. 9.1.1 matches the locked version.
+    "pytest>=9.1.1,<10",
     "pytest-cov>=6.0.0,<7",
     "responses>=0.25.0,<1",
     "mypy>=1.14.0,<2",
