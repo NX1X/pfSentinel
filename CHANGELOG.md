@@ -13,16 +13,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.1.4] - 2026-07-11
+## [0.1.5] - 2026-07-12
 
 ### Fixed
 
+- **Release binaries now start correctly.** `click` is now declared as an explicit dependency. `typer` 0.26 stopped pulling `click` in transitively, but the CLI imports `click` directly (`notify`/`device` commands), so the standalone PyInstaller binaries crashed on launch with `ModuleNotFoundError: No module named 'click'`. This broke the Linux release build (and would have shipped a broken Windows `.exe`, which had no smoke test). `click` is now also an explicit PyInstaller hidden-import and the Windows build has a smoke test.
 - Scheduled Windows tasks failed silently every run with `ERROR_INVALID_PARAMETER` (`0x80070057`) due to a double-quoted command line in the task registration. As a result, daily and weekly backups created via `pfs schedule enable` did not execute on Windows.
 - `pfs schedule status` now reports the live Task Scheduler state — last run time and last run result — for **both** the daily and weekly tasks (previously only the daily task was shown, and a task failing every run with `0x80070057` was still displayed as healthy). A failed last result is now flagged with remediation guidance instead of appearing as "Created".
 - An invalid `--weekly-day` value (typo or unexpected input) no longer produces a malformed Task Scheduler XML element name; unrecognized days now fall back to Sunday so weekly task registration cannot fail on bad input.
 
 ### Security
 
+- Bump `paramiko` 4.0.0 → 5.0.0 (fixes CVE-2026-44405 / GHSA-r374-rxx8-8654: SHA-1 signature verification weakness). This removes the temporary `pip-audit` / OSV-Scanner ignore for that advisory that was in place while no fixed paramiko release existed
+- Bump `requests` → `>=2.34.2,<3` (precautionary security update)
 - Bump `cryptography` 46.0.7 → 48.0.1 (GHSA-537c-gmf6-5ccf: the OpenSSL statically linked into cryptography wheels prior to 48.0.1 was vulnerable to a High-severity issue, CVSS 7.5). Pin explicit `cryptography>=48.0.1,<49` floor in `pyproject.toml` and regenerate `requirements.lock` with hash verification
 - Bump `urllib3` 2.6.3 → 2.7.0 (CVE-2026-44431: sensitive headers leaked on cross-origin redirects via low-level `ProxyManager` API; CVE-2026-44432: streaming API could decompress full response instead of requested portion)
 - Pin explicit `urllib3>=2.7.0,<3` floor in `pyproject.toml` so future lock regenerations cannot drift back below the patched version
@@ -42,6 +45,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Bump `pytest` 8 → 9 (dev/test dependency)
+- Add a smoke test to the Windows binary build so a non-runnable `.exe` can no longer pass CI
+- Relocate the Renovate config to `.github/renovate.json` and migrate the deprecated `fileMatch` fields to `managerFilePatterns` (fixes the Renovate "pip-compile: dependency not found in lock file" repository warning)
 - `.gitignore`: ignore internal-only docs (`docs-internal/`)
 - Scheduled tasks are now registered via XML with `LogonType=S4U`, so they run whether the user is signed in, locked, or signed out - no stored password required
 - Scheduled tasks no longer skip on battery power (`DisallowStartIfOnBatteries=false`, `StopIfGoingOnBatteries=false`) and now wake the machine from sleep at the scheduled time (`WakeToRun=true`)
