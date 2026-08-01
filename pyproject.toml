@@ -63,6 +63,12 @@ dev = [
     "pip-audit>=2.7.0,<3",
     "pip-tools>=7.4.0,<8",
     "bandit[toml]>=1.8,<2",
+    # release/build tools — kept in dev so a single hash-verified lockfile
+    # covers every CI job (lint, test, security-audit, build-*).
+    "build>=1.2,<2",
+    "twine>=6.0,<7",
+    "pyinstaller>=6.10,<7",
+    "winotify>=1.1.0,<2; sys_platform == 'win32'",
 ]
 
 [project.scripts]

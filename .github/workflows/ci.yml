@@ -41,8 +41,8 @@ jobs:
           python-version: '3.14'
           cache: 'pip'
 
-      - name: Install ruff
-        run: 'pip install --only-binary :all: "ruff>=0.11,<0.12"'
+      - name: Install dev dependencies (hash-verified)
+        run: 'pip install --require-hashes --no-deps -r requirements-dev.lock'
 
       - name: Run ruff lint
         run: ruff check src/ tests/
@@ -70,10 +70,10 @@ jobs:
           python-version: '3.14'
           cache: 'pip'
 
-      - name: Install package and audit tools
+      - name: Install dev dependencies (hash-verified) + pfSentinel
         run: |
-          python -m pip install --only-binary :all: --upgrade pip
-          pip install -e ".[dev]"
+          pip install --require-hashes --no-deps -r requirements-dev.lock
+          pip install -e . --no-deps
 
       - name: Run pip-audit (vulnerability scan)
         run: |
@@ -116,11 +116,15 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: 'pip'
 
-      - name: Install package with dev dependencies
+      - name: Install dev dependencies (hash-verified) + pfSentinel
         shell: bash
         run: |
-          python -m pip install --only-binary :all: --upgrade pip
-          pip install -e ".[dev]"
+          LOCK=requirements-dev.lock
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            LOCK=requirements-dev-win.lock
+          fi
+          pip install --require-hashes --no-deps -r "$LOCK"
+          pip install -e . --no-deps
 
       - name: Run pytest with coverage
         shell: bash
@@ -283,10 +287,10 @@ jobs:
           python-version: '3.14'
           cache: 'pip'
 
-      - name: Install dependencies and PyInstaller
+      - name: Install dev dependencies (hash-verified) + pfSentinel
         run: |
-          python -m pip install --upgrade pip
-          pip install -e "." pyinstaller
+          pip install --require-hashes --no-deps -r requirements-dev.lock
+          pip install -e . --no-deps
 
       - name: Patch version
         shell: bash
@@ -363,10 +367,11 @@ jobs:
           python-version: '3.14'
           cache: 'pip'
 
-      - name: Install dependencies and PyInstaller
+      - name: Install dev dependencies (hash-verified) + pfSentinel
+        shell: bash
         run: |
-          python -m pip install --only-binary :all: --upgrade pip
-          pip install --only-binary :all: -e "." pyinstaller winotify
+          pip install --require-hashes --no-deps -r requirements-dev-win.lock
+          pip install -e . --no-deps
 
       - name: Patch version
         shell: bash
@@ -412,10 +417,8 @@ jobs:
           python-version: '3.14'
           cache: 'pip'
 
-      - name: Install build tooling
-        run: |
-          python -m pip install --only-binary :all: --upgrade pip
-          pip install --only-binary :all: build twine
+      - name: Install build tooling (hash-verified)
+        run: 'pip install --require-hashes --no-deps -r requirements-dev.lock'
 
       - name: Patch version
         shell: bash
