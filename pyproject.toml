@@ -59,6 +59,9 @@ dev = [
     "pytest>=9.1.1,<10",
     "pytest-cov>=6.0.0,<7",
     "responses>=0.25.0,<1",
+    # hypothesis: property-based fuzzing of the XML parser, which is the only
+    # place pfSentinel parses untrusted network input (tests/unit/test_xml_parser_fuzz.py)
+    "hypothesis>=6.100,<7",
     "mypy>=1.14.0,<2",
     "types-paramiko>=3.5.0,<4",
     "types-pyyaml>=6.0.0,<7",

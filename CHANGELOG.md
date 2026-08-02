@@ -18,9 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Replace the unmaintained `defusedxml` dependency with a hardened `lxml` parser for `config.xml`. `defusedxml` has had no release since 0.7.1 (March 2021) and no upstream commit since October 2023, which is not a safe position for the component that guards pfSentinel's only untrusted input. `lxml` was already a dependency, so this removes a package rather than swapping one. The replacement disables entity resolution, network access, DTD loading and huge trees, and additionally rejects any config carrying a DOCTYPE so entity attacks fail loudly instead of parsing with unresolved references
 - Add `TestXxeHardening` covering classic XXE file disclosure, entity-expansion ("billion laughs"), external DTD, network entity, and blind-XXE parameter entities. The previous `defusedxml` protection had no test coverage at all, so this is the first time the XML security boundary is actually verified
 
+- Add property-based fuzzing for the XML parser (`hypothesis`). `validate_xml` is pfSentinel's only untrusted-input boundary, so the suite asserts one invariant across arbitrary text, arbitrary bytes, generated XML documents, deep nesting and XML-metacharacter soup: parsing either returns a well-formed pfSense root or raises `PfSenseXMLError`, and nothing else escapes. Verified to catch a real regression - re-enabling entity resolution makes the suite fail with actual file contents in the assertion output
+
 ### Removed
 
 - `defusedxml` is no longer a runtime dependency
+- Remove the OpenSSF Scorecard CI job. Most of its findings were not actionable for a single-maintainer repo: `Branch-Protection` was a false negative (Scorecard reads the legacy branch-protection API and cannot see the repository rulesets that are actually enforcing 11 required checks, no force-push and no deletion), and `Code-Review` scores the absence of a second reviewer. Bandit, CodeQL, zizmor, OSV-Scanner, dependency-review and pip-audit all still run - Scorecard was scoring posture, not finding vulnerabilities. Tracked for revisit in `docs-internal/WORK-STATUS.md`
 
 ## [0.1.5] - 2026-07-12
 
