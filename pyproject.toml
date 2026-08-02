@@ -26,7 +26,7 @@ dependencies = [
     # click is imported directly (cli/commands/notify.py, cli/commands/device.py);
     # declare it explicitly since typer >=0.26 no longer pulls it transitively.
     "click>=8.3.3,<9",
-    "rich>=13.9.0,<14",
+    "rich>=13.9.4,<14",
     "pydantic>=2.10.0,<3",
     "paramiko>=5,<6",
     "httpx>=0.28.1,<1",
