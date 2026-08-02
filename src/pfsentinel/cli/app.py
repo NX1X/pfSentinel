@@ -212,7 +212,7 @@ def setup() -> None:
             console.print("[yellow]Warning: No persistent keyring found.[/]")
             console.print("[yellow]Password will be lost when process exits.[/]")
             console.print(
-                "[dim]Install keyrings.alt for persistent storage: pip install keyrings.alt[/]"
+                "[dim]Install a system keyring (gnome-keyring / kwallet) for OS-backed storage.[/]"
             )
 
     if ssh_key_path:

@@ -311,8 +311,6 @@ jobs:
             --hidden-import cryptography.hazmat.backends \
             --hidden-import cryptography.hazmat.backends.openssl \
             --hidden-import keyring.backends.fail \
-            --hidden-import keyrings.alt \
-            --hidden-import keyrings.alt.file \
             --hidden-import rich \
             --hidden-import pydantic \
             --hidden-import lxml \

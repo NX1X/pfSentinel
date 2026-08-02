@@ -37,8 +37,9 @@ dependencies = [
     "requests>=2.34.2,<3",
     # urllib3: transitive via requests/httpx; floor enforces CVE-2026-44431 / CVE-2026-44432 fix (>=2.7.0)
     "urllib3>=2.7.0,<3",
+    # keyring: OS keystore only (Windows Credential Manager, SecretService).
+    # The headless fallback is our own AES-GCM store in services/secret_store.py.
     "keyring>=25.0,<26",
-    "keyrings.alt>=5.0,<6",
     # lxml: HTML parsing for the pfSense web UI, and the hardened XML parser
     # used for config.xml (see utils/xml_parser.py - XXE/entity protection).
     "lxml>=6.1.1,<7",

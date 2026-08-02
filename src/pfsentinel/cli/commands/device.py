@@ -162,7 +162,9 @@ def device_add(
         creds.store(device_id, password)
         if not creds.is_persistent:
             print_warning("  Credential storage: in-memory only (no persistent keyring found).")
-            print_warning("  Install keyrings.alt for persistent storage: pip install keyrings.alt")
+            print_warning(
+                "  Install a system keyring (gnome-keyring / kwallet) for OS-backed storage."
+            )
 
     # Handle SSH key passphrase
     if ssh_key_path_str:

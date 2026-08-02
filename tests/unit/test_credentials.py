@@ -98,12 +98,34 @@ class TestBackend:
         assert "fail" not in name.lower()
         assert "in-memory" not in name.lower()
 
-    def test_is_persistent_false_without_keyring(self):
+    def test_still_persistent_without_keyring_via_file_store(self):
+        """No OS keystore falls back to the encrypted file store, not memory.
+
+        This is the point of secret_store.py: headless hosts (WSL, containers)
+        must keep credentials across process exits so scheduled backups work.
+        """
         with patch("pfsentinel.services.credentials._KEYRING_AVAILABLE", False):
+            svc = CredentialService()
+            assert svc.is_persistent is True
+            assert "encrypted file store" in svc.backend_name()
+
+    def test_credentials_survive_a_new_service_instance(self):
+        """A password stored without a keyring must be readable by a fresh process."""
+        with patch("pfsentinel.services.credentials._KEYRING_AVAILABLE", False):
+            CredentialService().store("home-fw", "hunter2")
+            assert CredentialService().get("home-fw") == "hunter2"
+
+    def test_falls_back_to_memory_when_store_unwritable(self):
+        """With neither a keyring nor a writable store, degrade to in-memory."""
+        with (
+            patch("pfsentinel.services.credentials._KEYRING_AVAILABLE", False),
+            patch(
+                "pfsentinel.services.secret_store.EncryptedFileStore.is_available",
+                new_callable=lambda: property(lambda self: False),
+            ),
+        ):
             svc = CredentialService()
             assert svc.is_persistent is False
-
-    def test_backend_name_without_keyring(self):
-        with patch("pfsentinel.services.credentials._KEYRING_AVAILABLE", False):
-            svc = CredentialService()
             assert "in-memory" in svc.backend_name()
+            svc.store("home-fw", "hunter2")
+            assert svc.get("home-fw") == "hunter2"  # memory still works
