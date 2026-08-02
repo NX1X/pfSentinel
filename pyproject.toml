@@ -32,7 +32,6 @@ dependencies = [
     "httpx>=0.28.1,<1",
     "pyyaml>=6.0.3,<7",
     "cryptography>=48.0.1,<49",
-    "loguru>=0.7,<1",
     "packaging>=24.0,<25",
     "requests>=2.34.2,<3",
     # urllib3: transitive via requests/httpx; floor enforces CVE-2026-44431 / CVE-2026-44432 fix (>=2.7.0)

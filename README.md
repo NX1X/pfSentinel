@@ -90,7 +90,6 @@ pfSentinel is built on these open-source libraries:
 | [Paramiko](https://github.com/paramiko/paramiko) | LGPL-2.1 | SSH/SFTP connections |
 | [httpx](https://github.com/encode/httpx) | BSD-3-Clause | HTTPS requests |
 | [cryptography](https://github.com/pyca/cryptography) | Apache-2.0 / BSD-3-Clause | SSH key handling |
-| [Loguru](https://github.com/Delgan/loguru) | MIT | Logging |
 | [PyYAML](https://github.com/yaml/pyyaml) | MIT | YAML parsing |
 | [Requests](https://github.com/psf/requests) | Apache-2.0 | HTTP client |
 | [Packaging](https://github.com/pypa/packaging) | Apache-2.0 / BSD-2-Clause | Version parsing |

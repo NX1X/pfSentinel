@@ -6,12 +6,14 @@ import logging
 from urllib.parse import urlparse
 
 import requests
-from loguru import logger
 
 from pfsentinel.models.backup import BackupRecord
 from pfsentinel.models.config import NotificationConfig
 from pfsentinel.services.credentials import CredentialService
+from pfsentinel.utils.logging import get_logger
 from pfsentinel.utils.platform import is_windows
+
+logger = get_logger(__name__)
 
 
 class NotificationService:

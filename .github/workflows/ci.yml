@@ -316,7 +316,6 @@ jobs:
             --hidden-import lxml \
             --hidden-import lxml.etree \
             --hidden-import lxml._elementpath \
-            --hidden-import loguru \
             --hidden-import pfsentinel.cli.commands.backup \
             --hidden-import pfsentinel.cli.commands.config \
             --hidden-import pfsentinel.cli.commands.device \

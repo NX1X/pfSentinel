@@ -16,7 +16,6 @@
 | requests | >=2.31.0 | Apache-2.0 | Yes | HTTP client |
 | urllib3 | (via requests) | MIT | Yes | Indirect dependency |
 | cryptography | >=44.0.0 | Apache-2.0 OR BSD-3-Clause | Yes | SSH key handling |
-| loguru | >=0.7 | MIT | Yes | Logging |
 | pyyaml | >=6.0.0 | MIT | Yes | YAML parsing |
 | packaging | >=24.0 | Apache-2.0 / BSD-2-Clause | Yes | Version parsing |
 | keyring | >=25.0 | MIT | Yes | OS credential storage |

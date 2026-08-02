@@ -8,10 +8,11 @@ import re
 from collections.abc import Callable
 from pathlib import Path
 
-from loguru import logger
-
 from pfsentinel.models.device import ConnectionMethod, DeviceConfig, DeviceStatus
 from pfsentinel.services.credentials import CredentialService
+from pfsentinel.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 ProgressCallback = Callable[[str, int], None]
 
@@ -84,7 +85,7 @@ class SSHConnector:
             # Strict mode: reject any host not already in known_hosts.
             client.set_missing_host_key_policy(paramiko.RejectPolicy())  # type: ignore[attr-defined]
         else:
-            # Permissive mode: log unknown host keys via loguru but allow connection.
+            # Permissive mode: log unknown host keys but allow connection.
             # Pragmatic default for homelab use where host keys change on firmware
             # updates / reinstalls. Do NOT use AutoAddPolicy — it silently accepts
             # any key without logging.

@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from loguru import logger
-
 from pfsentinel.services.secret_store import (
     EncryptedFileStore,
     SecretStoreError,
     default_store_dir,
 )
+from pfsentinel.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 try:
     import keyring

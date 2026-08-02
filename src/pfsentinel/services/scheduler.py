@@ -5,9 +5,8 @@ from __future__ import annotations
 import threading
 from datetime import datetime, time, timedelta
 
-from loguru import logger
-
 from pfsentinel.models.config import ScheduleConfig
+from pfsentinel.utils.logging import get_logger
 from pfsentinel.utils.platform import (
     create_windows_task,
     delete_windows_task,
@@ -15,6 +14,8 @@ from pfsentinel.utils.platform import (
     is_windows,
     query_windows_task,
 )
+
+logger = get_logger(__name__)
 
 # datetime.weekday(): Monday is 0, Sunday is 6.
 _WEEKDAYS = {

@@ -6,13 +6,14 @@ import shlex
 from collections.abc import Callable
 from datetime import datetime
 
-from loguru import logger
-
 from pfsentinel.models.backup import BackupRecord, BackupType
 from pfsentinel.models.config import AppConfig
 from pfsentinel.services.connection import SSHConnector
 from pfsentinel.services.credentials import CredentialService
 from pfsentinel.utils import checksum, naming
+from pfsentinel.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 ProgressCallback = Callable[[str, int], None]
 

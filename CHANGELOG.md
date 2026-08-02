@@ -33,9 +33,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Replace the abandoned `schedule` package with stdlib `threading` + `datetime` for the in-process scheduler. Besides removing a dependency with no upstream commit in two years, this fixes a latent flaw: the old loop polled every 30 seconds, so `pfs schedule disable` (and process shutdown) could block for up to that long. The new loop waits on a `threading.Event` until the next run is actually due, so stopping is immediate. The schedule arithmetic is now pure functions (`next_daily_run`, `next_weekly_run`), covered by 15 new tests - previously untestable because `schedule` owned the clock internally
 
+- Replace `loguru` with stdlib `logging` (`utils/logging.py`). This also makes `log_level` in `config.json` do something: it was declared with a default of `INFO` but never applied, because loguru used its own default regardless. `configure_logging()` now runs at CLI startup with the configured level, falling back to `INFO` if the config cannot be read
+- The TUI log screen's loguru sink is now a `logging.Handler`. Console and TUI levels are tracked separately, so opening the log screen (which forces DEBUG so the widget sees everything) no longer floods stderr with debug output
+
 ### Removed
 
 - `defusedxml` is no longer a runtime dependency
+- `loguru` is no longer a dependency
 - `schedule` is no longer a dependency
 - `keyrings.alt` is no longer a dependency (see the encrypted file store above). `keyring` itself stays - it is actively maintained and still provides the preferred OS-backed path on Windows and Linux desktops
 - `click` is no longer a direct dependency. It was declared only because the CLI imported it for `click.Abort`; now that the handlers correctly catch `typer.Abort`, typer's vendored copy is the only one needed. The PyInstaller `--hidden-import click` workaround added in 0.1.5 is removed with it

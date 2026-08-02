@@ -10,6 +10,10 @@ import tempfile
 from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
 
+from pfsentinel.utils.logging import get_logger
+
+logger = get_logger(__name__)
+
 
 def is_windows() -> bool:
     return sys.platform == "win32"
@@ -200,8 +204,6 @@ def create_windows_task(
             check=False,
         )
         if result.returncode != 0:
-            from loguru import logger
-
             stderr = (result.stderr or "").strip() or (result.stdout or "").strip()
             logger.error(f"schtasks /Create failed for '{task_name}': {stderr}")
         return result.returncode == 0

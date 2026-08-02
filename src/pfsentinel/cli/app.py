@@ -235,8 +235,21 @@ def setup() -> None:
     return None
 
 
+def _configure_logging_from_config() -> None:
+    from pfsentinel.utils.logging import configure_logging
+
+    try:
+        from pfsentinel.models.config import AppConfig
+
+        level = AppConfig.load().log_level
+    except Exception:
+        level = "INFO"
+    configure_logging(level)
+
+
 def main_entry() -> None:
     """Entry point for the CLI."""
+    _configure_logging_from_config()
     app()
 
 

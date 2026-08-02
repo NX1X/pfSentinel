@@ -37,7 +37,10 @@ from pathlib import Path
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from loguru import logger
+
+from pfsentinel.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 # AES-GCM standard nonce length. Never reuse a nonce with the same key -
 # a fresh one is drawn for every write.
