@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import click
 import typer
 
 from pfsentinel.cli.formatters import console, print_error, print_info, print_success, print_warning
@@ -50,7 +49,7 @@ def telegram_setup() -> None:
 
     try:
         token = typer.prompt("Bot token", hide_input=True)
-    except click.Abort:
+    except typer.Abort:
         print_info("Aborted.")
         return
 
@@ -64,7 +63,7 @@ def telegram_setup() -> None:
         console.print(f"[green]Detected chat ID:[/] {detected}")
         try:
             use_detected = typer.confirm("Use this chat ID?", default=True)
-        except click.Abort:
+        except typer.Abort:
             print_info("Aborted.")
             return
         if use_detected:
@@ -72,7 +71,7 @@ def telegram_setup() -> None:
         else:
             try:
                 chat_id = typer.prompt("Enter chat ID manually")
-            except click.Abort:
+            except typer.Abort:
                 print_info("Aborted.")
                 return
     else:
@@ -83,7 +82,7 @@ def telegram_setup() -> None:
         )
         try:
             chat_id = typer.prompt("Chat ID (or press Enter to cancel)", default="")
-        except click.Abort:
+        except typer.Abort:
             print_info("Aborted.")
             return
         if not chat_id:
@@ -102,7 +101,7 @@ def telegram_setup() -> None:
     try:
         if typer.confirm("\nSend a test message now?", default=True):
             _telegram_send_test(token, chat_id)
-    except click.Abort:
+    except typer.Abort:
         pass
 
 
@@ -214,7 +213,7 @@ def slack_setup() -> None:
 
     try:
         webhook_url = typer.prompt("Webhook URL", hide_input=True)
-    except click.Abort:
+    except typer.Abort:
         print_info("Aborted.")
         return
 
@@ -234,7 +233,7 @@ def slack_setup() -> None:
     try:
         if typer.confirm("\nSend a test message now?", default=True):
             _slack_send_test(webhook_url)
-    except click.Abort:
+    except typer.Abort:
         pass
 
 

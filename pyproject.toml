@@ -22,10 +22,10 @@ classifiers = [
     "Topic :: System :: Systems Administration",
 ]
 dependencies = [
-    "typer>=0.15.0,<1",
-    # click is imported directly (cli/commands/notify.py, cli/commands/device.py);
-    # declare it explicitly since typer >=0.26 no longer pulls it transitively.
-    "click>=8.3.3,<9",
+    # typer >=0.26 vendors click, so typer.Abort is NOT click.Abort. The CLI
+    # catches typer.Abort; pinning the floor here keeps that assumption true
+    # (a pre-0.26 typer would raise the external click.Abort instead).
+    "typer>=0.26,<1",
     "rich>=13.9.0,<14",
     "pydantic>=2.10.0,<3",
     "paramiko>=5,<6",

@@ -302,7 +302,6 @@ jobs:
             --onefile \
             --console \
             --name pfs \
-            --hidden-import click \
             --hidden-import paramiko \
             --hidden-import paramiko.transport \
             --hidden-import paramiko.sftp_client \

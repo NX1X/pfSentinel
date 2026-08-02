@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Pressing Ctrl+C at an interactive prompt no longer produces an unhandled traceback. typer 0.26 vendored click, which means `typer.Abort` is no longer the same class as the external `click.Abort` - so all eight abort handlers in `pfs notify` and `pfs device add` had silently become dead code. They now catch `typer.Abort`
+- Align the runtime and dev lockfiles. `requirements.lock` resolved typer 0.25.1 while `requirements-dev.lock` resolved 0.27.0, so the test suite exercised a different (click-vendoring) typer than users installed - which is exactly why the abort bug went unnoticed. The `typer` floor is now `>=0.26` so the vendored-click assumption holds for every supported version
+
 ### Security
 
 - Replace the unmaintained `defusedxml` dependency with a hardened `lxml` parser for `config.xml`. `defusedxml` has had no release since 0.7.1 (March 2021) and no upstream commit since October 2023, which is not a safe position for the component that guards pfSentinel's only untrusted input. `lxml` was already a dependency, so this removes a package rather than swapping one. The replacement disables entity resolution, network access, DTD loading and huge trees, and additionally rejects any config carrying a DOCTYPE so entity attacks fail loudly instead of parsing with unresolved references
@@ -20,9 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add property-based fuzzing for the XML parser (`hypothesis`). `validate_xml` is pfSentinel's only untrusted-input boundary, so the suite asserts one invariant across arbitrary text, arbitrary bytes, generated XML documents, deep nesting and XML-metacharacter soup: parsing either returns a well-formed pfSense root or raises `PfSenseXMLError`, and nothing else escapes. Verified to catch a real regression - re-enabling entity resolution makes the suite fail with actual file contents in the assertion output
 
+- Remove an ineffective SSH hardening setting. `SSHConnector` passed `disabled_algorithms={"pubkeys": ["rsa-sha1", "ssh-rsa"]}`, but paramiko only filters against algorithms present in its preference tuple, and paramiko 5.0.0 offers only Ed25519, ECDSA and RSA-SHA2 - so the setting filtered nothing while reading as protection. Replaced with `TestParamikoPubkeyAlgorithms`, which asserts no SHA-1 public-key algorithm is offered and fails loudly if a future paramiko reintroduces one
+- Add `tests/unit/test_dependency_contracts.py` pinning both dependency assumptions above, so neither can regress silently
+
 ### Removed
 
 - `defusedxml` is no longer a runtime dependency
+- `click` is no longer a direct dependency. It was declared only because the CLI imported it for `click.Abort`; now that the handlers correctly catch `typer.Abort`, typer's vendored copy is the only one needed. The PyInstaller `--hidden-import click` workaround added in 0.1.5 is removed with it
 - Remove the OpenSSF Scorecard CI job. Most of its findings were not actionable for a single-maintainer repo: `Branch-Protection` was a false negative (Scorecard reads the legacy branch-protection API and cannot see the repository rulesets that are actually enforcing 11 required checks, no force-push and no deletion), and `Code-Review` scores the absence of a second reviewer. Bandit, CodeQL, zizmor, OSV-Scanner, dependency-review and pip-audit all still run - Scorecard was scoring posture, not finding vulnerabilities. Tracked for revisit in `docs-internal/WORK-STATUS.md`
 
 ## [0.1.5] - 2026-07-12
