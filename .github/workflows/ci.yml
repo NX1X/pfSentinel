@@ -32,6 +32,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
+        with:
+          persist-credentials: false
 
       - name: Set up Python 3.14
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
@@ -39,8 +41,8 @@ jobs:
           python-version: '3.14'
           cache: 'pip'
 
-      - name: Install ruff
-        run: pip install "ruff>=0.11,<0.12"
+      - name: Install dev dependencies (hash-verified)
+        run: 'python -m pip install --only-binary :all: --require-hashes --no-deps -r requirements-dev.lock'
 
       - name: Run ruff lint
         run: ruff check src/ tests/
@@ -59,6 +61,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
+        with:
+          persist-credentials: false
 
       - name: Set up Python 3.14
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
@@ -66,21 +70,21 @@ jobs:
           python-version: '3.14'
           cache: 'pip'
 
-      - name: Install package and audit tools
+      - name: Install dev dependencies (hash-verified) + pfSentinel
         run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          python -m pip install --only-binary :all: --require-hashes --no-deps -r requirements-dev.lock
+          python -m pip install --no-deps --no-build-isolation -e .
 
       - name: Run pip-audit (vulnerability scan)
         run: |
           sed '/^ *--hash=/d' requirements.lock | sed 's/ *\\$//' > /tmp/audit-requirements.txt
-          pip-audit --strict --desc on --ignore-vuln CVE-2026-44405 -r /tmp/audit-requirements.txt  # paramiko SHA-1; no fixed release yet
+          pip-audit --strict --desc on -r /tmp/audit-requirements.txt
 
       - name: Verify dependency hashes against lock file
         run: |
           if [ -f requirements.lock ]; then
             echo "Lock file found — verifying hashes..."
-            pip install --require-hashes --dry-run -r requirements.lock
+            python -m pip install --only-binary :all: --require-hashes --dry-run -r requirements.lock
             echo "Hash verification passed."
           else
             echo "::warning::No requirements.lock found. Run 'pip-compile --generate-hashes pyproject.toml -o requirements.lock' to enable hash verification."
@@ -103,6 +107,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
+        with:
+          persist-credentials: false
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
@@ -110,11 +116,11 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: 'pip'
 
-      - name: Install package with dev dependencies
+      - name: Install dev dependencies (hash-verified) + pfSentinel
         shell: bash
         run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          python -m pip install --only-binary :all: --require-hashes --no-deps -r requirements-dev.lock
+          python -m pip install --no-deps --no-build-isolation -e .
 
       - name: Run pytest with coverage
         shell: bash
@@ -166,6 +172,7 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Resolve version
         id: decide
@@ -207,7 +214,7 @@ jobs:
           fi
 
           VERSION=$(echo "$VERSIONED_HEADER" | sed -E 's/.*## \[([^]]+)\].*/\1/')
-          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+'; then
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
             echo "Version '$VERSION' is not semver — skipping."
             echo "should_release=false" >> "$GITHUB_OUTPUT"
             exit 0
@@ -267,6 +274,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
+        with:
+          persist-credentials: false
 
       - name: Set up Python 3.14
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
@@ -274,10 +283,10 @@ jobs:
           python-version: '3.14'
           cache: 'pip'
 
-      - name: Install dependencies and PyInstaller
+      - name: Install dev dependencies (hash-verified) + pfSentinel
         run: |
-          python -m pip install --upgrade pip
-          pip install -e "." pyinstaller
+          python -m pip install --only-binary :all: --require-hashes --no-deps -r requirements-dev.lock
+          python -m pip install --no-deps --no-build-isolation -e .
 
       - name: Patch version
         shell: bash
@@ -293,6 +302,7 @@ jobs:
             --onefile \
             --console \
             --name pfs \
+            --hidden-import click \
             --hidden-import paramiko \
             --hidden-import paramiko.transport \
             --hidden-import paramiko.sftp_client \
@@ -344,6 +354,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
+        with:
+          persist-credentials: false
 
       - name: Set up Python 3.14
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
@@ -351,10 +363,11 @@ jobs:
           python-version: '3.14'
           cache: 'pip'
 
-      - name: Install dependencies and PyInstaller
+      - name: Install dev dependencies (hash-verified) + pfSentinel
+        shell: bash
         run: |
-          python -m pip install --upgrade pip
-          pip install -e "." pyinstaller winotify
+          python -m pip install --only-binary :all: --require-hashes --no-deps -r requirements-dev.lock
+          python -m pip install --no-deps --no-build-isolation -e .
 
       - name: Patch version
         shell: bash
@@ -367,6 +380,10 @@ jobs:
       - name: Build Windows .exe
         shell: bash
         run: python scripts/build_exe.py
+
+      - name: Smoke test
+        shell: bash
+        run: dist/pfs.exe --version
 
       - name: Upload Windows binary
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6
@@ -387,6 +404,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6
+        with:
+          persist-credentials: false
 
       - name: Set up Python 3.14
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
@@ -394,10 +413,8 @@ jobs:
           python-version: '3.14'
           cache: 'pip'
 
-      - name: Install build tooling
-        run: |
-          python -m pip install --upgrade pip
-          pip install build twine
+      - name: Install build tooling (hash-verified)
+        run: 'python -m pip install --only-binary :all: --require-hashes --no-deps -r requirements-dev.lock'
 
       - name: Patch version
         shell: bash
@@ -452,20 +469,20 @@ jobs:
         shell: bash
         run: |
           cd release_files
-          sha256sum * > checksums-sha256.txt
+          sha256sum ./* > checksums-sha256.txt
           cat checksums-sha256.txt
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2
-        with:
-          tag_name: ${{ needs.resolve-version.outputs.tag }}
-          name: pfSentinel ${{ needs.resolve-version.outputs.tag }}
-          body_path: artifacts/release-notes/release_notes.md
-          draft: false
-          prerelease: false
-          files: release_files/*
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.resolve-version.outputs.tag }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "pfSentinel $RELEASE_TAG" \
+            --notes-file artifacts/release-notes/release_notes.md \
+            ./release_files/*
 
   # ---------------------------------------------------------------------------
   # 9. Publish to TestPyPI (trusted publishing / OIDC)

@@ -70,6 +70,7 @@ a = Analysis(
     binaries=[],
     datas=[],
     hiddenimports=[
+        'click',
         'paramiko',
         'paramiko.transport',
         'paramiko.sftp_client',

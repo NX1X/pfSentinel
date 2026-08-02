@@ -18,6 +18,7 @@ from typer.testing import CliRunner
 from pfsentinel.models.config import AppConfig, BackupPolicy, NotificationConfig
 from pfsentinel.models.device import ConnectionMethod, DeviceConfig
 from pfsentinel.services.credentials import CredentialService
+from tests.e2e.fake_https_server import FakeHTTPSServer
 from tests.e2e.fake_ssh_server import FakeSSHServer
 
 
@@ -103,5 +104,71 @@ def seeded_config(
 
     creds = CredentialService()
     creds.store("home-fw", ssh_server.password)
+
+    return config
+
+
+@pytest.fixture
+def https_server(sample_xml: str) -> Iterator[FakeHTTPSServer]:
+    """Spin up a local HTTPS server on 127.0.0.1:<random port>.
+
+    Pre-seeds the backup XML with SAMPLE_XML from the root conftest.
+    Tests can overwrite via server.set_config_xml(...) before invoking
+    the CLI.
+    """
+    server = FakeHTTPSServer.start(
+        username="admin",
+        password="hunter2",
+        config_xml=sample_xml,
+    )
+    try:
+        yield server
+    finally:
+        server.stop()
+
+
+@pytest.fixture
+def seeded_https_config(
+    e2e_home: Path,
+    https_server: FakeHTTPSServer,
+    tmp_path: Path,
+) -> AppConfig:
+    """Persist a config with one device ('home-fw-https') pointed at the fake HTTPS server.
+
+    Uses HTTPS as the primary method with no fallback, and points
+    ca_cert_path at the fake server's self-signed cert so verify_ssl=True
+    still succeeds.
+    """
+    backup_root = tmp_path / "backups-https"
+    backup_root.mkdir()
+
+    config = AppConfig(
+        backup_policy=BackupPolicy(
+            backup_root=backup_root,
+            max_backups_per_device=10,
+            compress=True,
+        ),
+        notifications=NotificationConfig(
+            notify_on_success=False,
+            notify_on_failure=False,
+        ),
+    )
+    device = DeviceConfig(
+        id="home-fw-https",
+        label="Home pfSense (HTTPS)",
+        host=https_server.host,
+        primary_method=ConnectionMethod.HTTPS,
+        fallback_method=None,
+        https_port=https_server.port,
+        username=https_server.username,
+        ca_cert_path=https_server.cert_pem_path,
+        verify_ssl=True,
+        timeout=10,
+    )
+    config.add_device(device)
+    config.save()
+
+    creds = CredentialService()
+    creds.store("home-fw-https", https_server.password)
 
     return config

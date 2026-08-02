@@ -12,6 +12,9 @@
 
   "minimumReleaseAge": "14 days",
 
+  "description": "abandonmentThreshold is raised to 3 years because Renovate detects abandonment from release cadence alone, which mislabels healthy low-release-frequency projects (loguru had 73 commits in the last 12 months but no release since 0.7.3). 3 years still surfaces genuinely dead deps.",
+  "abandonmentThreshold": "3 years",
+
   "labels": ["dependencies"],
   "assignees": ["NX1X"],
   "reviewers": ["NX1X"],
@@ -44,7 +47,8 @@
 
   "pip-compile": {
     "managerFilePatterns": [
-      "/(^|/)requirements\\.lock$/"
+      "/(^|/)requirements\\.lock$/",
+      "/(^|/)requirements-dev\\.lock$/"
     ]
   },
 
