@@ -212,7 +212,7 @@ def setup() -> None:
             console.print("[yellow]Warning: No persistent keyring found.[/]")
             console.print("[yellow]Password will be lost when process exits.[/]")
             console.print(
-                "[dim]Install keyrings.alt for persistent storage: pip install keyrings.alt[/]"
+                "[dim]Install a system keyring (gnome-keyring / kwallet) for OS-backed storage.[/]"
             )
 
     if ssh_key_path:
@@ -235,8 +235,21 @@ def setup() -> None:
     return None
 
 
+def _configure_logging_from_config() -> None:
+    from pfsentinel.utils.logging import configure_logging
+
+    try:
+        from pfsentinel.models.config import AppConfig
+
+        level = AppConfig.load().log_level
+    except Exception:
+        level = "INFO"
+    configure_logging(level)
+
+
 def main_entry() -> None:
     """Entry point for the CLI."""
+    _configure_logging_from_config()
     app()
 
 

@@ -70,7 +70,6 @@ a = Analysis(
     binaries=[],
     datas=[],
     hiddenimports=[
-        'click',
         'paramiko',
         'paramiko.transport',
         'paramiko.sftp_client',
@@ -88,8 +87,6 @@ a = Analysis(
         'lxml',
         'lxml.etree',
         'lxml._elementpath',
-        'schedule',
-        'loguru',
         'pfsentinel.cli.commands.backup',
         'pfsentinel.cli.commands.config',
         'pfsentinel.cli.commands.device',

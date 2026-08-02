@@ -125,12 +125,16 @@ jobs:
       - name: Run pytest with coverage
         shell: bash
         run: |
+          # -q not -v: with ~600 tests, -v buries the failure under hundreds of
+          # PASSED lines and makes the log impractical to read or paste.
+          # -ra prints a short reason summary for every non-passing test.
           pytest tests/ \
             --tb=short \
+            -ra \
             --cov=src/pfsentinel \
             --cov-report=term-missing \
             --cov-report=xml:coverage.xml \
-            -v
+            -q
 
       - name: Upload coverage report (Ubuntu / Python 3.14 only)
         if: matrix.python-version == '3.14' && matrix.os == 'ubuntu-latest'
@@ -302,7 +306,6 @@ jobs:
             --onefile \
             --console \
             --name pfs \
-            --hidden-import click \
             --hidden-import paramiko \
             --hidden-import paramiko.transport \
             --hidden-import paramiko.sftp_client \
@@ -312,15 +315,11 @@ jobs:
             --hidden-import cryptography.hazmat.backends \
             --hidden-import cryptography.hazmat.backends.openssl \
             --hidden-import keyring.backends.fail \
-            --hidden-import keyrings.alt \
-            --hidden-import keyrings.alt.file \
             --hidden-import rich \
             --hidden-import pydantic \
             --hidden-import lxml \
             --hidden-import lxml.etree \
             --hidden-import lxml._elementpath \
-            --hidden-import schedule \
-            --hidden-import loguru \
             --hidden-import pfsentinel.cli.commands.backup \
             --hidden-import pfsentinel.cli.commands.config \
             --hidden-import pfsentinel.cli.commands.device \

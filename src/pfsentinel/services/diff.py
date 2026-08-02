@@ -5,10 +5,11 @@ from __future__ import annotations
 import difflib
 from pathlib import Path
 
-from loguru import logger
-
 from pfsentinel.models.backup import BackupIndex, BackupRecord, ChangeCategory
 from pfsentinel.utils import compression, xml_parser
+from pfsentinel.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class DiffService:

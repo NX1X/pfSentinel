@@ -8,10 +8,11 @@ import re
 from collections.abc import Callable
 from pathlib import Path
 
-from loguru import logger
-
 from pfsentinel.models.device import ConnectionMethod, DeviceConfig, DeviceStatus
 from pfsentinel.services.credentials import CredentialService
+from pfsentinel.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 ProgressCallback = Callable[[str, int], None]
 
@@ -84,7 +85,7 @@ class SSHConnector:
             # Strict mode: reject any host not already in known_hosts.
             client.set_missing_host_key_policy(paramiko.RejectPolicy())  # type: ignore[attr-defined]
         else:
-            # Permissive mode: log unknown host keys via loguru but allow connection.
+            # Permissive mode: log unknown host keys but allow connection.
             # Pragmatic default for homelab use where host keys change on firmware
             # updates / reinstalls. Do NOT use AutoAddPolicy — it silently accepts
             # any key without logging.
@@ -100,10 +101,6 @@ class SSHConnector:
             port=self.device.ssh_port,
             username=self.device.username,
             timeout=self.device.timeout,
-            # Refuse legacy SHA-1-based signature algorithms during kex/user-auth.
-            # Independent of paramiko>=5 CVE-2026-44405 fix — belt and suspenders.
-            # DevSkim: ignore DS126858 — algorithm names in a deny-list, not usage.
-            disabled_algorithms={"pubkeys": ["rsa-sha1", "ssh-rsa"]},
         )
 
         if self.device.ssh_key_path:

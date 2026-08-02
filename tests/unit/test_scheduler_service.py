@@ -10,6 +10,8 @@ query_windows_task on non-Windows).
 from __future__ import annotations
 
 import sys
+from datetime import datetime
+from datetime import time as dt_time
 from unittest.mock import patch
 
 import pytest
@@ -337,3 +339,123 @@ class TestQueryWindowsTaskNonWindows:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestScheduleTimeArithmetic:
+    """The stdlib replacement for the abandoned `schedule` package.
+
+    These were untestable before - `schedule` owned the clock internally.
+    """
+
+    def test_parse_hhmm_valid(self):
+        from pfsentinel.services.scheduler import parse_hhmm
+
+        assert parse_hhmm("03:00") == dt_time(3, 0)
+        assert parse_hhmm("23:59") == dt_time(23, 59)
+        assert parse_hhmm(" 07:05 ") == dt_time(7, 5)
+
+    @pytest.mark.parametrize("bad", ["24:00", "12:60", "-1:00", "abc", "", "12"])
+    def test_parse_hhmm_rejects_garbage(self, bad):
+        from pfsentinel.services.scheduler import parse_hhmm
+
+        with pytest.raises(ValueError):
+            parse_hhmm(bad)
+
+    def test_daily_later_today(self):
+        from pfsentinel.services.scheduler import next_daily_run
+
+        now = datetime(2026, 8, 2, 1, 0)
+        assert next_daily_run(now, "03:00") == datetime(2026, 8, 2, 3, 0)
+
+    def test_daily_rolls_to_tomorrow_when_passed(self):
+        from pfsentinel.services.scheduler import next_daily_run
+
+        now = datetime(2026, 8, 2, 5, 0)
+        assert next_daily_run(now, "03:00") == datetime(2026, 8, 3, 3, 0)
+
+    def test_daily_exactly_now_rolls_forward(self):
+        """A slot equal to now must not fire twice."""
+        from pfsentinel.services.scheduler import next_daily_run
+
+        now = datetime(2026, 8, 2, 3, 0, 0)
+        assert next_daily_run(now, "03:00") == datetime(2026, 8, 3, 3, 0)
+
+    def test_weekly_later_this_week(self):
+        from pfsentinel.services.scheduler import next_weekly_run
+
+        now = datetime(2026, 8, 2, 1, 0)  # Sunday
+        assert next_weekly_run(now, "wednesday", "04:00") == datetime(2026, 8, 5, 4, 0)
+
+    def test_weekly_same_day_later_today(self):
+        from pfsentinel.services.scheduler import next_weekly_run
+
+        now = datetime(2026, 8, 2, 1, 0)  # Sunday
+        assert next_weekly_run(now, "sunday", "04:00") == datetime(2026, 8, 2, 4, 0)
+
+    def test_weekly_same_day_already_passed_rolls_a_week(self):
+        from pfsentinel.services.scheduler import next_weekly_run
+
+        now = datetime(2026, 8, 2, 6, 0)  # Sunday, past 04:00
+        assert next_weekly_run(now, "sunday", "04:00") == datetime(2026, 8, 9, 4, 0)
+
+    def test_weekly_unknown_day_returns_none(self):
+        from pfsentinel.services.scheduler import next_weekly_run
+
+        assert next_weekly_run(datetime(2026, 8, 2), "notaday", "04:00") is None
+
+    def test_weekly_day_is_case_insensitive(self):
+        from pfsentinel.services.scheduler import next_weekly_run
+
+        now = datetime(2026, 8, 2, 1, 0)
+        assert next_weekly_run(now, "SuNdAy", "04:00") == datetime(2026, 8, 2, 4, 0)
+
+    def test_next_run_picks_the_earlier_of_daily_and_weekly(self):
+        cfg = ScheduleConfig(
+            enabled=True,
+            daily_enabled=True,
+            daily_time="03:00",
+            weekly_enabled=True,
+            weekly_day="sunday",
+            weekly_time="04:00",
+        )
+        svc = SchedulerService(cfg)
+        now = datetime(2026, 8, 2, 1, 0)  # Sunday; daily 03:00 beats weekly 04:00
+        assert svc.next_run_after(now) == datetime(2026, 8, 2, 3, 0)
+
+    def test_next_run_none_when_nothing_enabled(self):
+        cfg = ScheduleConfig(enabled=True, daily_enabled=False, weekly_enabled=False)
+        assert SchedulerService(cfg).next_run_after(datetime(2026, 8, 2)) is None
+
+
+class TestInProcessLifecycle:
+    def test_start_refuses_when_nothing_enabled(self):
+        cfg = ScheduleConfig(enabled=True, daily_enabled=False, weekly_enabled=False)
+        assert SchedulerService(cfg).start_in_process() is False
+
+    def test_stop_interrupts_promptly(self):
+        """stop_in_process must not wait for the next scheduled slot."""
+        import time as _time
+
+        cfg = ScheduleConfig(
+            enabled=True, daily_enabled=True, daily_time="03:00", weekly_enabled=False
+        )
+        svc = SchedulerService(cfg)
+        assert svc.start_in_process() is True
+
+        started = _time.monotonic()
+        svc.stop_in_process()
+        elapsed = _time.monotonic() - started
+
+        assert elapsed < 2.0, f"stop took {elapsed:.1f}s; it should be near-instant"
+        assert svc._thread is None
+
+    def test_double_start_is_idempotent(self):
+        cfg = ScheduleConfig(
+            enabled=True, daily_enabled=True, daily_time="03:00", weekly_enabled=False
+        )
+        svc = SchedulerService(cfg)
+        try:
+            assert svc.start_in_process() is True
+            assert svc.start_in_process() is True
+        finally:
+            svc.stop_in_process()

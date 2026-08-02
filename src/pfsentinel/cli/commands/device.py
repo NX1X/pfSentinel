@@ -162,12 +162,12 @@ def device_add(
         creds.store(device_id, password)
         if not creds.is_persistent:
             print_warning("  Credential storage: in-memory only (no persistent keyring found).")
-            print_warning("  Install keyrings.alt for persistent storage: pip install keyrings.alt")
+            print_warning(
+                "  Install a system keyring (gnome-keyring / kwallet) for OS-backed storage."
+            )
 
     # Handle SSH key passphrase
     if ssh_key_path_str:
-        import click
-
         try:
             passphrase = typer.prompt(
                 "SSH key passphrase (leave blank if key is unencrypted)",
@@ -176,7 +176,7 @@ def device_add(
             )
             if passphrase:
                 creds.store_ssh_key_passphrase(device_id, passphrase)
-        except (click.Abort, KeyboardInterrupt):
+        except (typer.Abort, KeyboardInterrupt):
             pass  # User pressed Ctrl+C — skip passphrase storage
         except Exception as e:
             print_warning(f"Could not store SSH key passphrase: {e}")

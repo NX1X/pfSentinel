@@ -13,14 +13,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Pressing Ctrl+C at an interactive prompt no longer produces an unhandled traceback. typer 0.26 vendored click, which means `typer.Abort` is no longer the same class as the external `click.Abort` - so all eight abort handlers in `pfs notify` and `pfs device add` had silently become dead code. They now catch `typer.Abort`
+- Align the runtime and dev lockfiles. `requirements.lock` resolved typer 0.25.1 while `requirements-dev.lock` resolved 0.27.0, so the test suite exercised a different (click-vendoring) typer than users installed - which is exactly why the abort bug went unnoticed. The `typer` floor is now `>=0.26` so the vendored-click assumption holds for every supported version
+
 ### Security
 
 - Replace the unmaintained `defusedxml` dependency with a hardened `lxml` parser for `config.xml`. `defusedxml` has had no release since 0.7.1 (March 2021) and no upstream commit since October 2023, which is not a safe position for the component that guards pfSentinel's only untrusted input. `lxml` was already a dependency, so this removes a package rather than swapping one. The replacement disables entity resolution, network access, DTD loading and huge trees, and additionally rejects any config carrying a DOCTYPE so entity attacks fail loudly instead of parsing with unresolved references
 - Add `TestXxeHardening` covering classic XXE file disclosure, entity-expansion ("billion laughs"), external DTD, network entity, and blind-XXE parameter entities. The previous `defusedxml` protection had no test coverage at all, so this is the first time the XML security boundary is actually verified
 
+- Add property-based fuzzing for the XML parser (`hypothesis`). `validate_xml` is pfSentinel's only untrusted-input boundary, so the suite asserts one invariant across arbitrary text, arbitrary bytes, generated XML documents, deep nesting and XML-metacharacter soup: parsing either returns a well-formed pfSense root or raises `PfSenseXMLError`, and nothing else escapes. Verified to catch a real regression - re-enabling entity resolution makes the suite fail with actual file contents in the assertion output
+
+- Remove an ineffective SSH hardening setting. `SSHConnector` passed `disabled_algorithms={"pubkeys": ["rsa-sha1", "ssh-rsa"]}`, but paramiko only filters against algorithms present in its preference tuple, and paramiko 5.0.0 offers only Ed25519, ECDSA and RSA-SHA2 - so the setting filtered nothing while reading as protection. Replaced with `TestParamikoPubkeyAlgorithms`, which asserts no SHA-1 public-key algorithm is offered and fails loudly if a future paramiko reintroduces one
+- Add `tests/unit/test_dependency_contracts.py` pinning both dependency assumptions above, so neither can regress silently
+
+- Replace the `keyrings.alt` fallback with an own AES-256-GCM encrypted file store (`services/secret_store.py`), built on `cryptography` which was already a dependency. This fixes a real functional bug as well as removing a package: the previous fallback used `keyrings.alt`'s `EncryptedKeyring`, which **prompts for a master password on every access** - so on WSL, headless Linux and containers, scheduled backups could not retrieve credentials unattended. The new store never prompts. Secrets are sealed as a single ciphertext (so the file does not leak which keys exist), the key is 32 random bytes at 0600 in a 0700 directory, writes are atomic, and tampering is caught by the GCM authentication tag. Its threat model is documented in the module docstring: it defends against casual disclosure (backup archives, screenshares, accidental commits) but not against an attacker already executing as the same user - which is unavoidable while unattended backups must decrypt without a human
+- Isolate the encrypted store in tests. Constructing a `CredentialService` without a keyring previously wrote a real vault into the developer's `~/.pfsentinel/store` during the test run; an autouse fixture now redirects it to a tmp directory
+
+- Replace the abandoned `schedule` package with stdlib `threading` + `datetime` for the in-process scheduler. Besides removing a dependency with no upstream commit in two years, this fixes a latent flaw: the old loop polled every 30 seconds, so `pfs schedule disable` (and process shutdown) could block for up to that long. The new loop waits on a `threading.Event` until the next run is actually due, so stopping is immediate. The schedule arithmetic is now pure functions (`next_daily_run`, `next_weekly_run`), covered by 15 new tests - previously untestable because `schedule` owned the clock internally
+
+- Replace `loguru` with stdlib `logging` (`utils/logging.py`). This also makes `log_level` in `config.json` do something: it was declared with a default of `INFO` but never applied, because loguru used its own default regardless. `configure_logging()` now runs at CLI startup with the configured level, falling back to `INFO` if the config cannot be read
+- The TUI log screen's loguru sink is now a `logging.Handler`. Console and TUI levels are tracked separately, so opening the log screen (which forces DEBUG so the widget sees everything) no longer floods stderr with debug output
+
 ### Removed
 
 - `defusedxml` is no longer a runtime dependency
+- `loguru` is no longer a dependency
+- `schedule` is no longer a dependency
+- `keyrings.alt` is no longer a dependency (see the encrypted file store above). `keyring` itself stays - it is actively maintained and still provides the preferred OS-backed path on Windows and Linux desktops
+- `click` is no longer a direct dependency. It was declared only because the CLI imported it for `click.Abort`; now that the handlers correctly catch `typer.Abort`, typer's vendored copy is the only one needed. The PyInstaller `--hidden-import click` workaround added in 0.1.5 is removed with it
+- Remove the OpenSSF Scorecard CI job. Most of its findings were not actionable for a single-maintainer repo: `Branch-Protection` was a false negative (Scorecard reads the legacy branch-protection API and cannot see the repository rulesets that are actually enforcing 11 required checks, no force-push and no deletion), and `Code-Review` scores the absence of a second reviewer. Bandit, CodeQL, zizmor, OSV-Scanner, dependency-review and pip-audit all still run - Scorecard was scoring posture, not finding vulnerabilities. Tracked for revisit in `docs-internal/WORK-STATUS.md`
 
 ## [0.1.5] - 2026-07-12
 

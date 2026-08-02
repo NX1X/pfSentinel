@@ -22,27 +22,26 @@ classifiers = [
     "Topic :: System :: Systems Administration",
 ]
 dependencies = [
-    "typer>=0.15.0,<1",
-    # click is imported directly (cli/commands/notify.py, cli/commands/device.py);
-    # declare it explicitly since typer >=0.26 no longer pulls it transitively.
-    "click>=8.3.3,<9",
+    # typer >=0.26 vendors click, so typer.Abort is NOT click.Abort. The CLI
+    # catches typer.Abort; pinning the floor here keeps that assumption true
+    # (a pre-0.26 typer would raise the external click.Abort instead).
+    "typer>=0.26,<1",
     "rich>=13.9.0,<14",
     "pydantic>=2.10.0,<3",
     "paramiko>=5,<6",
     "httpx>=0.28.1,<1",
     "pyyaml>=6.0.3,<7",
     "cryptography>=48.0.1,<49",
-    "loguru>=0.7,<1",
     "packaging>=24.0,<25",
     "requests>=2.34.2,<3",
     # urllib3: transitive via requests/httpx; floor enforces CVE-2026-44431 / CVE-2026-44432 fix (>=2.7.0)
     "urllib3>=2.7.0,<3",
+    # keyring: OS keystore only (Windows Credential Manager, SecretService).
+    # The headless fallback is our own AES-GCM store in services/secret_store.py.
     "keyring>=25.0,<26",
-    "keyrings.alt>=5.0,<6",
     # lxml: HTML parsing for the pfSense web UI, and the hardened XML parser
     # used for config.xml (see utils/xml_parser.py - XXE/entity protection).
     "lxml>=6.1.1,<7",
-    "schedule>=1.2,<2",
 ]
 
 [project.urls]
@@ -59,6 +58,9 @@ dev = [
     "pytest>=9.1.1,<10",
     "pytest-cov>=6.0.0,<7",
     "responses>=0.25.0,<1",
+    # hypothesis: property-based fuzzing of the XML parser, which is the only
+    # place pfSentinel parses untrusted network input (tests/unit/test_xml_parser_fuzz.py)
+    "hypothesis>=6.100,<7",
     "mypy>=1.14.0,<2",
     "types-paramiko>=3.5.0,<4",
     "types-pyyaml>=6.0.0,<7",
