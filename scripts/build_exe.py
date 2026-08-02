@@ -87,7 +87,6 @@ a = Analysis(
         'lxml',
         'lxml.etree',
         'lxml._elementpath',
-        'schedule',
         'loguru',
         'pfsentinel.cli.commands.backup',
         'pfsentinel.cli.commands.config',

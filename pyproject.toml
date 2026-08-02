@@ -43,7 +43,6 @@ dependencies = [
     # lxml: HTML parsing for the pfSense web UI, and the hardened XML parser
     # used for config.xml (see utils/xml_parser.py - XXE/entity protection).
     "lxml>=6.1.1,<7",
-    "schedule>=1.2,<2",
 ]
 
 [project.urls]
