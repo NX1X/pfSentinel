@@ -6,8 +6,10 @@ import threading
 from datetime import datetime, time, timedelta
 
 from pfsentinel.models.config import ScheduleConfig
+from pfsentinel.utils import unix_schedule
 from pfsentinel.utils.logging import get_logger
 from pfsentinel.utils.platform import (
+    app_config_dir,
     create_windows_task,
     delete_windows_task,
     get_executable_path,
@@ -74,9 +76,13 @@ _WEEKLY_TASK_NAME = "pfSentinel\\WeeklyBackup"
 class SchedulerService:
     """Manages scheduled backup jobs.
 
-    Supports two backends:
-    - Windows Task Scheduler (schtasks.exe) - persists after process exit
-    - In-process scheduler (stdlib threading) - lives with the process
+    Backends. The first three persist after the process exits; the last does not:
+    - Windows Task Scheduler (schtasks.exe)
+    - systemd user timers (Linux)
+    - cron (Linux without a systemd user manager, macOS)
+    - In-process scheduler (stdlib threading) - lives only as long as the
+      process that started it, so it is used only when the OS scheduler is
+      explicitly turned off
     """
 
     def __init__(self, config: ScheduleConfig) -> None:
@@ -84,16 +90,24 @@ class SchedulerService:
         self._thread: threading.Thread | None = None
         self._running = False
         self._stop_event = threading.Event()
+        # Which backend the last apply_schedule() used: "windows-task",
+        # "systemd", "cron" or "in-process". None if nothing was applied.
+        self.backend: str | None = None
 
     def apply_schedule(self) -> bool:
         """Create/update scheduled tasks based on config. Returns True on success."""
         if not self._config.enabled:
             return self.remove_schedule()
 
-        if self._config.use_windows_task_scheduler and is_windows():
-            return self._apply_windows_schedule()
-        else:
+        if not self._config.use_windows_task_scheduler:
+            self.backend = "in-process"
             return self.start_in_process()
+
+        if is_windows():
+            self.backend = "windows-task"
+            return self._apply_windows_schedule()
+
+        return self._apply_unix_schedule()
 
     def remove_schedule(self) -> bool:
         """Remove all scheduled tasks."""
@@ -102,6 +116,13 @@ class SchedulerService:
             if not delete_windows_task(_DAILY_TASK_NAME):
                 success = False
             if not delete_windows_task(_WEEKLY_TASK_NAME):
+                success = False
+        else:
+            # Remove from both backends: the schedule may have been applied
+            # with systemd on one run and cron on another.
+            if not unix_schedule.remove_systemd_timers():
+                success = False
+            if not unix_schedule.remove_cron():
                 success = False
         self.stop_in_process()
         return success
@@ -146,6 +167,54 @@ class SchedulerService:
                 )
 
         return success
+
+    def _backup_argv(self) -> list[str]:
+        executable, prefix_args = get_executable_path()
+        return [executable, *prefix_args.split(), "backup", "run"]
+
+    def _unix_spec(self) -> tuple[str | None, tuple[str, str] | None]:
+        daily = self._config.daily_time if self._config.daily_enabled else None
+        weekly = (
+            (self._config.weekly_day, self._config.weekly_time)
+            if self._config.weekly_enabled
+            else None
+        )
+        return daily, weekly
+
+    def _apply_unix_schedule(self) -> bool:
+        """Install systemd user timers, or cron entries when systemd is absent."""
+        daily, weekly = self._unix_spec()
+        if daily is None and weekly is None:
+            logger.error("Neither daily nor weekly backups are enabled - nothing to schedule")
+            return False
+        try:
+            unix_schedule.validate_spec(daily or "00:00")
+            if weekly is not None:
+                unix_schedule.validate_spec(weekly[1], weekly[0])
+        except unix_schedule.ScheduleSpecError as e:
+            logger.error(str(e))
+            return False
+
+        argv = self._backup_argv()
+        if unix_schedule.systemd_user_available():
+            self.backend = "systemd"
+            ok = unix_schedule.install_systemd_timers(argv, daily, weekly)
+            if ok:
+                # Do not leave a stale cron copy that would double-run backups.
+                unix_schedule.remove_cron()
+            return ok
+
+        if unix_schedule.cron_available():
+            self.backend = "cron"
+            log_path = app_config_dir() / "logs" / "scheduled.log"
+            return unix_schedule.install_cron(argv, daily, weekly, log_path)
+
+        logger.error(
+            "No persistent scheduler found: need a systemd user session or crontab. "
+            "Install cron, or run 'pfs backup run' from another scheduler."
+        )
+        self.backend = None
+        return False
 
     def next_run_after(self, now: datetime) -> datetime | None:
         """Return the next scheduled run strictly after ``now``, or None.
@@ -244,5 +313,9 @@ class SchedulerService:
             weekly = query_windows_task(_WEEKLY_TASK_NAME)
             status["windows_daily"] = daily
             status["windows_weekly"] = weekly
+        elif not is_windows():
+            status["systemd_daily"] = unix_schedule.query_systemd_timer(unix_schedule.DAILY_TIMER)
+            status["systemd_weekly"] = unix_schedule.query_systemd_timer(unix_schedule.WEEKLY_TIMER)
+            status["cron_entries"] = unix_schedule.query_cron()
 
         return status

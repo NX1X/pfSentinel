@@ -24,7 +24,7 @@ If you have a request or an idea, I'd love to hear it — please [open a feature
 - **Filesystem archives** (tar.gz) as a non-ZFS fallback
 - **Change detection** -- only saves when config sections actually change
 - **SHA-256 verification** for every backup file
-- **Scheduled backups** via Windows Task Scheduler or cron
+- **Scheduled backups** via Windows Task Scheduler, systemd user timers or cron
 - **Notifications** -- Telegram, Slack, Windows toast, Windows Event Log
 - **SSH key authentication** -- no password required
 - **Credential security** -- passwords stored in OS keyring, never in config files

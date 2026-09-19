@@ -301,13 +301,23 @@ pfs config set backup-dir /path/to/backups
 pfs schedule enable --daily-time 02:00
 ```
 
-**Windows:** Creates a Windows Task Scheduler task that runs automatically, even after reboots.
+`pfs schedule enable` hands the schedule to your operating system, so backups keep running after the command exits and after reboots.
 
-**Linux/macOS:** Uses an in-process scheduler. For persistent scheduling, use cron:
+**Windows:** registers `pfSentinel\DailyBackup` (and `WeeklyBackup`) in Task Scheduler. Run it from an Administrator PowerShell. Tasks run while you are signed in (a locked screen counts). A run missed while you were signed out or the machine was off starts at your next sign-in.
 
-```cron
-0 2 * * * /usr/local/bin/pfs backup run >> ~/.pfsentinel/cron.log 2>&1
+**Linux:** installs systemd user timers (`pfsentinel-daily.timer`, `pfsentinel-weekly.timer`). A run missed while the machine was off starts at the next boot. By default, user timers only fire while you are logged in. To back up while logged out (servers, headless boxes), enable lingering once:
+
+```bash
+loginctl enable-linger $USER
 ```
+
+Logs: `journalctl --user -u pfsentinel-backup.service`
+
+**No systemd (WSL without systemd, containers, macOS):** falls back to cron. pfSentinel adds its own tagged lines to your crontab and leaves the rest alone. Logs go to `~/.pfsentinel/logs/scheduled.log`.
+
+**Credentials and unattended runs:** on a Linux desktop, passwords live in your desktop keyring (GNOME Keyring or KWallet), which stays locked until you log in. A backup that runs before login cannot read them. On headless systems pfSentinel uses its encrypted file store, which works unattended.
+
+To run the scheduler only inside the current process instead (for example inside a container whose main process is pfSentinel), pass `--no-task-scheduler`.
 
 ### Disable
 

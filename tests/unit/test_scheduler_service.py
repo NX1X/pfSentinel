@@ -127,21 +127,80 @@ class TestApplySchedule:
             result = svc.apply_schedule()
         assert result is False
 
-    def test_non_windows_falls_back_to_in_process(self):
-        cfg = ScheduleConfig(
-            enabled=True,
-            daily_enabled=True,
-            weekly_enabled=False,
-            use_windows_task_scheduler=True,
-        )
-        svc = SchedulerService(cfg)
+    def _unix_cfg(self, **kw):
+        base = dict(enabled=True, daily_enabled=True, weekly_enabled=False)
+        base.update(kw)
+        return ScheduleConfig(**base)
+
+    def test_non_windows_prefers_systemd(self):
+        svc = SchedulerService(self._unix_cfg(weekly_enabled=True, weekly_day="friday"))
+        us = scheduler_mod.unix_schedule
         with (
             patch.object(scheduler_mod, "is_windows", return_value=False),
-            patch.object(svc, "start_in_process", return_value=True) as mock_start,
+            patch.object(us, "systemd_user_available", return_value=True),
+            patch.object(us, "install_systemd_timers", return_value=True) as inst,
+            patch.object(us, "remove_cron", return_value=True) as rm_cron,
+            patch.object(us, "install_cron") as cron,
+            patch.object(svc, "start_in_process") as in_proc,
         ):
-            result = svc.apply_schedule()
-        assert result is True
-        mock_start.assert_called_once()
+            assert svc.apply_schedule() is True
+        assert svc.backend == "systemd"
+        argv, daily, weekly = inst.call_args.args
+        assert argv[-2:] == ["backup", "run"]
+        assert daily == "02:00"
+        assert weekly == ("friday", "03:00")
+        rm_cron.assert_called_once()  # no stale cron copy left to double-run
+        cron.assert_not_called()
+        in_proc.assert_not_called()
+
+    def test_non_windows_falls_back_to_cron(self):
+        svc = SchedulerService(self._unix_cfg())
+        us = scheduler_mod.unix_schedule
+        with (
+            patch.object(scheduler_mod, "is_windows", return_value=False),
+            patch.object(us, "systemd_user_available", return_value=False),
+            patch.object(us, "cron_available", return_value=True),
+            patch.object(us, "install_cron", return_value=True) as cron,
+        ):
+            assert svc.apply_schedule() is True
+        assert svc.backend == "cron"
+        assert cron.call_args.args[1] == "02:00"
+        assert cron.call_args.args[2] is None
+
+    def test_non_windows_without_os_scheduler_fails_instead_of_in_process(self):
+        """The in-process thread would die with the CLI, so it is not a fallback."""
+        svc = SchedulerService(self._unix_cfg())
+        us = scheduler_mod.unix_schedule
+        with (
+            patch.object(scheduler_mod, "is_windows", return_value=False),
+            patch.object(us, "systemd_user_available", return_value=False),
+            patch.object(us, "cron_available", return_value=False),
+            patch.object(svc, "start_in_process") as in_proc,
+        ):
+            assert svc.apply_schedule() is False
+        assert svc.backend is None
+        in_proc.assert_not_called()
+
+    def test_invalid_time_rejected_before_install(self):
+        svc = SchedulerService(self._unix_cfg(daily_time="25:00"))
+        us = scheduler_mod.unix_schedule
+        with (
+            patch.object(scheduler_mod, "is_windows", return_value=False),
+            patch.object(us, "systemd_user_available", return_value=True),
+            patch.object(us, "install_systemd_timers") as inst,
+        ):
+            assert svc.apply_schedule() is False
+        inst.assert_not_called()
+
+    def test_os_scheduler_disabled_uses_in_process(self):
+        svc = SchedulerService(self._unix_cfg(use_windows_task_scheduler=False))
+        with (
+            patch.object(scheduler_mod, "is_windows", return_value=False),
+            patch.object(svc, "start_in_process", return_value=True) as in_proc,
+        ):
+            assert svc.apply_schedule() is True
+        assert svc.backend == "in-process"
+        in_proc.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -174,17 +233,22 @@ class TestRemoveSchedule:
             result = svc.remove_schedule()
         assert result is False
 
-    def test_non_windows_still_stops_in_process(self):
+    def test_non_windows_removes_systemd_and_cron_and_stops_in_process(self):
         cfg = ScheduleConfig(enabled=True)
         svc = SchedulerService(cfg)
+        us = scheduler_mod.unix_schedule
         with (
             patch.object(scheduler_mod, "is_windows", return_value=False),
             patch.object(scheduler_mod, "delete_windows_task") as mock_delete,
+            patch.object(us, "remove_systemd_timers", return_value=True) as rm_sd,
+            patch.object(us, "remove_cron", return_value=True) as rm_cron,
             patch.object(svc, "stop_in_process") as mock_stop,
         ):
             result = svc.remove_schedule()
         assert result is True
         mock_delete.assert_not_called()
+        rm_sd.assert_called_once()
+        rm_cron.assert_called_once()
         mock_stop.assert_called_once()
 
 
@@ -202,8 +266,15 @@ class TestGetStatus:
             use_windows_task_scheduler=True,
         )
         svc = SchedulerService(cfg)
-        with patch.object(scheduler_mod, "is_windows", return_value=False):
+        us = scheduler_mod.unix_schedule
+        with (
+            patch.object(scheduler_mod, "is_windows", return_value=False),
+            patch.object(us, "query_systemd_timer", return_value={"exists": False}),
+            patch.object(us, "query_cron", return_value=[]),
+        ):
             status = svc.get_status()
+        assert status["systemd_daily"] == {"exists": False}
+        assert status["cron_entries"] == []
         assert "windows_daily" not in status
         assert "windows_weekly" not in status
         assert status["enabled"] is True

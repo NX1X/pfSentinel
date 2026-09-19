@@ -164,7 +164,10 @@ class TestScheduleEnableCommand:
         from pfsentinel.services import scheduler as scheduler_mod
 
         monkeypatch.setattr(scheduler_mod, "is_windows", lambda: False)
-        monkeypatch.setattr(scheduler_mod.SchedulerService, "start_in_process", lambda self: True)
+        us = scheduler_mod.unix_schedule
+        monkeypatch.setattr(us, "systemd_user_available", lambda: False)
+        monkeypatch.setattr(us, "cron_available", lambda: True)
+        monkeypatch.setattr(us, "install_cron", lambda *a, **k: True)
 
         result = cli_runner.invoke(
             schedule_app,
@@ -189,8 +192,9 @@ class TestScheduleEnableCommand:
         assert cfg.schedule.weekly_enabled is True
         assert cfg.schedule.weekly_day == "monday"
         assert cfg.schedule.weekly_time == "05:30"
-        # In-process mode message should surface on the non-Windows happy path.
-        assert "in-process" in result.stdout
+        # The OS scheduler, not a thread that dies with the CLI, runs the backups.
+        assert "Mode: cron" in result.stdout
+        assert "in-process" not in result.stdout
 
     def test_non_windows_no_weekly_flag_disables_weekly(
         self,
@@ -204,7 +208,10 @@ class TestScheduleEnableCommand:
         monkeypatch.setattr(platform_mod, "is_windows", lambda: False)
         monkeypatch.setattr(platform_mod, "is_elevated", lambda: True)
         monkeypatch.setattr(scheduler_mod, "is_windows", lambda: False)
-        monkeypatch.setattr(scheduler_mod.SchedulerService, "start_in_process", lambda self: True)
+        us = scheduler_mod.unix_schedule
+        monkeypatch.setattr(us, "systemd_user_available", lambda: False)
+        monkeypatch.setattr(us, "cron_available", lambda: True)
+        monkeypatch.setattr(us, "install_cron", lambda *a, **k: True)
 
         result = cli_runner.invoke(schedule_app, ["enable", "--no-weekly"])
 
@@ -225,15 +232,19 @@ class TestScheduleEnableCommand:
         monkeypatch.setattr(platform_mod, "is_windows", lambda: True)
         monkeypatch.setattr(platform_mod, "is_elevated", lambda: True)
         monkeypatch.setattr(scheduler_mod, "is_windows", lambda: True)
-        monkeypatch.setattr(scheduler_mod.SchedulerService, "apply_schedule", lambda self: False)
+
+        def failing_apply(self):
+            self.backend = "windows-task"
+            return False
+
+        monkeypatch.setattr(scheduler_mod.SchedulerService, "apply_schedule", failing_apply)
 
         result = cli_runner.invoke(schedule_app, ["enable"])
 
         assert result.exit_code == 1
         combined = (result.stdout or "") + (result.stderr or "")
         assert "Failed to register Windows Task Scheduler" in combined
-        # remediation hints should be present
-        assert "Administrator" in combined or "batch job" in combined
+        assert "Administrator" in combined
 
     def test_non_windows_start_in_process_failure_exits_with_hint(
         self,
@@ -249,11 +260,55 @@ class TestScheduleEnableCommand:
         monkeypatch.setattr(scheduler_mod, "is_windows", lambda: False)
         monkeypatch.setattr(scheduler_mod.SchedulerService, "start_in_process", lambda self: False)
 
-        result = cli_runner.invoke(schedule_app, ["enable"])
+        result = cli_runner.invoke(schedule_app, ["enable", "--no-task-scheduler"])
         assert result.exit_code == 1
         combined = (result.stdout or "") + (result.stderr or "")
         assert "in-process scheduler" in combined
-        assert "schedule" in combined  # tells user to install the package
+        # The removed `schedule` package must not be suggested any more.
+        assert "pip install schedule" not in combined
+
+    def test_no_os_scheduler_available_explains_and_exits(
+        self,
+        cli_runner: CliRunner,
+        tmp_config: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        import pfsentinel.utils.platform as platform_mod
+        from pfsentinel.services import scheduler as scheduler_mod
+
+        monkeypatch.setattr(platform_mod, "is_windows", lambda: False)
+        monkeypatch.setattr(scheduler_mod, "is_windows", lambda: False)
+        us = scheduler_mod.unix_schedule
+        monkeypatch.setattr(us, "systemd_user_available", lambda: False)
+        monkeypatch.setattr(us, "cron_available", lambda: False)
+
+        result = cli_runner.invoke(schedule_app, ["enable"])
+        assert result.exit_code == 1
+        combined = (result.stdout or "") + (result.stderr or "")
+        assert "No persistent scheduler available" in combined
+
+    @pytest.mark.parametrize(
+        "args",
+        [
+            ["enable", "--daily-time", "25:00"],
+            ["enable", "--daily-time", "02:00\nExecStartPre=/bin/sh"],
+            ["enable", "--weekly-day", "someday"],
+            ["enable", "--weekly-time", "3pm"],
+        ],
+    )
+    def test_invalid_schedule_rejected_before_config_written(
+        self,
+        cli_runner: CliRunner,
+        tmp_config: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        args: list[str],
+    ):
+        import pfsentinel.utils.platform as platform_mod
+
+        monkeypatch.setattr(platform_mod, "is_windows", lambda: False)
+        result = cli_runner.invoke(schedule_app, args)
+        assert result.exit_code == 2
+        assert not tmp_config.exists()
 
 
 if __name__ == "__main__":
