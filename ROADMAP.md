@@ -1,7 +1,7 @@
 # pfSentinel - Roadmap
 
 Goal: get pfSentinel to a solid **1.0**, then move it to **maintenance mode**.
-Maintenance mode means no new features, but security fixes, dependency
+Maintenance mode means a slower pace focused on the Planned list, while security fixes, dependency
 updates and pfSense compatibility fixes keep landing (see the end of this file).
 
 Last updated: 2026-09-19
@@ -20,14 +20,36 @@ Last updated: 2026-09-19
 - Persistent scheduling: Windows Task Scheduler, systemd user timers, cron fallback
 - Notifications: Telegram, Slack, Windows toast
 - Self-update from GitHub Releases; PyInstaller binaries for Windows and Linux
+- Strict SSH host key checking by default, with `pfs device trust-key`
+- Built-in help: `pfs docs` and the online manual, plus a plain-text version for AI assistants
 - Supply chain: hash-verified lockfiles, SHA-pinned Actions, 14-day update cooldown,
   CodeQL, Bandit, zizmor, OSV-Scanner, pip-audit, dependency review
+- CI pipeline defined with [Dagger](https://dagger.io), so the same checks run locally and in CI
 
 ---
 
 ## Before 1.0 (required)
 
-Verification. These features exist and are unit tested, but have never been observed working for real:
+### Full cross-platform parity (Windows and Linux)
+
+1.0 means every feature works the same way on Windows and Linux, and CI proves it on both.
+
+- [ ] **Desktop notifications on Linux.** Windows has toasts; Linux gets freedesktop notifications
+      (the same mechanism `notify-send` uses), with the same on/off setting
+- [ ] **System log on both.** Replace the Windows-only `windows_event_log_enabled` flag (never implemented)
+      with one `system_log_enabled` setting: Windows Event Log on Windows, journald/syslog on Linux
+- [ ] **File permissions on Windows.** On Linux, config, backups and the secret store are `0600`/`0700`.
+      On Windows `chmod` does nothing, so set explicit owner-only ACLs as well
+- [ ] **Scheduling without admin on Windows.** Linux needs no root; Windows currently needs an elevated shell
+      because tasks live in a `\pfSentinel` folder. Register in a location a normal user can write
+- [ ] **One scheduling story in the docs:** what runs when you are logged out, asleep or powered off,
+      on each OS, side by side
+- [ ] **Parity check in CI:** a test that fails if a user-facing feature is gated to one OS without a
+      counterpart on the other
+
+### Verification
+
+These features exist and are unit tested, but have never been observed working for real:
 
 - [ ] **Windows scheduled backup, end to end.** On a real machine, trigger the registered task and confirm
       it reads the password from Credential Manager and completes a backup
@@ -37,18 +59,16 @@ Verification. These features exist and are unit tested, but have never been obse
       (the e2e suite only covers fake servers)
 - [ ] **Windows toast** shows on a real desktop (new built-in implementation)
 
-Clean-up (loose ends to remove or finish before the code freezes):
+### Clean-up
 
 - [ ] **TUI: remove it, or ship it.** `src/pfsentinel/tui/` is not reachable from `pfs`, and it imports
-      `textual`, which is not a declared dependency. It is dead code today and causes most of the mypy errors.
-      Recommendation: remove it
-- [ ] **Windows Event Log notifications:** the `windows_event_log_enabled` config flag exists but does
-      nothing. Implement it or remove the flag. Recommendation: remove it
+      `textual`, which is not a declared dependency. Recommendation: remove it
 - [ ] **mypy clean and gated in CI** (40 errors today, most in the TUI)
 - [ ] **Test coverage 67% -> 80%**, focused on `services/` (backup, connection, orchestrator)
-- [ ] **Document restore.** A backup tool needs a written "how to restore this file to pfSense" page
+- [ ] **Document restore.** A written "how to restore this file to pfSense" page
+- [ ] **Move the Linux CI jobs onto the Dagger pipeline** once it has run green for a while
 
-Release hygiene:
+### Release hygiene
 
 - [ ] `SECURITY.md` states which versions get fixes (latest minor only)
 - [ ] README states the project status (1.0, maintenance mode) and what that means for users
@@ -65,15 +85,28 @@ Small features worth doing only if there is time. Each one is self-contained.
 
 ---
 
-## Not planned
+## Planned (1.x)
 
-Out of scope for a tool heading into maintenance. Well-scoped pull requests are still welcome.
+Bigger features that are planned after 1.0. Maintenance mode pauses new work, not these.
+
+- [ ] **pfSense REST API backend** (pfSense Plus 23.09+ and the REST API package), as a third
+      connection method next to SSH and HTTPS
+- [ ] **Multiple backup destinations:** keep the local copy and also upload to S3-compatible storage
+      and/or a remote SFTP server, with the same retention rules
+- [ ] **Baseline comparison:** mark a backup as "known good" and report every change against it
+- [ ] **Slack Block Kit cards** for richer Slack notifications
+
+---
+
+## Not planned
 
 - OPNsense support (different config paths and web UI; effectively a second product)
 - Web UI, Docker image, Windows installer, AppImage
-- pfSense REST API backend, multiple destinations (S3, remote SFTP), baseline comparison
-- Slack Block Kit cards
 - Code signing for the binaries (paid certificate)
+
+**Want something on this list, or something that is not on the roadmap at all?** Open an issue at
+https://github.com/NX1X/pfSentinel/issues and describe your use case. Requests from real users are
+considered positively, including items listed as not planned, and well-scoped pull requests are welcome.
 
 ---
 
@@ -88,4 +121,4 @@ What keeps happening:
 - CI stays green on Windows and Linux, Python 3.13 and 3.14. A new Python minor is added when
   lxml, cryptography and paramiko publish wheels for it
 
-What stops: new features, new platforms and new backup methods.
+What stops: new features beyond the Planned list above, unless users ask for them (see Not planned).
