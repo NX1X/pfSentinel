@@ -151,3 +151,48 @@ class TestWindowsToast:
         # dispatch should not try _send_windows_toast on non-windows
         results = svc._dispatch("Title", "Msg", True)
         assert "Windows Toast" not in results
+
+
+class TestWindowsToastBuiltin:
+    """Toasts go through built-in Windows PowerShell, not a third-party package."""
+
+    def test_toast_xml_escapes_text(self):
+        from pfsentinel.services.notifications import build_toast_xml
+
+        xml = build_toast_xml("a<b", 'x & "y" </text><script>')
+        assert "<text>a&lt;b</text>" in xml
+        assert "</text><script>" not in xml
+        assert "&amp;" in xml
+
+    def test_text_travels_by_env_not_script(self, monkeypatch):
+        import subprocess
+
+        from pfsentinel.services import notifications as n
+
+        seen = {}
+
+        def fake_run(args, env=None, **kwargs):
+            seen["args"], seen["env"] = args, env
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        monkeypatch.setattr(n.subprocess, "run", fake_run)
+        n.show_windows_toast("$(Remove-Item x)", "`; calc")
+        assert seen["args"][0].lower().endswith("powershell.exe")
+        assert "System32" in seen["args"][0]
+        assert seen["args"][-1] == n._TOAST_SCRIPT  # script is static
+        assert "Remove-Item" not in " ".join(seen["args"])
+        assert "$(Remove-Item x)" in seen["env"]["PFS_TOAST_XML"]
+        assert seen["env"]["PFS_TOAST_APP_ID"] == n._TOAST_APP_ID
+
+    def test_failure_is_raised_so_dispatch_reports_it(self, monkeypatch):
+        import subprocess
+
+        from pfsentinel.services import notifications as n
+
+        monkeypatch.setattr(
+            n.subprocess,
+            "run",
+            lambda args, **kw: subprocess.CompletedProcess(args, 1, "", "WinRT unavailable"),
+        )
+        with pytest.raises(RuntimeError, match="WinRT unavailable"):
+            n.show_windows_toast("t", "m")
