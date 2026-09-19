@@ -29,12 +29,13 @@ dependencies = [
     "rich>=13.9.0,<14",
     "pydantic>=2.10.0,<3",
     "paramiko>=5,<6",
-    "httpx>=0.28.1,<1",
-    "pyyaml>=6.0.3,<7",
-    "cryptography>=48.0.1,<49",
+    # cryptography: floor enforces GHSA-g6cj-pr64-35w5 / CVE-2026-69247 fix (>=50.0.0,
+    # PKCS#7 Bleichenbacher oracle). pfSentinel uses only AES-GCM, so the vulnerable
+    # pkcs7_decrypt_* path is unreachable here - the floor keeps it that way on upgrade.
+    "cryptography>=50.0.1,<51",
     "packaging>=24.0,<25",
     "requests>=2.34.2,<3",
-    # urllib3: transitive via requests/httpx; floor enforces CVE-2026-44431 / CVE-2026-44432 fix (>=2.7.0)
+    # urllib3: transitive via requests; floor enforces CVE-2026-44431 / CVE-2026-44432 fix (>=2.7.0)
     "urllib3>=2.7.0,<3",
     # keyring: OS keystore only (Windows Credential Manager, SecretService).
     # The headless fallback is our own AES-GCM store in services/secret_store.py.
@@ -63,12 +64,11 @@ dev = [
     "hypothesis>=6.100,<7",
     "mypy>=1.14.0,<2",
     "types-paramiko>=3.5.0,<4",
-    "types-pyyaml>=6.0.0,<7",
     "lxml-stubs>=0.5,<1",
     "pip-audit>=2.7.0,<3",
     "pip-tools>=7.4.0,<8",
     "bandit[toml]>=1.8,<2",
-    # release/build tools — kept in dev so a single hash-verified lockfile
+    # release/build tools - kept in dev so a single hash-verified lockfile
     # covers every CI job (lint, test, security-audit, build-*).
     "build>=1.2,<2",
     "twine>=6.0,<7",

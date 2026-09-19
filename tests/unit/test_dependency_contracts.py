@@ -15,6 +15,9 @@ here rather than left to a future reviewer to re-derive.
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 import click
 import pytest
 import typer
@@ -103,3 +106,36 @@ class TestParamikoPubkeyAlgorithms:
 def test_critical_dependencies_importable(module: str) -> None:
     """Smoke check that the deps these contracts rely on are actually present."""
     __import__(module)
+
+
+class TestLockfileConsistency:
+    """requirements.lock and requirements-dev.lock must agree on shared pins.
+
+    They are compiled separately, so a partial regeneration can leave the test
+    suite running a different version than users install. That is how the
+    typer/click abort bug above went unnoticed.
+    """
+
+    _PIN = re.compile(r"^([A-Za-z0-9_.-]+)==([^\s;\\]+)")
+
+    def _pins(self, name: str) -> dict[str, str]:
+        text = (Path(__file__).resolve().parents[2] / name).read_text(encoding="utf-8")
+        return {
+            m.group(1).lower().replace("_", "-"): m.group(2)
+            for line in text.splitlines()
+            if (m := self._PIN.match(line))
+        }
+
+    def test_shared_pins_match(self) -> None:
+        runtime = self._pins("requirements.lock")
+        dev = self._pins("requirements-dev.lock")
+        diverged = {k: (v, dev[k]) for k, v in runtime.items() if k in dev and dev[k] != v}
+        assert not diverged, f"runtime vs dev lock pin mismatch: {diverged}"
+
+    def test_dev_lock_covers_runtime(self) -> None:
+        missing = sorted(
+            set(self._pins("requirements.lock")) - set(self._pins("requirements-dev.lock"))
+        )
+        assert not missing, (
+            f"packages in requirements.lock but not requirements-dev.lock: {missing}"
+        )

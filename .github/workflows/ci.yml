@@ -128,13 +128,34 @@ jobs:
           # -q not -v: with ~600 tests, -v buries the failure under hundreds of
           # PASSED lines and makes the log impractical to read or paste.
           # -ra prints a short reason summary for every non-passing test.
+          set +e
           pytest tests/ \
             --tb=short \
             -ra \
             --cov=src/pfsentinel \
             --cov-report=term-missing \
             --cov-report=xml:coverage.xml \
-            -q
+            -q 2>&1 | tee pytest-output.txt
+          status=${PIPESTATUS[0]}
+          set -e
+
+          # Re-emit failures as check-run annotations. Annotations are served
+          # by the plain REST API (check-runs/{id}/annotations), so they stay
+          # readable from networks that cannot reach the Azure blob storage the
+          # full job log is served from. GitHub caps error annotations at 10
+          # per step: up to 8 FAILED/ERROR lines, plus 1 with the first
+          # assertion detail.
+          if [ "$status" -ne 0 ]; then
+            escape() { local s=${1//'%'/'%25'}; s=${s//$'\r'/'%0D'}; printf '%s' "${s//$'\n'/'%0A'}"; }
+            grep -E '^(FAILED|ERROR) ' pytest-output.txt | head -n 8 | while IFS= read -r line; do
+              echo "::error title=pytest::$(escape "$line")"
+            done
+            detail=$(grep -E '^E +' pytest-output.txt | head -n 15)
+            if [ -n "$detail" ]; then
+              echo "::error title=pytest first failure detail::$(escape "$detail")"
+            fi
+          fi
+          exit "$status"
 
       - name: Upload coverage report (Ubuntu / Python 3.14 only)
         if: matrix.python-version == '3.14' && matrix.os == 'ubuntu-latest'

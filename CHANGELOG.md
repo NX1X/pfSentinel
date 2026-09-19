@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Bump `cryptography` to `>=50.0.1,<51` (GHSA-g6cj-pr64-35w5 / CVE-2026-69247, a Bleichenbacher padding oracle in PKCS#7 decryption). pfSentinel only uses AES-GCM, so the vulnerable path was not reachable, but the floor keeps it that way on future lock regenerations
+- Remove the unused `httpx` dependency, which pulled in `anyio` 4.13.0 (CVE-2026-63374, CVE-2026-64847). Nothing in pfSentinel imported `httpx`; the HTTPS connector uses `requests`
+- Add `TestLockfileConsistency`, which fails if `requirements.lock` and `requirements-dev.lock` pin a shared package to different versions, or if the dev lock is missing a runtime package. Both locks are now regenerated together
+
 - Replace the unmaintained `defusedxml` dependency with a hardened `lxml` parser for `config.xml`. `defusedxml` has had no release since 0.7.1 (March 2021) and no upstream commit since October 2023, which is not a safe position for the component that guards pfSentinel's only untrusted input. `lxml` was already a dependency, so this removes a package rather than swapping one. The replacement disables entity resolution, network access, DTD loading and huge trees, and additionally rejects any config carrying a DOCTYPE so entity attacks fail loudly instead of parsing with unresolved references
 - Add `TestXxeHardening` covering classic XXE file disclosure, entity-expansion ("billion laughs"), external DTD, network entity, and blind-XXE parameter entities. The previous `defusedxml` protection had no test coverage at all, so this is the first time the XML security boundary is actually verified
 
@@ -36,9 +40,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Replace `loguru` with stdlib `logging` (`utils/logging.py`). This also makes `log_level` in `config.json` do something: it was declared with a default of `INFO` but never applied, because loguru used its own default regardless. `configure_logging()` now runs at CLI startup with the configured level, falling back to `INFO` if the config cannot be read
 - The TUI log screen's loguru sink is now a `logging.Handler`. Console and TUI levels are tracked separately, so opening the log screen (which forces DEBUG so the widget sees everything) no longer floods stderr with debug output
 
+### Changed
+
+- `requirements.lock` is now compiled with `uv pip compile --universal`, so the runtime lock is valid on Windows as well as Linux (it gained the Windows-only `colorama` and `pywin32-ctypes` entries with platform markers)
+- CI re-emits each failing test, plus the first assertion detail, as a GitHub `::error::` annotation. Annotations are readable through the check-runs API, which works from networks that block the raw log download
+- Renovate config fixes: the top-level `abandonmentThreshold` was silently overridden by the `abandonments:recommended` preset and never applied, so it is removed; the CI Python rule no longer tries to combine `allowedVersions` with `matchUpdateTypes` (Renovate rejects that), patch rewrites of the floating `3.14` pin are disabled, and pre-releases are excluded; a dead ruff regex manager left over from an old CI step is removed
+
 ### Removed
 
 - `defusedxml` is no longer a runtime dependency
+- `httpx` and `pyyaml` are no longer dependencies (neither was imported anywhere), along with `types-pyyaml` from the dev extras
 - `loguru` is no longer a dependency
 - `schedule` is no longer a dependency
 - `keyrings.alt` is no longer a dependency (see the encrypted file store above). `keyring` itself stays - it is actively maintained and still provides the preferred OS-backed path on Windows and Linux desktops

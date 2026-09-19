@@ -12,11 +12,9 @@
 | rich | >=13.9.0 | MIT | Yes | Terminal formatting |
 | pydantic | >=2.10.0 | MIT | Yes | Data validation |
 | **paramiko** | **>=3.5.0** | **LGPL-2.1** | **Caution** | **See Paramiko section** |
-| httpx | >=0.28.0 | BSD-3-Clause | Yes | HTTPS requests |
 | requests | >=2.31.0 | Apache-2.0 | Yes | HTTP client |
 | urllib3 | (via requests) | MIT | Yes | Indirect dependency |
 | cryptography | >=44.0.0 | Apache-2.0 OR BSD-3-Clause | Yes | SSH key handling |
-| pyyaml | >=6.0.0 | MIT | Yes | YAML parsing |
 | packaging | >=24.0 | Apache-2.0 / BSD-2-Clause | Yes | Version parsing |
 | keyring | >=25.0 | MIT | Yes | OS credential storage |
 | keyrings.alt | >=5.0 | MIT | Yes | File-based keyring fallback |
@@ -33,7 +31,6 @@
 | responses | Apache-2.0 | HTTP response mocking |
 | mypy | MIT | Static type checking |
 | types-paramiko | MIT | Type stubs |
-| types-pyyaml | MIT | Type stubs |
 | PyInstaller | GPL + special exception | See PyInstaller section |
 
 ## Build Tools
