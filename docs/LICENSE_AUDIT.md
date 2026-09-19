@@ -7,19 +7,16 @@
 
 | Package | Version Req | License | Apache-2.0-Compatible | Notes |
 |---------|-------------|---------|----------------------|-------|
-| typer | >=0.15.0 | MIT | Yes | CLI framework |
-| click | (via typer) | BSD-3-Clause | Yes | Indirect dependency |
-| rich | >=13.9.0 | MIT | Yes | Terminal formatting |
+| typer | >=0.26 | MIT | Yes | CLI framework (vendors click) |
+| rich | >=15 | MIT | Yes | Terminal formatting |
 | pydantic | >=2.10.0 | MIT | Yes | Data validation |
-| **paramiko** | **>=3.5.0** | **LGPL-2.1** | **Caution** | **See Paramiko section** |
-| requests | >=2.31.0 | Apache-2.0 | Yes | HTTP client |
-| urllib3 | (via requests) | MIT | Yes | Indirect dependency |
-| cryptography | >=44.0.0 | Apache-2.0 OR BSD-3-Clause | Yes | SSH key handling |
-| packaging | >=24.0 | Apache-2.0 / BSD-2-Clause | Yes | Version parsing |
+| **paramiko** | **>=5** | **LGPL-2.1** | **Caution** | **See Paramiko section** |
+| requests | >=2.34.2 | Apache-2.0 | Yes | HTTP client |
+| urllib3 | >=2.7.0 | MIT | Yes | Via requests, floor pinned for CVE fixes |
+| cryptography | >=50.0.1 | Apache-2.0 OR BSD-3-Clause | Yes | SSH keys, AES-GCM secret store |
+| packaging | >=26 | Apache-2.0 / BSD-2-Clause | Yes | Version parsing |
 | keyring | >=25.0 | MIT | Yes | OS credential storage |
-| keyrings.alt | >=5.0 | MIT | Yes | File-based keyring fallback |
-| lxml | >=5.0 | BSD-3-Clause | Yes | XML parsing (HTTPS backup) |
-| schedule | >=1.2 | MIT | Yes | In-process job scheduler |
+| lxml | >=6.1.1 | BSD-3-Clause | Yes | Hardened XML parsing, HTTPS backup |
 
 ## Dev-Only (Not Shipped)
 
@@ -31,6 +28,8 @@
 | responses | Apache-2.0 | HTTP response mocking |
 | mypy | MIT | Static type checking |
 | types-paramiko | MIT | Type stubs |
+| types-lxml | Apache-2.0 | Type stubs |
+| hypothesis | MPL-2.0 | Property-based fuzzing of the XML parser |
 | PyInstaller | GPL + special exception | See PyInstaller section |
 
 ## Build Tools

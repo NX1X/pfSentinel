@@ -68,7 +68,7 @@ def validate_xml(xml_content: str) -> etree._Element:
         )
 
     if root.tag != "pfsense":
-        raise PfSenseXMLError(f"Root element is '{root.tag}', expected 'pfsense'")
+        raise PfSenseXMLError(f"Root element is '{root.tag!s}', expected 'pfsense'")
 
     # Minimal required sections
     if root.find("system") is None:
