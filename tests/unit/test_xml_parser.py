@@ -187,7 +187,7 @@ class TestXxeHardening:
 
         payload = f"""<?xml version="1.0"?>
         <!DOCTYPE pfsense [
-          <!ENTITY xxe SYSTEM "file://{secret}">
+          <!ENTITY xxe SYSTEM "{secret.as_uri()}">
         ]>
         <pfsense><system><hostname>&xxe;</hostname></system></pfsense>"""
 
@@ -202,7 +202,7 @@ class TestXxeHardening:
 
         payload = f"""<?xml version="1.0"?>
         <!DOCTYPE pfsense [
-          <!ENTITY xxe SYSTEM "file://{secret}">
+          <!ENTITY xxe SYSTEM "{secret.as_uri()}">
         ]>
         <pfsense><system><hostname>&xxe;</hostname><domain>x</domain></system></pfsense>"""
 
