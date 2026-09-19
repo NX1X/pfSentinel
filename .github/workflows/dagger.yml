@@ -22,8 +22,12 @@ permissions:
   contents: read
 
 env:
-  # Opt out of Dagger's anonymous usage telemetry.
+  # No data to Dagger: DO_NOT_TRACK=1 (must be exactly "1") disables the CLI's
+  # usage analytics (api.dagger.cloud/analytics). DAGGER_NO_NAG hides the
+  # "set up tracing" prompt. Traces only go to Dagger Cloud when
+  # DAGGER_CLOUD_TOKEN is set, and this workflow never sets it.
   DO_NOT_TRACK: "1"
+  DAGGER_NO_NAG: "1"
 
 jobs:
   dagger-check:

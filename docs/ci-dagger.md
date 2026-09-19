@@ -59,8 +59,29 @@ python -m pip install --no-deps --no-build-isolation -e .
 No local Python environment or virtualenv setup is required; only Docker
 (or another OCI-compatible container runtime) and the Dagger CLI.
 
-The Dagger CLI sends anonymous usage telemetry by default. CI turns it off;
-to do the same locally, set `DO_NOT_TRACK=1` before running `dagger`.
+### Telemetry: off
+
+The Dagger CLI sends anonymous usage analytics to Dagger by default. This
+project turns that off everywhere:
+
+- **CI:** `.github/workflows/dagger.yml` sets `DO_NOT_TRACK=1` and
+  `DAGGER_NO_NAG=1`.
+- **Your machine:** the CLI only reads environment variables, so set them once
+  in your shell profile. The value must be exactly `1`.
+
+  ```bash
+  # Linux / macOS (bash; use ~/.zshrc for zsh)
+  echo 'export DO_NOT_TRACK=1 DAGGER_NO_NAG=1' >> ~/.bashrc && source ~/.bashrc
+  ```
+
+  ```powershell
+  # Windows (persists for new terminals)
+  setx DO_NOT_TRACK 1
+  setx DAGGER_NO_NAG 1
+  ```
+
+Run traces are only uploaded to Dagger Cloud when `DAGGER_CLOUD_TOKEN` is set.
+Do not set it for this project.
 
 Nothing in `.dagger/` or `dagger.json` is secret: the module has no tokens or
 credentials, and it installs only from public PyPI. The vendored SDK
