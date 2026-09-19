@@ -6,7 +6,7 @@ from pathlib import Path
 
 import typer
 
-from pfsentinel import __version__
+from pfsentinel import DOCS_URL, ISSUES_URL, __version__
 from pfsentinel.cli.commands.backup import app as backup_app
 from pfsentinel.cli.commands.config import app as config_app
 from pfsentinel.cli.commands.device import app as device_app
@@ -19,6 +19,7 @@ app = typer.Typer(
     help="pfSentinel - pfSense Backup Automation Tool",
     no_args_is_help=True,
     rich_markup_mode="rich",
+    epilog=f"Full manual and recipes: {DOCS_URL}  |  Report a problem: {ISSUES_URL}",
 )
 
 app.add_typer(backup_app, name="backup")
@@ -37,6 +38,22 @@ def main(
     if version:
         typer.echo(f"pfSentinel v{__version__}")
         raise typer.Exit()
+
+
+@app.command("docs")
+def docs(
+    no_browser: bool = typer.Option(False, "--no-browser", help="Only print the link"),
+) -> None:
+    """Open the online manual (all commands, recipes, and a copy-paste guide for AI assistants)."""
+    typer.echo(f"pfSentinel manual: {DOCS_URL}")
+    typer.echo(f"Plain-text version for AI assistants: {DOCS_URL.rsplit('/', 1)[0]}/llms-full.txt")
+    if not no_browser:
+        import webbrowser
+
+        try:
+            webbrowser.open(DOCS_URL)
+        except Exception:
+            pass  # headless: the printed link is enough
 
 
 @app.command("status")
