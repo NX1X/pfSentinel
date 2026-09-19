@@ -13,14 +13,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-19
+
+0.1.4 and 0.1.5 were prepared but never published, because the release jobs require a green Windows test run and Windows CI was red from July. Everything they contained ships here.
+
 ### Fixed
 
+- **Scheduled backups on Linux and macOS now actually run.** `pfs schedule enable` used to start a background thread inside the CLI process, which ended as soon as the command returned, so no scheduled backup ever fired. It now installs systemd user timers (`pfsentinel-daily.timer`, `pfsentinel-weekly.timer`, with `Persistent=true` so a run missed while the machine was off happens at next boot), and falls back to cron where there is no systemd user session (WSL without systemd, containers, macOS). pfSentinel's crontab lines are tagged and replaced in place; the rest of the crontab is left alone. `pfs schedule disable` removes both. `pfs schedule status` shows the timer state, next run and last result, and warns when the config says enabled but nothing is installed
+- **Scheduled backups on Windows can now read the device password.** Tasks were registered with `LogonType=S4U`, which has no access to the user's DPAPI-protected data, and Windows Credential Manager (where pfSentinel keeps passwords) is DPAPI-protected. Tasks now use `LogonType=InteractiveToken`: they run while you are signed in (a locked screen counts), and a run missed while signed out starts at the next sign-in (`StartWhenAvailable`)
+- **Windows toast notifications work.** They depended on `winotify`, which was only in the dev extras, so released builds silently skipped every toast while reporting it as sent. Toasts now go through the WinRT API using the built-in Windows PowerShell, with no extra package. Notification text is passed through environment variables and XML-escaped, never interpolated into the script, and PowerShell is started by absolute path
+- `pfs schedule enable` validates `--daily-time`, `--weekly-time` and `--weekly-day` before writing anything. Previously an invalid time was written into the Task Scheduler XML as-is
+- Windows CI had been failing since July, which is why 0.1.4 and 0.1.5 were never published (the release jobs require a green test run). The cause was a test, not the parser: the XXE test built `file://C:\...`, which is not a valid URI, so libxml2 rejected it before the DOCTYPE check. The test now uses a proper file URI
 - Pressing Ctrl+C at an interactive prompt no longer produces an unhandled traceback. typer 0.26 vendored click, which means `typer.Abort` is no longer the same class as the external `click.Abort` - so all eight abort handlers in `pfs notify` and `pfs device add` had silently become dead code. They now catch `typer.Abort`
 - Align the runtime and dev lockfiles. `requirements.lock` resolved typer 0.25.1 while `requirements-dev.lock` resolved 0.27.0, so the test suite exercised a different (click-vendoring) typer than users installed - which is exactly why the abort bug went unnoticed. The `typer` floor is now `>=0.26` so the vendored-click assumption holds for every supported version
+- **Release binaries now start correctly.** typer 0.26 stopped pulling in `click`, but the CLI imported `click` directly, so the PyInstaller binaries crashed on launch with `ModuleNotFoundError: No module named 'click'`. The CLI no longer imports `click` at all (see Removed), and the Windows build now has a smoke test like the Linux one, so a non-runnable `.exe` cannot pass CI.
+- Scheduled Windows tasks failed silently every run with `ERROR_INVALID_PARAMETER` (`0x80070057`) due to a double-quoted command line in the task registration. As a result, daily and weekly backups created via `pfs schedule enable` did not execute on Windows.
+- `pfs schedule status` now reports the live Task Scheduler state - last run time and last run result - for **both** the daily and weekly tasks (previously only the daily task was shown, and a task failing every run with `0x80070057` was still displayed as healthy). A failed last result is now flagged with remediation guidance instead of appearing as "Created".
+- An invalid `--weekly-day` value (typo or unexpected input) no longer produces a malformed Task Scheduler XML element name; unrecognized days now fall back to Sunday so weekly task registration cannot fail on bad input.
 
 ### Security
 
-- Bump `cryptography` to `>=50.0.1,<51` (GHSA-g6cj-pr64-35w5 / CVE-2026-69247, a Bleichenbacher padding oracle in PKCS#7 decryption). pfSentinel only uses AES-GCM, so the vulnerable path was not reachable, but the floor keeps it that way on future lock regenerations
+- Bump `cryptography` to `>=50.0.1,<51` (GHSA-g6cj-pr64-35w5 / CVE-2026-69247, a Bleichenbacher padding oracle in PKCS#7 decryption; also covers GHSA-537c-gmf6-5ccf, the vulnerable OpenSSL bundled in wheels before 48.0.1). pfSentinel only uses AES-GCM, so the vulnerable path was not reachable, but the floor keeps it that way on future lock regenerations
 - Remove the unused `httpx` dependency, which pulled in `anyio` 4.13.0 (CVE-2026-63374, CVE-2026-64847). Nothing in pfSentinel imported `httpx`; the HTTPS connector uses `requests`
 - Add `TestLockfileConsistency`, which fails if `requirements.lock` and `requirements-dev.lock` pin a shared package to different versions, or if the dev lock is missing a runtime package. Both locks are now regenerated together
 
@@ -39,38 +52,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Replace `loguru` with stdlib `logging` (`utils/logging.py`). This also makes `log_level` in `config.json` do something: it was declared with a default of `INFO` but never applied, because loguru used its own default regardless. `configure_logging()` now runs at CLI startup with the configured level, falling back to `INFO` if the config cannot be read
 - The TUI log screen's loguru sink is now a `logging.Handler`. Console and TUI levels are tracked separately, so opening the log screen (which forces DEBUG so the widget sees everything) no longer floods stderr with debug output
-
-### Changed
-
-- `requirements.lock` is now compiled with `uv pip compile --universal`, so the runtime lock is valid on Windows as well as Linux (it gained the Windows-only `colorama` and `pywin32-ctypes` entries with platform markers)
-- CI re-emits each failing test, plus the first assertion detail, as a GitHub `::error::` annotation. Annotations are readable through the check-runs API, which works from networks that block the raw log download
-- Renovate config fixes: the top-level `abandonmentThreshold` was silently overridden by the `abandonments:recommended` preset and never applied, so it is removed; the CI Python rule no longer tries to combine `allowedVersions` with `matchUpdateTypes` (Renovate rejects that), patch rewrites of the floating `3.14` pin are disabled, and pre-releases are excluded; a dead ruff regex manager left over from an old CI step is removed
-
-### Removed
-
-- `defusedxml` is no longer a runtime dependency
-- `httpx` and `pyyaml` are no longer dependencies (neither was imported anywhere), along with `types-pyyaml` from the dev extras
-- `loguru` is no longer a dependency
-- `schedule` is no longer a dependency
-- `keyrings.alt` is no longer a dependency (see the encrypted file store above). `keyring` itself stays - it is actively maintained and still provides the preferred OS-backed path on Windows and Linux desktops
-- `click` is no longer a direct dependency. It was declared only because the CLI imported it for `click.Abort`; now that the handlers correctly catch `typer.Abort`, typer's vendored copy is the only one needed. The PyInstaller `--hidden-import click` workaround added in 0.1.5 is removed with it
-- Remove the OpenSSF Scorecard CI job. Most of its findings were not actionable for a single-maintainer repo: `Branch-Protection` was a false negative (Scorecard reads the legacy branch-protection API and cannot see the repository rulesets that are actually enforcing 11 required checks, no force-push and no deletion), and `Code-Review` scores the absence of a second reviewer. Bandit, CodeQL, zizmor, OSV-Scanner, dependency-review and pip-audit all still run - Scorecard was scoring posture, not finding vulnerabilities. Tracked for revisit in `docs-internal/WORK-STATUS.md`
-
-## [0.1.5] - 2026-07-12
-
-### Fixed
-
-- **Release binaries now start correctly.** `click` is now declared as an explicit dependency. `typer` 0.26 stopped pulling `click` in transitively, but the CLI imports `click` directly (`notify`/`device` commands), so the standalone PyInstaller binaries crashed on launch with `ModuleNotFoundError: No module named 'click'`. This broke the Linux release build (and would have shipped a broken Windows `.exe`, which had no smoke test). `click` is now also an explicit PyInstaller hidden-import and the Windows build has a smoke test.
-- Scheduled Windows tasks failed silently every run with `ERROR_INVALID_PARAMETER` (`0x80070057`) due to a double-quoted command line in the task registration. As a result, daily and weekly backups created via `pfs schedule enable` did not execute on Windows.
-- `pfs schedule status` now reports the live Task Scheduler state — last run time and last run result — for **both** the daily and weekly tasks (previously only the daily task was shown, and a task failing every run with `0x80070057` was still displayed as healthy). A failed last result is now flagged with remediation guidance instead of appearing as "Created".
-- An invalid `--weekly-day` value (typo or unexpected input) no longer produces a malformed Task Scheduler XML element name; unrecognized days now fall back to Sunday so weekly task registration cannot fail on bad input.
-
-### Security
-
 - Bump `paramiko` 4.0.0 → 5.0.0 (fixes CVE-2026-44405 / GHSA-r374-rxx8-8654: SHA-1 signature verification weakness). This removes the temporary `pip-audit` / OSV-Scanner ignore for that advisory that was in place while no fixed paramiko release existed
 - Bump `pytest` 8 → `>=9.1.1,<10` (dev/test dependency; CVE-2025-71176 / GHSA-6w46-j5rx-g56g: predictable `/tmp/pytest-of-{user}` paths on UNIX allow a local user to cause a denial of service or possibly escalate privileges). Fixed upstream in 9.0.3; the floor is pinned so a lock regeneration cannot drift back onto a vulnerable 9.0.x
 - Bump `requests` → `>=2.34.2,<3` (precautionary security update)
-- Bump `cryptography` 46.0.7 → 48.0.1 (GHSA-537c-gmf6-5ccf: the OpenSSL statically linked into cryptography wheels prior to 48.0.1 was vulnerable to a High-severity issue, CVSS 7.5). Pin explicit `cryptography>=48.0.1,<49` floor in `pyproject.toml` and regenerate `requirements.lock` with hash verification
 - Bump `urllib3` 2.6.3 → 2.7.0 (CVE-2026-44431: sensitive headers leaked on cross-origin redirects via low-level `ProxyManager` API; CVE-2026-44432: streaming API could decompress full response instead of requested portion)
 - Pin explicit `urllib3>=2.7.0,<3` floor in `pyproject.toml` so future lock regenerations cannot drift back below the patched version
 - Migrate dependency management from Dependabot to Renovate with a **14-day cooldown** on regular updates (and 14 days on majors) to defend against malicious upstream releases (supply-chain attacks), while keeping vulnerability-alert updates on a short **3-day** cooldown so genuine CVE fixes still land quickly
@@ -89,12 +73,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Add a smoke test to the Windows binary build so a non-runnable `.exe` can no longer pass CI
+- Runtime dependency majors: `rich` 15, `packaging` 26
+- Dev tooling majors: `mypy` 2, `pytest-cov` 7, `twine` 7, `types-paramiko` 5, `ruff` 0.16. The abandoned `lxml-stubs` is replaced by `types-lxml`
+- GitHub Actions majors, each pinned by commit SHA: `checkout` 7, `setup-python` 7, `upload-artifact` 7, `download-artifact` 8 (downloads now fail on a digest mismatch instead of warning), `attest-build-provenance` 4, `dependency-review-action` 5, `codecov-action` 7, `codeql-action` 4, `osv-scanner-action` 2.5.1, and `gh-action-pypi-publish` pinned to v1.14.2 instead of the moving `release/v1` branch
+- Lockfiles are resolved with the same 14-day release-age cooldown Renovate applies, so a freshly published (possibly compromised) version cannot enter through a lock regeneration
+- `requirements.lock` is now compiled with `uv pip compile --universal`, so the runtime lock is valid on Windows as well as Linux (it gained the Windows-only `colorama` and `pywin32-ctypes` entries with platform markers)
+- CI re-emits each failing test, plus the first assertion detail, as a GitHub `::error::` annotation. Annotations are readable through the check-runs API, which works from networks that block the raw log download
+- Renovate config fixes: the top-level `abandonmentThreshold` was silently overridden by the `abandonments:recommended` preset and never applied, so it is removed; the CI Python rule no longer tries to combine `allowedVersions` with `matchUpdateTypes` (Renovate rejects that), patch rewrites of the floating `3.14` pin are disabled, and pre-releases are excluded; a dead ruff regex manager left over from an old CI step is removed
 - Relocate the Renovate config to `.github/renovate.json` and migrate the deprecated `fileMatch` fields to `managerFilePatterns` (fixes the Renovate "pip-compile: dependency not found in lock file" repository warning)
 - `.gitignore`: ignore internal-only docs (`docs-internal/`)
-- Scheduled tasks are now registered via XML with `LogonType=S4U`, so they run whether the user is signed in, locked, or signed out - no stored password required
 - Scheduled tasks no longer skip on battery power (`DisallowStartIfOnBatteries=false`, `StopIfGoingOnBatteries=false`) and now wake the machine from sleep at the scheduled time (`WakeToRun=true`)
 - Missed scheduled runs (e.g. machine powered off at the scheduled time) are now caught up on next availability (`StartWhenAvailable=true`)
+
+### Removed
+
+- `defusedxml` is no longer a runtime dependency
+- `httpx` and `pyyaml` are no longer dependencies (neither was imported anywhere), along with `types-pyyaml` from the dev extras
+- `loguru` is no longer a dependency
+- `schedule` is no longer a dependency
+- `keyrings.alt` is no longer a dependency (see the encrypted file store above). `keyring` itself stays - it is actively maintained and still provides the preferred OS-backed path on Windows and Linux desktops
+- `click` is no longer a direct dependency. It was declared only because the CLI imported it for `click.Abort`; now that the handlers correctly catch `typer.Abort`, typer's vendored copy is the only one needed. The PyInstaller `--hidden-import click` workaround added in 0.1.5 is removed with it
+- Remove the OpenSSF Scorecard CI job. Most of its findings were not actionable for a single-maintainer repo: `Branch-Protection` was a false negative (Scorecard reads the legacy branch-protection API and cannot see the repository rulesets that are actually enforcing 11 required checks, no force-push and no deletion), and `Code-Review` scores the absence of a second reviewer. Bandit, CodeQL, zizmor, OSV-Scanner, dependency-review and pip-audit all still run - Scorecard was scoring posture, not finding vulnerabilities. It may be re-added later
+- `winotify` is no longer a dependency (see the Windows toast fix above)
 
 ## [0.1.3] - 2026-05-09
 
