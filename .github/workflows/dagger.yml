@@ -21,6 +21,10 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  # Opt out of Dagger's anonymous usage telemetry.
+  DO_NOT_TRACK: "1"
+
 jobs:
   dagger-check:
     name: Dagger (lint, test, audit, bandit, build)
