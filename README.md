@@ -39,11 +39,13 @@ If you have a request or an idea, I'd love to hear it, please [open a feature re
 
 > [**Windows (pfs.exe)**](https://github.com/NX1X/pfSentinel/releases/latest) | [**Linux (pfs)**](https://github.com/NX1X/pfSentinel/releases/latest)
 
-Or install with pip (Python 3.13+):
+Or install from PyPI (Python 3.13+), same command on Linux and Windows:
 
 ```bash
-pip install pfsentinel
+pipx install pfsentinel
 ```
+
+Plain `pip install pfsentinel` also works in a virtualenv or on Windows; on Ubuntu 23.04+ and Debian 12+ the system Python blocks it, so use pipx there.
 
 Then:
 
