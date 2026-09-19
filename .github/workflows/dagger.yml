@@ -1,0 +1,48 @@
+name: Dagger CI
+
+# Runs the same lint / test / audit / bandit / build pipeline defined in
+# .dagger/ as a single Dagger module, so it is identical locally
+# (`dagger call check --source=.`) and in CI. This does not replace the
+# jobs in ci.yml (their names are required status checks in a branch
+# ruleset); it is an independent, container-based verification of the same
+# steps. Windows is intentionally out of scope: Dagger only runs Linux
+# containers, and Windows-specific behavior stays on the native
+# windows-latest runner in ci.yml.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # No data to Dagger: DO_NOT_TRACK=1 (must be exactly "1") disables the CLI's
+  # usage analytics (api.dagger.cloud/analytics). DAGGER_NO_NAG hides the
+  # "set up tracing" prompt. Traces only go to Dagger Cloud when
+  # DAGGER_CLOUD_TOKEN is set, and this workflow never sets it.
+  DO_NOT_TRACK: "1"
+  DAGGER_NO_NAG: "1"
+
+jobs:
+  dagger-check:
+    name: Dagger (lint, test, audit, bandit, build)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run Dagger check
+        uses: dagger/dagger-for-github@27b130bf0f79a7f6fbbbe0fbca6760dc9bb40a77  # v8.4.1
+        with:
+          version: "0.21.9"
+          verb: call
+          call: check --source=.

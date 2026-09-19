@@ -9,10 +9,12 @@ import pytest
 from pfsentinel.models.device import ConnectionMethod, DeviceConfig
 from pfsentinel.services.connection import (
     AuthenticationError,
+    ChangedHostKeyError,
     ConnectionError,
     ConnectionManager,
     HTTPSConnector,
     SSHConnector,
+    UnknownHostKeyError,
 )
 from pfsentinel.services.credentials import CredentialService
 
@@ -181,3 +183,26 @@ class TestConnectionManagerFallback:
             pytest.raises(AuthenticationError),
         ):
             cm.download_config()
+
+    @pytest.mark.parametrize("error", [ChangedHostKeyError, UnknownHostKeyError])
+    def test_host_key_error_no_fallback(self, error):
+        """A host key failure (possible MITM) must not be papered over by HTTPS."""
+        device = _make_device(
+            primary_method=ConnectionMethod.SSH,
+            fallback_method=ConnectionMethod.HTTPS,
+        )
+        creds = CredentialService()
+        creds.store("fw1", "pass")
+        cm = ConnectionManager(device, creds)
+
+        mock_conn = MagicMock(spec=SSHConnector)
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=False)
+        mock_conn.download_config.side_effect = error("host key")
+
+        with (
+            patch.object(cm, "_make_connector", return_value=mock_conn) as make,
+            pytest.raises(error),
+        ):
+            cm.download_config()
+        assert make.call_count == 1  # HTTPS was never tried

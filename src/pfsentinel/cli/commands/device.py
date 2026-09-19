@@ -162,12 +162,12 @@ def device_add(
         creds.store(device_id, password)
         if not creds.is_persistent:
             print_warning("  Credential storage: in-memory only (no persistent keyring found).")
-            print_warning("  Install keyrings.alt for persistent storage: pip install keyrings.alt")
+            print_warning(
+                "  Install a system keyring (gnome-keyring / kwallet) for OS-backed storage."
+            )
 
     # Handle SSH key passphrase
     if ssh_key_path_str:
-        import click
-
         try:
             passphrase = typer.prompt(
                 "SSH key passphrase (leave blank if key is unencrypted)",
@@ -176,7 +176,7 @@ def device_add(
             )
             if passphrase:
                 creds.store_ssh_key_passphrase(device_id, passphrase)
-        except (click.Abort, KeyboardInterrupt):
+        except (typer.Abort, KeyboardInterrupt):
             pass  # User pressed Ctrl+C — skip passphrase storage
         except Exception as e:
             print_warning(f"Could not store SSH key passphrase: {e}")
@@ -193,8 +193,74 @@ def device_add(
         print_info("  Password: stored in system keyring")
     console.print()
 
+    if conn_method == ConnectionMethod.SSH:
+        console.print()
+        console.print("[dim]SSH host key: pfSentinel refuses SSH servers whose key you have[/]")
+        console.print("[dim]not confirmed once. This blocks man-in-the-middle attacks.[/]")
+        if not _trust_host_key(config, device, assume_yes=False):
+            print_warning(
+                f"  SSH backups will fail until you run: pfs device trust-key {device.id}"
+            )
+
     if typer.confirm("Test connection now?", default=True):
         _test_device(device, creds)
+
+
+def _trust_host_key(config: AppConfig, device: DeviceConfig, assume_yes: bool) -> bool:
+    """Fetch, show and (after confirmation) pin the device's SSH host key."""
+    from pfsentinel.services import host_keys
+    from pfsentinel.services.connection import HostKeyError
+
+    try:
+        key = host_keys.fetch_host_key(device.host, device.ssh_port, timeout=device.timeout)
+    except HostKeyError as e:
+        print_error(str(e))
+        return False
+
+    fp = host_keys.fingerprint(key)
+    current = host_keys.trusted_key(device.host, device.ssh_port)
+    if current is not None and host_keys.fingerprint(current) == fp and device.strict_host_keys:
+        print_success(f"Host key already trusted: {key.get_name()} {fp}")
+        return True
+
+    console.print(f"  Host:        {device.host}:{device.ssh_port}")
+    console.print(f"  Key type:    {key.get_name()}")
+    console.print(f"  Fingerprint: [bold]{fp}[/]")
+    if current is not None and host_keys.fingerprint(current) != fp:
+        print_warning(
+            f"  This REPLACES the previously trusted key {host_keys.fingerprint(current)}."
+        )
+    console.print(
+        "[dim]  Compare with the pfSense console: option 8 (Shell), then run[/]\n"
+        "[dim]  ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub (or the matching key type).[/]"
+    )
+    if not assume_yes and not typer.confirm("Trust this host key?", default=False):
+        print_info("Host key not trusted.")
+        return False
+
+    path = host_keys.trust(device.host, device.ssh_port, key)
+    # `device` is the instance held in config.devices, so this persists on save.
+    device.strict_host_keys = True
+    config.save()
+    print_success(f"Host key trusted ({path}); strict host key checking is on for '{device.id}'")
+    return True
+
+
+@app.command("trust-key")
+def device_trust_key(
+    device_id: str = typer.Argument(..., help="Device ID"),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Trust without asking (verify the fingerprint yourself)"
+    ),
+) -> None:
+    """Trust a device's SSH host key (first setup, or after reinstalling pfSense)."""
+    config, _ = _get_config_and_creds()
+    device = config.get_device(device_id)
+    if not device:
+        print_error(f"Device '{device_id}' not found")
+        raise typer.Exit(1)
+    if not _trust_host_key(config, device, assume_yes=yes):
+        raise typer.Exit(1)
 
 
 @app.command("list")

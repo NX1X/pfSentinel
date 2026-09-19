@@ -93,3 +93,37 @@ def test_backup_run_against_invalid_credentials_fails(
     # output; pfSentinel surfaces SSH auth errors via BackupError.
     combined = (result.stdout + result.stderr).lower()
     assert "auth" in combined, f"Expected auth error, got:\n{combined}"
+
+
+def test_scheduled_run_never_prompts(cli_runner: CliRunner, seeded_config: AppConfig) -> None:
+    """Exactly what systemd, cron and Task Scheduler run. Nobody can answer a
+    prompt there, so reaching the interactive menu would abort every scheduled
+    backup (this was the case before 0.2.0)."""
+    result = cli_runner.invoke(app, ["backup", "run", "--non-interactive", "--no-notify"])
+    assert result.exit_code == 0, f"{result.stdout}\n{result.stderr}"
+    assert "What would you like to back up?" not in result.stdout
+    assert "Total: 1 backup(s)" in result.stdout or "backup(s)" in result.stdout
+
+
+def test_run_without_terminal_does_not_prompt(
+    cli_runner: CliRunner, seeded_config: AppConfig
+) -> None:
+    """No flags and no TTY on stdin (CliRunner) behaves like --non-interactive."""
+    result = cli_runner.invoke(app, ["backup", "run", "--no-notify"], input="")
+    assert result.exit_code == 0, f"{result.stdout}\n{result.stderr}"
+    assert "What would you like to back up?" not in result.stdout
+
+
+def test_terminal_run_still_offers_menu(
+    cli_runner: CliRunner, seeded_config: AppConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A person at a terminal still gets the backup-type menu."""
+    import types
+
+    from pfsentinel.cli.commands import backup as backup_cmd
+
+    tty = types.SimpleNamespace(isatty=lambda: True)
+    monkeypatch.setattr(backup_cmd, "sys", types.SimpleNamespace(stdin=tty))
+    result = cli_runner.invoke(app, ["backup", "run", "--no-notify"], input="\n")
+    assert result.exit_code == 0, f"{result.stdout}\n{result.stderr}"
+    assert "What would you like to back up?" in result.stdout

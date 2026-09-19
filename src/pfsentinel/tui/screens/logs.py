@@ -2,10 +2,40 @@
 
 from __future__ import annotations
 
+import logging
+
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.widget import Widget
 from textual.widgets import Button, RichLog, Static
+
+from pfsentinel.utils.logging import ROOT_LOGGER_NAME
+
+LEVEL_COLORS = {
+    "DEBUG": "dim",
+    "INFO": "blue",
+    "WARNING": "yellow",
+    "ERROR": "red",
+    "CRITICAL": "bold red",
+}
+
+
+class RichLogHandler(logging.Handler):
+    """Mirrors log records into a Textual RichLog widget."""
+
+    def __init__(self, log_view: RichLog) -> None:
+        super().__init__(level=logging.DEBUG)
+        self.setFormatter(
+            logging.Formatter("%(asctime)s | %(levelname)-8s | %(message)s", "%H:%M:%S")
+        )
+        self._log_view = log_view
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            color = LEVEL_COLORS.get(record.levelname, "white")
+            self._log_view.write(f"[{color}]{self.format(record)}[/]")
+        except Exception:
+            pass
 
 
 class LogsScreen(Widget):
@@ -34,28 +64,12 @@ class LogsScreen(Widget):
                 yield Button("Clear", id="btn-clear", variant="default")
 
     def on_mount(self) -> None:
-        """Setup loguru sink to stream logs to this widget."""
+        """Stream application log records into this widget."""
         try:
-            from loguru import logger
-
             log_view = self.query_one("#log-view", RichLog)
-
-            def tui_sink(message) -> None:
-                try:
-                    level = message.record["level"].name
-                    colors = {
-                        "DEBUG": "dim",
-                        "INFO": "blue",
-                        "WARNING": "yellow",
-                        "ERROR": "red",
-                        "CRITICAL": "bold red",
-                    }
-                    color = colors.get(level, "white")
-                    log_view.write(f"[{color}]{message}[/]")
-                except Exception:
-                    pass
-
-            logger.add(tui_sink, format="{time:HH:mm:ss} | {level:<8} | {message}", level="DEBUG")
+            app_logger = logging.getLogger(ROOT_LOGGER_NAME)
+            app_logger.setLevel(logging.DEBUG)
+            app_logger.addHandler(RichLogHandler(log_view))
         except Exception:
             pass
 

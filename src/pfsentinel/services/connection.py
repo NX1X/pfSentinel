@@ -8,10 +8,11 @@ import re
 from collections.abc import Callable
 from pathlib import Path
 
-from loguru import logger
-
 from pfsentinel.models.device import ConnectionMethod, DeviceConfig, DeviceStatus
 from pfsentinel.services.credentials import CredentialService
+from pfsentinel.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 ProgressCallback = Callable[[str, int], None]
 
@@ -25,6 +26,18 @@ class ConnectionError(Exception):
 
 class AuthenticationError(ConnectionError):
     """Raised when credentials are rejected."""
+
+
+class HostKeyError(ConnectionError):
+    """SSH host key verification failed. Never retried over another method."""
+
+
+class UnknownHostKeyError(HostKeyError):
+    """The device's SSH host key has never been trusted."""
+
+
+class ChangedHostKeyError(HostKeyError):
+    """The device presented a different SSH host key from the trusted one."""
 
 
 class SSHConnector:
@@ -75,16 +88,22 @@ class SSHConnector:
         client = self._get_client()
         # Load system host keys and ~/.ssh/known_hosts so that hosts with
         # a known key ARE verified strictly.
+        from pfsentinel.services import host_keys
+
         client.load_system_host_keys()
         known_hosts = Path.home() / ".ssh" / "known_hosts"
         if known_hosts.is_file():
             client.load_host_keys(str(known_hosts))
+        # Keys trusted with `pfs device trust-key` take precedence.
+        pinned = host_keys.known_hosts_path()
+        if pinned.is_file():
+            client.get_host_keys().load(str(pinned))  # type: ignore[attr-defined]
 
         if self.device.strict_host_keys:
-            # Strict mode: reject any host not already in known_hosts.
+            # Strict mode (default): reject any host whose key was never trusted.
             client.set_missing_host_key_policy(paramiko.RejectPolicy())  # type: ignore[attr-defined]
         else:
-            # Permissive mode: log unknown host keys via loguru but allow connection.
+            # Permissive mode: log unknown host keys but allow connection.
             # Pragmatic default for homelab use where host keys change on firmware
             # updates / reinstalls. Do NOT use AutoAddPolicy — it silently accepts
             # any key without logging.
@@ -92,7 +111,8 @@ class SSHConnector:
             logger.warning(
                 f"strict_host_keys is disabled for '{self.device.id}'. "
                 "Unknown SSH host keys will be accepted with a warning. "
-                "Set strict_host_keys=true for MITM protection."
+                f"Run 'pfs device trust-key {self.device.id}' to pin the key and "
+                "turn on strict checking (MITM protection)."
             )
 
         connect_kwargs: dict = dict(
@@ -100,10 +120,6 @@ class SSHConnector:
             port=self.device.ssh_port,
             username=self.device.username,
             timeout=self.device.timeout,
-            # Refuse legacy SHA-1-based signature algorithms during kex/user-auth.
-            # Independent of paramiko>=5 CVE-2026-44405 fix — belt and suspenders.
-            # DevSkim: ignore DS126858 — algorithm names in a deny-list, not usage.
-            disabled_algorithms={"pubkeys": ["rsa-sha1", "ssh-rsa"]},
         )
 
         if self.device.ssh_key_path:
@@ -131,7 +147,21 @@ class SSHConnector:
             )
         except paramiko.AuthenticationException as e:
             raise AuthenticationError(f"SSH authentication failed: {e}") from e
-        except (paramiko.SSHException, TimeoutError, OSError) as e:
+        except paramiko.BadHostKeyException as e:
+            raise ChangedHostKeyError(
+                f"SSH host key for {self.device.host} has CHANGED (now "
+                f"{host_keys.fingerprint(e.key)}). This can mean a man-in-the-middle "
+                "attack. If you reinstalled or replaced pfSense, verify the new "
+                f"fingerprint on the console and run: pfs device trust-key {self.device.id}"
+            ) from e
+        except paramiko.SSHException as e:
+            if "not found in known_hosts" in str(e):
+                raise UnknownHostKeyError(
+                    f"SSH host key for {self.device.host} is not trusted yet. "
+                    f"Run: pfs device trust-key {self.device.id}"
+                ) from e
+            raise ConnectionError(f"SSH connection failed: {e}") from e
+        except (TimeoutError, OSError) as e:
             raise ConnectionError(f"SSH connection failed: {e}") from e
 
     def disconnect(self) -> None:
@@ -547,8 +577,9 @@ class ConnectionManager:
                 logger.info(f"Config downloaded via {method.value} from {self.device.host}")
                 return xml, method.value
 
-            except AuthenticationError:
-                # Don't try fallback on auth errors - credentials are wrong
+            except (AuthenticationError, HostKeyError):
+                # No fallback: wrong credentials, or a host key that must be
+                # fixed (possible MITM). Falling back to HTTPS would hide it.
                 raise
             except ConnectionError as e:
                 last_error = e

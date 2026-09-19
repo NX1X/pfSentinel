@@ -153,7 +153,7 @@ class TestTaskXmlBuilders:
 class TestCreateWindowsTaskXml:
     """Verify the XML payload sent to schtasks has the desired flags."""
 
-    def test_xml_contains_s4u_and_battery_settings(self, monkeypatch):
+    def test_xml_uses_interactive_token_and_battery_settings(self, monkeypatch):
         monkeypatch.setattr(platform_mod, "is_windows", lambda: True)
 
         captured: dict[str, str] = {}
@@ -181,7 +181,9 @@ class TestCreateWindowsTaskXml:
         assert ok is True
 
         xml = captured["xml"]
-        assert "<LogonType>S4U</LogonType>" in xml
+        assert "<LogonType>InteractiveToken</LogonType>" in xml
+        # S4U cannot read DPAPI-protected Credential Manager secrets.
+        assert "S4U" not in xml
         assert "<DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>" in xml
         assert "<StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>" in xml
         assert "<WakeToRun>true</WakeToRun>" in xml

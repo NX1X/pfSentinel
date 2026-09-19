@@ -5,14 +5,15 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import datetime
 
-from loguru import logger
-
 from pfsentinel.models.backup import BackupRecord
 from pfsentinel.models.config import AppConfig
 from pfsentinel.services.backup import BackupService
 from pfsentinel.services.credentials import CredentialService
 from pfsentinel.services.extra_backup import ExtraBackupService
 from pfsentinel.services.retention import RetentionService
+from pfsentinel.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 ProgressCallback = Callable[[str, int], None]
 WarningCallback = Callable[[str], None]

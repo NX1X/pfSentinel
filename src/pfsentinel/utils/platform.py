@@ -10,6 +10,10 @@ import tempfile
 from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
 
+from pfsentinel.utils.logging import get_logger
+
+logger = get_logger(__name__)
+
 
 def is_windows() -> bool:
     return sys.platform == "win32"
@@ -26,9 +30,9 @@ def is_macos() -> bool:
 def is_elevated() -> bool:
     """Return True if the process can register Windows scheduled tasks.
 
-    On Windows, registering an S4U task requires Administrator rights — without
-    them schtasks fails with "Access is denied" and the (possibly stale, broken)
-    task is left in place. On non-Windows there is no Task Scheduler path, so
+    On Windows, registering tasks under the \\pfSentinel folder requires
+    Administrator rights - without them schtasks fails with "Access is denied"
+    and the (possibly stale, broken) task is left in place. On non-Windows there is no Task Scheduler path, so
     this is not a gate.
     """
     if not is_windows():
@@ -75,7 +79,7 @@ _TASK_XML_TEMPLATE = """<?xml version="1.0" encoding="UTF-16"?>
   <Principals>
     <Principal id="Author">
       <UserId>{user_id}</UserId>
-      <LogonType>S4U</LogonType>
+      <LogonType>InteractiveToken</LogonType>
       <RunLevel>LeastPrivilege</RunLevel>
     </Principal>
   </Principals>
@@ -163,9 +167,15 @@ def create_windows_task(
 ) -> bool:
     """Create a Windows Task Scheduler task via XML registration.
 
-    The task is registered with LogonType=S4U so it runs whether the user is
-    signed in or not (no stored password), wakes the machine if asleep, and
-    ignores battery state. Returns True on success.
+    The task runs as the current user with LogonType=InteractiveToken, wakes
+    the machine if asleep, and ignores battery state. Returns True on success.
+
+    InteractiveToken, not S4U: an S4U logon has no access to the user's
+    DPAPI-protected data, and Windows Credential Manager (where pfSentinel
+    keeps device passwords) is DPAPI-protected. An S4U task would start on
+    time and then fail to read the password. InteractiveToken runs while the
+    user has a session (a locked screen counts), and StartWhenAvailable runs a
+    missed backup at the next sign-in.
     """
     if not is_windows():
         return False
@@ -200,8 +210,6 @@ def create_windows_task(
             check=False,
         )
         if result.returncode != 0:
-            from loguru import logger
-
             stderr = (result.stderr or "").strip() or (result.stdout or "").strip()
             logger.error(f"schtasks /Create failed for '{task_name}': {stderr}")
         return result.returncode == 0

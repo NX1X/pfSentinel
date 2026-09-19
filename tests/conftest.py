@@ -38,6 +38,26 @@ def _isolate_keyring():
             yield
 
 
+@pytest.fixture(autouse=True)
+def _isolate_secret_store(tmp_path_factory, monkeypatch):
+    """Point the encrypted file store at a tmp dir for every test.
+
+    Without this, any test that constructs a CredentialService while the
+    keyring is unavailable writes a real vault and key into the developer's
+    ~/.pfsentinel/store.
+    """
+    store_dir = tmp_path_factory.mktemp("secret-store")
+    monkeypatch.setattr(
+        "pfsentinel.services.secret_store.default_store_dir",
+        lambda: store_dir,
+    )
+    monkeypatch.setattr(
+        "pfsentinel.services.credentials.default_store_dir",
+        lambda: store_dir,
+    )
+    yield store_dir
+
+
 SAMPLE_XML = """<?xml version="1.0"?>
 <pfsense version="24.03">
   <system>

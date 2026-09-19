@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import typer
@@ -187,6 +188,11 @@ def backup_run(
     config_only: bool = typer.Option(
         False, "--config-only", help="Only back up XML config (skip extras)"
     ),
+    non_interactive: bool = typer.Option(
+        False,
+        "--non-interactive",
+        help="Never prompt; use the backup policy from config (scheduled runs use this)",
+    ),
 ) -> None:
     """Run a backup for one or all devices."""
     if area and area not in _VALID_AREAS:
@@ -207,7 +213,11 @@ def backup_run(
     # Interactive selector when no explicit flags provided
     enable_zfs = False
     enable_archive = False
-    if include_extras is None and not all_extras and not config_only:
+    # Scheduled runs (systemd, cron, Task Scheduler) have nobody to answer a
+    # prompt, so they must never reach it: they pass --non-interactive, and a
+    # run without a terminal on stdin is treated the same way.
+    interactive = not non_interactive and sys.stdin is not None and sys.stdin.isatty()
+    if include_extras is None and not all_extras and not config_only and interactive:
         include_extras, enable_zfs, enable_archive = _prompt_backup_types()
 
     config = AppConfig.load()
