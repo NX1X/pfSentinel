@@ -146,7 +146,8 @@ class TestApplySchedule:
             assert svc.apply_schedule() is True
         assert svc.backend == "systemd"
         argv, daily, weekly = inst.call_args.args
-        assert argv[-2:] == ["backup", "run"]
+        # Scheduled runs have no terminal: they must never hit the interactive menu.
+        assert argv[-3:] == ["backup", "run", "--non-interactive"]
         assert daily == "02:00"
         assert weekly == ("friday", "03:00")
         rm_cron.assert_called_once()  # no stale cron copy left to double-run

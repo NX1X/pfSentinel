@@ -129,7 +129,7 @@ class SchedulerService:
 
     def _apply_windows_schedule(self) -> bool:
         executable, prefix_args = get_executable_path()
-        args = f"{prefix_args} backup run".strip()
+        args = f"{prefix_args} backup run --non-interactive".strip()
         success = True
 
         if self._config.daily_enabled:
@@ -170,7 +170,7 @@ class SchedulerService:
 
     def _backup_argv(self) -> list[str]:
         executable, prefix_args = get_executable_path()
-        return [executable, *prefix_args.split(), "backup", "run"]
+        return [executable, *prefix_args.split(), "backup", "run", "--non-interactive"]
 
     def _unix_spec(self) -> tuple[str | None, tuple[str, str] | None]:
         daily = self._config.daily_time if self._config.daily_enabled else None
