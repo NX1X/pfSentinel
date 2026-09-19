@@ -38,10 +38,12 @@ class DeviceConfig(BaseModel):
     # Path to a CA certificate file for verifying self-signed HTTPS certs.
     # When set, this is used instead of disabling verify_ssl entirely.
     ca_cert_path: Path | None = None
-    # Reject SSH connections to hosts not in known_hosts.
-    # False (default) logs a warning but connects anyway (suitable for homelabs).
-    # True uses RejectPolicy — the host must be in ~/.ssh/known_hosts.
-    strict_host_keys: bool = False
+    # Reject SSH connections to hosts whose key was never trusted.
+    # True (default since 0.2.0) uses RejectPolicy: trust the key once with
+    # `pfs device trust-key <id>` (or have it in ~/.ssh/known_hosts).
+    # False logs a warning and connects anyway. Configs saved before 0.2.0
+    # carry an explicit False and keep that behavior until the key is trusted.
+    strict_host_keys: bool = True
     timeout: int = Field(default=30, ge=5, le=300)
     enabled: bool = True
 
