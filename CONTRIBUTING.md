@@ -84,6 +84,18 @@ pytest tests/ -v -m "not integration"
 mypy src/pfsentinel
 ```
 
+## CI Pipeline
+
+Lint, test, security-audit and package-build run as a single [Dagger](https://dagger.io)
+module in `.dagger/`, so the same commands run locally and in GitHub Actions:
+
+```bash
+dagger call check --source=.
+```
+
+See [docs/ci-dagger.md](docs/ci-dagger.md) for details, including how to run
+individual steps (`lint`, `test`, `audit`, `bandit`, `build`).
+
 ## Project Structure
 
 ```

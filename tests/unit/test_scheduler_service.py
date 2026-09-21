@@ -10,6 +10,8 @@ query_windows_task on non-Windows).
 from __future__ import annotations
 
 import sys
+from datetime import datetime
+from datetime import time as dt_time
 from unittest.mock import patch
 
 import pytest
@@ -125,21 +127,81 @@ class TestApplySchedule:
             result = svc.apply_schedule()
         assert result is False
 
-    def test_non_windows_falls_back_to_in_process(self):
-        cfg = ScheduleConfig(
-            enabled=True,
-            daily_enabled=True,
-            weekly_enabled=False,
-            use_windows_task_scheduler=True,
-        )
-        svc = SchedulerService(cfg)
+    def _unix_cfg(self, **kw):
+        base = dict(enabled=True, daily_enabled=True, weekly_enabled=False)
+        base.update(kw)
+        return ScheduleConfig(**base)
+
+    def test_non_windows_prefers_systemd(self):
+        svc = SchedulerService(self._unix_cfg(weekly_enabled=True, weekly_day="friday"))
+        us = scheduler_mod.unix_schedule
         with (
             patch.object(scheduler_mod, "is_windows", return_value=False),
-            patch.object(svc, "start_in_process", return_value=True) as mock_start,
+            patch.object(us, "systemd_user_available", return_value=True),
+            patch.object(us, "install_systemd_timers", return_value=True) as inst,
+            patch.object(us, "remove_cron", return_value=True) as rm_cron,
+            patch.object(us, "install_cron") as cron,
+            patch.object(svc, "start_in_process") as in_proc,
         ):
-            result = svc.apply_schedule()
-        assert result is True
-        mock_start.assert_called_once()
+            assert svc.apply_schedule() is True
+        assert svc.backend == "systemd"
+        argv, daily, weekly = inst.call_args.args
+        # Scheduled runs have no terminal: they must never hit the interactive menu.
+        assert argv[-3:] == ["backup", "run", "--non-interactive"]
+        assert daily == "02:00"
+        assert weekly == ("friday", "03:00")
+        rm_cron.assert_called_once()  # no stale cron copy left to double-run
+        cron.assert_not_called()
+        in_proc.assert_not_called()
+
+    def test_non_windows_falls_back_to_cron(self):
+        svc = SchedulerService(self._unix_cfg())
+        us = scheduler_mod.unix_schedule
+        with (
+            patch.object(scheduler_mod, "is_windows", return_value=False),
+            patch.object(us, "systemd_user_available", return_value=False),
+            patch.object(us, "cron_available", return_value=True),
+            patch.object(us, "install_cron", return_value=True) as cron,
+        ):
+            assert svc.apply_schedule() is True
+        assert svc.backend == "cron"
+        assert cron.call_args.args[1] == "02:00"
+        assert cron.call_args.args[2] is None
+
+    def test_non_windows_without_os_scheduler_fails_instead_of_in_process(self):
+        """The in-process thread would die with the CLI, so it is not a fallback."""
+        svc = SchedulerService(self._unix_cfg())
+        us = scheduler_mod.unix_schedule
+        with (
+            patch.object(scheduler_mod, "is_windows", return_value=False),
+            patch.object(us, "systemd_user_available", return_value=False),
+            patch.object(us, "cron_available", return_value=False),
+            patch.object(svc, "start_in_process") as in_proc,
+        ):
+            assert svc.apply_schedule() is False
+        assert svc.backend is None
+        in_proc.assert_not_called()
+
+    def test_invalid_time_rejected_before_install(self):
+        svc = SchedulerService(self._unix_cfg(daily_time="25:00"))
+        us = scheduler_mod.unix_schedule
+        with (
+            patch.object(scheduler_mod, "is_windows", return_value=False),
+            patch.object(us, "systemd_user_available", return_value=True),
+            patch.object(us, "install_systemd_timers") as inst,
+        ):
+            assert svc.apply_schedule() is False
+        inst.assert_not_called()
+
+    def test_os_scheduler_disabled_uses_in_process(self):
+        svc = SchedulerService(self._unix_cfg(use_windows_task_scheduler=False))
+        with (
+            patch.object(scheduler_mod, "is_windows", return_value=False),
+            patch.object(svc, "start_in_process", return_value=True) as in_proc,
+        ):
+            assert svc.apply_schedule() is True
+        assert svc.backend == "in-process"
+        in_proc.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -172,17 +234,22 @@ class TestRemoveSchedule:
             result = svc.remove_schedule()
         assert result is False
 
-    def test_non_windows_still_stops_in_process(self):
+    def test_non_windows_removes_systemd_and_cron_and_stops_in_process(self):
         cfg = ScheduleConfig(enabled=True)
         svc = SchedulerService(cfg)
+        us = scheduler_mod.unix_schedule
         with (
             patch.object(scheduler_mod, "is_windows", return_value=False),
             patch.object(scheduler_mod, "delete_windows_task") as mock_delete,
+            patch.object(us, "remove_systemd_timers", return_value=True) as rm_sd,
+            patch.object(us, "remove_cron", return_value=True) as rm_cron,
             patch.object(svc, "stop_in_process") as mock_stop,
         ):
             result = svc.remove_schedule()
         assert result is True
         mock_delete.assert_not_called()
+        rm_sd.assert_called_once()
+        rm_cron.assert_called_once()
         mock_stop.assert_called_once()
 
 
@@ -200,8 +267,15 @@ class TestGetStatus:
             use_windows_task_scheduler=True,
         )
         svc = SchedulerService(cfg)
-        with patch.object(scheduler_mod, "is_windows", return_value=False):
+        us = scheduler_mod.unix_schedule
+        with (
+            patch.object(scheduler_mod, "is_windows", return_value=False),
+            patch.object(us, "query_systemd_timer", return_value={"exists": False}),
+            patch.object(us, "query_cron", return_value=[]),
+        ):
             status = svc.get_status()
+        assert status["systemd_daily"] == {"exists": False}
+        assert status["cron_entries"] == []
         assert "windows_daily" not in status
         assert "windows_weekly" not in status
         assert status["enabled"] is True
@@ -337,3 +411,123 @@ class TestQueryWindowsTaskNonWindows:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestScheduleTimeArithmetic:
+    """The stdlib replacement for the abandoned `schedule` package.
+
+    These were untestable before - `schedule` owned the clock internally.
+    """
+
+    def test_parse_hhmm_valid(self):
+        from pfsentinel.services.scheduler import parse_hhmm
+
+        assert parse_hhmm("03:00") == dt_time(3, 0)
+        assert parse_hhmm("23:59") == dt_time(23, 59)
+        assert parse_hhmm(" 07:05 ") == dt_time(7, 5)
+
+    @pytest.mark.parametrize("bad", ["24:00", "12:60", "-1:00", "abc", "", "12"])
+    def test_parse_hhmm_rejects_garbage(self, bad):
+        from pfsentinel.services.scheduler import parse_hhmm
+
+        with pytest.raises(ValueError):
+            parse_hhmm(bad)
+
+    def test_daily_later_today(self):
+        from pfsentinel.services.scheduler import next_daily_run
+
+        now = datetime(2026, 8, 2, 1, 0)
+        assert next_daily_run(now, "03:00") == datetime(2026, 8, 2, 3, 0)
+
+    def test_daily_rolls_to_tomorrow_when_passed(self):
+        from pfsentinel.services.scheduler import next_daily_run
+
+        now = datetime(2026, 8, 2, 5, 0)
+        assert next_daily_run(now, "03:00") == datetime(2026, 8, 3, 3, 0)
+
+    def test_daily_exactly_now_rolls_forward(self):
+        """A slot equal to now must not fire twice."""
+        from pfsentinel.services.scheduler import next_daily_run
+
+        now = datetime(2026, 8, 2, 3, 0, 0)
+        assert next_daily_run(now, "03:00") == datetime(2026, 8, 3, 3, 0)
+
+    def test_weekly_later_this_week(self):
+        from pfsentinel.services.scheduler import next_weekly_run
+
+        now = datetime(2026, 8, 2, 1, 0)  # Sunday
+        assert next_weekly_run(now, "wednesday", "04:00") == datetime(2026, 8, 5, 4, 0)
+
+    def test_weekly_same_day_later_today(self):
+        from pfsentinel.services.scheduler import next_weekly_run
+
+        now = datetime(2026, 8, 2, 1, 0)  # Sunday
+        assert next_weekly_run(now, "sunday", "04:00") == datetime(2026, 8, 2, 4, 0)
+
+    def test_weekly_same_day_already_passed_rolls_a_week(self):
+        from pfsentinel.services.scheduler import next_weekly_run
+
+        now = datetime(2026, 8, 2, 6, 0)  # Sunday, past 04:00
+        assert next_weekly_run(now, "sunday", "04:00") == datetime(2026, 8, 9, 4, 0)
+
+    def test_weekly_unknown_day_returns_none(self):
+        from pfsentinel.services.scheduler import next_weekly_run
+
+        assert next_weekly_run(datetime(2026, 8, 2), "notaday", "04:00") is None
+
+    def test_weekly_day_is_case_insensitive(self):
+        from pfsentinel.services.scheduler import next_weekly_run
+
+        now = datetime(2026, 8, 2, 1, 0)
+        assert next_weekly_run(now, "SuNdAy", "04:00") == datetime(2026, 8, 2, 4, 0)
+
+    def test_next_run_picks_the_earlier_of_daily_and_weekly(self):
+        cfg = ScheduleConfig(
+            enabled=True,
+            daily_enabled=True,
+            daily_time="03:00",
+            weekly_enabled=True,
+            weekly_day="sunday",
+            weekly_time="04:00",
+        )
+        svc = SchedulerService(cfg)
+        now = datetime(2026, 8, 2, 1, 0)  # Sunday; daily 03:00 beats weekly 04:00
+        assert svc.next_run_after(now) == datetime(2026, 8, 2, 3, 0)
+
+    def test_next_run_none_when_nothing_enabled(self):
+        cfg = ScheduleConfig(enabled=True, daily_enabled=False, weekly_enabled=False)
+        assert SchedulerService(cfg).next_run_after(datetime(2026, 8, 2)) is None
+
+
+class TestInProcessLifecycle:
+    def test_start_refuses_when_nothing_enabled(self):
+        cfg = ScheduleConfig(enabled=True, daily_enabled=False, weekly_enabled=False)
+        assert SchedulerService(cfg).start_in_process() is False
+
+    def test_stop_interrupts_promptly(self):
+        """stop_in_process must not wait for the next scheduled slot."""
+        import time as _time
+
+        cfg = ScheduleConfig(
+            enabled=True, daily_enabled=True, daily_time="03:00", weekly_enabled=False
+        )
+        svc = SchedulerService(cfg)
+        assert svc.start_in_process() is True
+
+        started = _time.monotonic()
+        svc.stop_in_process()
+        elapsed = _time.monotonic() - started
+
+        assert elapsed < 2.0, f"stop took {elapsed:.1f}s; it should be near-instant"
+        assert svc._thread is None
+
+    def test_double_start_is_idempotent(self):
+        cfg = ScheduleConfig(
+            enabled=True, daily_enabled=True, daily_time="03:00", weekly_enabled=False
+        )
+        svc = SchedulerService(cfg)
+        try:
+            assert svc.start_in_process() is True
+            assert svc.start_in_process() is True
+        finally:
+            svc.stop_in_process()

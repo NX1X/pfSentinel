@@ -12,9 +12,6 @@
 
   "minimumReleaseAge": "14 days",
 
-  "description": "abandonmentThreshold is raised to 3 years because Renovate detects abandonment from release cadence alone, which mislabels healthy low-release-frequency projects (loguru had 73 commits in the last 12 months but no release since 0.7.3). 3 years still surfaces genuinely dead deps.",
-  "abandonmentThreshold": "3 years",
-
   "labels": ["dependencies"],
   "assignees": ["NX1X"],
   "reviewers": ["NX1X"],
@@ -107,9 +104,7 @@
         "cryptography",
         "requests",
         "urllib3",
-        "httpx",
-        "lxml",
-        "pyyaml"
+        "lxml"
       ],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": null,
@@ -117,10 +112,24 @@
       "automerge": true
     },
     {
-      "description": "Constrain custom Python version manager to minor/patch only (avoid 3.14 -> 3.15 jumps before wheels exist)",
+      "description": "CI Python floats on the minor ('3.14' already resolves to the newest 3.14.x in setup-python). Do not rewrite it into an exact patch pin.",
       "matchDepNames": ["python"],
       "matchManagers": ["custom.regex"],
-      "matchUpdateTypes": ["minor", "patch"]
+      "matchUpdateTypes": ["patch"],
+      "enabled": false
+    },
+    {
+      "description": "CI Python must only ever move to a final release, never an alpha, beta or release candidate. (Renovate forbids combining allowedVersions with matchUpdateTypes, so this is its own rule.)",
+      "matchDepNames": ["python"],
+      "matchManagers": ["custom.regex"],
+      "allowedVersions": "!/-(alpha|beta|rc)\\./"
+    },
+    {
+      "description": "Minor Python bumps (3.14 -> 3.15) need manual review: wheels for lxml, cryptography and paramiko may lag a new release.",
+      "matchDepNames": ["python"],
+      "matchManagers": ["custom.regex"],
+      "matchUpdateTypes": ["minor"],
+      "automerge": false
     },
     {
       "description": "Block major Python version-manager jumps (e.g. 3.x -> 4.x) until wheels/support exist",
@@ -145,19 +154,6 @@
       "packageNameTemplate": "actions/python-versions",
       "datasourceTemplate": "github-tags",
       "versioningTemplate": "loose"
-    },
-    {
-      "customType": "regex",
-      "description": "ruff version pin in CI install step — keep in sync with pyproject.toml [dev]",
-      "managerFilePatterns": [
-        "/^\\.github/workflows/ci\\.ya?ml$/"
-      ],
-      "matchStrings": [
-        "pip install \"ruff(?<currentValue>[^\"]+)\""
-      ],
-      "depNameTemplate": "ruff",
-      "datasourceTemplate": "pypi",
-      "versioningTemplate": "pep440"
     }
   ]
 }

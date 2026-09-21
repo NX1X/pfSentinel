@@ -4,6 +4,7 @@ This guide covers the `pfs` CLI commands, configuration, scheduling, notificatio
 
 For installation instructions, see [Installation](installation.md).
 For extended backup types (RRD, ZFS, archives, etc.), see [Extended Backups](extended-backups.md).
+The full online manual with recipes is at https://pfs.nx1xlab.dev/docs (or run `pfs docs`).
 
 ---
 
@@ -164,6 +165,19 @@ Interactive wizard that prompts for:
 | Username | `admin` | pfSense admin user |
 | Password | *(hidden)* | Stored in OS keyring |
 
+### Trust the SSH Host Key
+
+New SSH devices use strict host key checking: pfSentinel only connects to a pfSense box whose SSH key you have confirmed once. `pfs device add` asks at the end; to do it later, or again after reinstalling pfSense:
+
+```bash
+pfs device trust-key home-fw        # shows the SHA256 fingerprint and asks
+pfs device trust-key home-fw --yes  # no prompt (check the fingerprint yourself)
+```
+
+Compare the fingerprint with the pfSense console (option 8, Shell): `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`. Trusted keys are stored in `~/.pfsentinel/known_hosts`. If the key later changes, backups stop with a "host key CHANGED" error instead of silently connecting: that is either a reinstall (re-run `trust-key`) or someone intercepting the connection.
+
+Devices added with older versions keep permissive checking until you run `trust-key` once, which also switches them to strict.
+
 ### List Devices
 
 ```bash
@@ -301,13 +315,23 @@ pfs config set backup-dir /path/to/backups
 pfs schedule enable --daily-time 02:00
 ```
 
-**Windows:** Creates a Windows Task Scheduler task that runs automatically, even after reboots.
+`pfs schedule enable` hands the schedule to your operating system, so backups keep running after the command exits and after reboots.
 
-**Linux/macOS:** Uses an in-process scheduler. For persistent scheduling, use cron:
+**Windows:** registers `pfSentinel\DailyBackup` (and `WeeklyBackup`) in Task Scheduler. Run it from an Administrator PowerShell. Tasks run while you are signed in (a locked screen counts). A run missed while you were signed out or the machine was off starts at your next sign-in.
 
-```cron
-0 2 * * * /usr/local/bin/pfs backup run >> ~/.pfsentinel/cron.log 2>&1
+**Linux:** installs systemd user timers (`pfsentinel-daily.timer`, `pfsentinel-weekly.timer`). A run missed while the machine was off starts at the next boot. By default, user timers only fire while you are logged in. To back up while logged out (servers, headless boxes), enable lingering once:
+
+```bash
+loginctl enable-linger $USER
 ```
+
+Logs: `journalctl --user -u pfsentinel-backup.service`
+
+**No systemd (WSL without systemd, containers, macOS):** falls back to cron. pfSentinel adds its own tagged lines to your crontab and leaves the rest alone. Logs go to `~/.pfsentinel/logs/scheduled.log`.
+
+**Credentials and unattended runs:** on a Linux desktop, passwords live in your desktop keyring (GNOME Keyring or KWallet), which stays locked until you log in. A backup that runs before login cannot read them. On headless systems pfSentinel uses its encrypted file store, which works unattended.
+
+To run the scheduler only inside the current process instead (for example inside a container whose main process is pfSentinel), pass `--no-task-scheduler`.
 
 ### Disable
 
@@ -501,7 +525,6 @@ Logs are written to `~/.pfsentinel/logs/pfsentinel.log`.
 | Flag | Description |
 |------|-------------|
 | `--version` | Show version and exit |
-| `--debug` | Enable verbose logging |
 | `--help` | Show help |
 
 ### `pfs backup`
@@ -513,6 +536,7 @@ Logs are written to `~/.pfsentinel/logs/pfsentinel.log`.
 | `backup run --all-extras` | Include all extended targets |
 | `backup run --include rrd,pkg,...` | Include specific extras |
 | `backup run --config-only` | Config only, skip extras |
+| `backup run --non-interactive` | Never prompt; use the backup policy from config (what scheduled runs use) |
 | `backup list` | List all backups |
 | `backup list -d ID` | List backups for one device |
 | `backup verify FILENAME` | Verify SHA-256 checksum |
@@ -537,6 +561,7 @@ Logs are written to `~/.pfsentinel/logs/pfsentinel.log`.
 | `device test` | Test all connections |
 | `device test -d ID` | Test one connection |
 | `device edit ID` | Edit device settings |
+| `device trust-key ID` | Trust (or re-trust) the device's SSH host key |
 | `device remove ID --yes` | Remove a device |
 
 ### `pfs config`
@@ -579,3 +604,4 @@ Logs are written to `~/.pfsentinel/logs/pfsentinel.log`.
 | `pfs setup` | First-time setup wizard |
 | `pfs status` | Overview of devices and backups |
 | `pfs list` | Shortcut for `backup list` |
+| `pfs docs` | Open the online manual (`--no-browser` to only print the link) |

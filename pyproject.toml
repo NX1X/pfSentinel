@@ -22,27 +22,27 @@ classifiers = [
     "Topic :: System :: Systems Administration",
 ]
 dependencies = [
-    "typer>=0.15.0,<1",
-    # click is imported directly (cli/commands/notify.py, cli/commands/device.py);
-    # declare it explicitly since typer >=0.26 no longer pulls it transitively.
-    "click>=8.3.3,<9",
-    "rich>=13.9.0,<14",
+    # typer >=0.26 vendors click, so typer.Abort is NOT click.Abort. The CLI
+    # catches typer.Abort; pinning the floor here keeps that assumption true
+    # (a pre-0.26 typer would raise the external click.Abort instead).
+    "typer>=0.26,<1",
+    "rich>=15,<16",
     "pydantic>=2.10.0,<3",
     "paramiko>=5,<6",
-    "httpx>=0.28.1,<1",
-    "pyyaml>=6.0.3,<7",
-    "cryptography>=48.0.1,<49",
-    "loguru>=0.7,<1",
-    "packaging>=24.0,<25",
+    # cryptography: floor enforces GHSA-g6cj-pr64-35w5 / CVE-2026-69247 fix (>=50.0.0,
+    # PKCS#7 Bleichenbacher oracle). pfSentinel uses only AES-GCM, so the vulnerable
+    # pkcs7_decrypt_* path is unreachable here - the floor keeps it that way on upgrade.
+    "cryptography>=50.0.1,<51",
+    "packaging>=26,<27",
     "requests>=2.34.2,<3",
-    # urllib3: transitive via requests/httpx; floor enforces CVE-2026-44431 / CVE-2026-44432 fix (>=2.7.0)
+    # urllib3: transitive via requests; floor enforces CVE-2026-44431 / CVE-2026-44432 fix (>=2.7.0)
     "urllib3>=2.7.0,<3",
+    # keyring: OS keystore only (Windows Credential Manager, SecretService).
+    # The headless fallback is our own AES-GCM store in services/secret_store.py.
     "keyring>=25.0,<26",
-    "keyrings.alt>=5.0,<6",
     # lxml: HTML parsing for the pfSense web UI, and the hardened XML parser
     # used for config.xml (see utils/xml_parser.py - XXE/entity protection).
     "lxml>=6.1.1,<7",
-    "schedule>=1.2,<2",
 ]
 
 [project.urls]
@@ -53,25 +53,26 @@ Changelog = "https://github.com/NX1X/pfSentinel/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = [
-    "ruff>=0.11,<0.12",
+    "ruff>=0.15,<0.17",
     # pytest: floor enforces CVE-2025-71176 fix (>=9.0.3); predictable
     # /tmp/pytest-of-{user} paths on UNIX. 9.1.1 matches the locked version.
     "pytest>=9.1.1,<10",
-    "pytest-cov>=6.0.0,<7",
+    "pytest-cov>=7,<8",
     "responses>=0.25.0,<1",
-    "mypy>=1.14.0,<2",
-    "types-paramiko>=3.5.0,<4",
-    "types-pyyaml>=6.0.0,<7",
-    "lxml-stubs>=0.5,<1",
+    # hypothesis: property-based fuzzing of the XML parser, which is the only
+    # place pfSentinel parses untrusted network input (tests/unit/test_xml_parser_fuzz.py)
+    "hypothesis>=6.100,<7",
+    "mypy>=2,<3",
+    "types-paramiko>=5,<6",
+    "types-lxml>=2026.2.16",
     "pip-audit>=2.7.0,<3",
     "pip-tools>=7.4.0,<8",
     "bandit[toml]>=1.8,<2",
-    # release/build tools — kept in dev so a single hash-verified lockfile
+    # release/build tools - kept in dev so a single hash-verified lockfile
     # covers every CI job (lint, test, security-audit, build-*).
     "build>=1.2,<2",
-    "twine>=6.0,<7",
+    "twine>=7,<8",
     "pyinstaller>=6.10,<7",
-    "winotify>=1.1.0,<2; sys_platform == 'win32'",
     # PEP 517 backend + editable helper, included so
     # `pip install -e . --no-build-isolation` works after the lockfile install
     # (Windows CI blocks pip's isolated fetch).

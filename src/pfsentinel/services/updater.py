@@ -14,11 +14,13 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import requests
-from loguru import logger
 from packaging.version import Version
 
 from pfsentinel import __version__
+from pfsentinel.utils.logging import get_logger
 from pfsentinel.utils.platform import app_config_dir, is_windows
+
+logger = get_logger(__name__)
 
 
 class UpdateError(Exception):

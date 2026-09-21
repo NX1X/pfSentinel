@@ -14,7 +14,7 @@ pfSentinel connects to your pfSense devices over SSH or HTTPS and backs up confi
 
 I was looking for a feature-rich, modern pfSense backup tool and only found projects that were no longer maintained. Since pfSense backups are part of my own [homelab backup infrastructure](https://github.com/NX1X/homelab), I decided to build pfSentinel and share it with the pfSense community.
 
-If you have a request or an idea, I'd love to hear it — please [open a feature request](https://github.com/NX1X/pfSentinel/issues). You can also reach me on [LinkedIn](https://www.linkedin.com/in/edenporat) or through my [website](https://nx1xlab.dev/contact).
+If you have a request or an idea, I'd love to hear it, please [open a feature request](https://github.com/NX1X/pfSentinel/issues). You can also reach me on [LinkedIn](https://www.linkedin.com/in/edenporat) or through my [website](https://nx1xlab.dev/contact).
 
 ## Features
 
@@ -24,12 +24,14 @@ If you have a request or an idea, I'd love to hear it — please [open a feature
 - **Filesystem archives** (tar.gz) as a non-ZFS fallback
 - **Change detection** -- only saves when config sections actually change
 - **SHA-256 verification** for every backup file
-- **Scheduled backups** via Windows Task Scheduler or cron
-- **Notifications** -- Telegram, Slack, Windows toast, Windows Event Log
+- **Scheduled backups** via Windows Task Scheduler, systemd user timers or cron
+- **Notifications** -- Telegram, Slack, Windows toast
 - **SSH key authentication** -- no password required
-- **Credential security** -- passwords stored in OS keyring, never in config files
+- **Strict SSH host key checking** -- confirm the pfSense key once (`pfs device trust-key`); a changed key is refused
+- **Credential security** -- passwords in the OS keyring (or an AES-256-GCM encrypted store on headless systems), never in config files
 - **Self-update** -- check for and install new releases from GitHub
-- **Cross-platform** -- Windows, Linux, macOS
+- **Cross-platform** -- Windows and Linux (macOS best effort)
+- **Reproducible CI** -- lint, tests, security audit and build defined with [Dagger](https://dagger.io), so the same pipeline runs on your machine and in GitHub Actions; hash-verified lockfiles and SHA-pinned Actions
 
 ## Quick Start
 
@@ -37,11 +39,13 @@ If you have a request or an idea, I'd love to hear it — please [open a feature
 
 > [**Windows (pfs.exe)**](https://github.com/NX1X/pfSentinel/releases/latest) | [**Linux (pfs)**](https://github.com/NX1X/pfSentinel/releases/latest)
 
-Or install with pip (Python 3.13+):
+Or install from PyPI (Python 3.13+), same command on Linux and Windows:
 
 ```bash
-pip install pfsentinel
+pipx install pfsentinel
 ```
+
+Plain `pip install pfsentinel` also works in a virtualenv or on Windows; on Ubuntu 23.04+ and Debian 12+ the system Python blocks it, so use pipx there.
 
 Then:
 
@@ -57,11 +61,14 @@ See the [Installation Guide](docs/installation.md) for all installation methods.
 
 | Document | Description |
 |----------|-------------|
+| [Online manual](https://pfs.nx1xlab.dev/docs) | Every command, recipes, and a copy-paste version for AI assistants (`pfs docs`) |
 | [Installation Guide](docs/installation.md) | pip, pre-built binary, and from-source installation |
 | [Usage Guide](docs/usage.md) | CLI reference, configuration, scheduling, notifications |
 | [Extended Backups](docs/extended-backups.md) | RRD, packages, DHCP, certs, logs, ZFS, archives |
 | [Security Policy](SECURITY.md) | Vulnerability reporting, design decisions, credential storage |
 | [Contributing](CONTRIBUTING.md) | Development setup, code style, pull requests |
+| [CI with Dagger](docs/ci-dagger.md) | Run the CI pipeline locally |
+| [Roadmap](ROADMAP.md) | Path to 1.0 and what is planned |
 | [Changelog](CHANGELOG.md) | Version history |
 
 ## What Gets Backed Up
@@ -88,10 +95,7 @@ pfSentinel is built on these open-source libraries:
 | [Rich](https://github.com/Textualize/rich) | MIT | Terminal formatting |
 | [Pydantic](https://github.com/pydantic/pydantic) | MIT | Data validation |
 | [Paramiko](https://github.com/paramiko/paramiko) | LGPL-2.1 | SSH/SFTP connections |
-| [httpx](https://github.com/encode/httpx) | BSD-3-Clause | HTTPS requests |
 | [cryptography](https://github.com/pyca/cryptography) | Apache-2.0 / BSD-3-Clause | SSH key handling |
-| [Loguru](https://github.com/Delgan/loguru) | MIT | Logging |
-| [PyYAML](https://github.com/yaml/pyyaml) | MIT | YAML parsing |
 | [Requests](https://github.com/psf/requests) | Apache-2.0 | HTTP client |
 | [Packaging](https://github.com/pypa/packaging) | Apache-2.0 / BSD-2-Clause | Version parsing |
 

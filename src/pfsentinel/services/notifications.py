@@ -3,15 +3,73 @@
 from __future__ import annotations
 
 import logging
+import os
+import subprocess
 from urllib.parse import urlparse
+from xml.sax.saxutils import escape as xml_escape
 
 import requests
-from loguru import logger
 
 from pfsentinel.models.backup import BackupRecord
 from pfsentinel.models.config import NotificationConfig
 from pfsentinel.services.credentials import CredentialService
+from pfsentinel.utils.logging import get_logger
 from pfsentinel.utils.platform import is_windows
+
+logger = get_logger(__name__)
+
+# Toasts need a registered AppUserModelID. Windows PowerShell's own ID is
+# present on every Windows install, so the toast shows as "Windows PowerShell".
+_TOAST_APP_ID = "{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe"
+
+# Static script: title and message arrive via environment variables and are
+# XML-escaped in Python, so no notification text is ever parsed as PowerShell.
+_TOAST_SCRIPT = (
+    "$ErrorActionPreference='Stop';"
+    "[void][Windows.UI.Notifications.ToastNotificationManager,"
+    "Windows.UI.Notifications,ContentType=WindowsRuntime];"
+    "[void][Windows.Data.Xml.Dom.XmlDocument,"
+    "Windows.Data.Xml.Dom.XmlDocument,ContentType=WindowsRuntime];"
+    "$x=New-Object Windows.Data.Xml.Dom.XmlDocument;"
+    "$x.LoadXml($env:PFS_TOAST_XML);"
+    "$t=[Windows.UI.Notifications.ToastNotification]::new($x);"
+    "[Windows.UI.Notifications.ToastNotificationManager]::"
+    "CreateToastNotifier($env:PFS_TOAST_APP_ID).Show($t)"
+)
+
+
+def build_toast_xml(title: str, message: str) -> str:
+    return (
+        '<toast duration="short"><visual><binding template="ToastGeneric">'
+        f"<text>{xml_escape(title)}</text><text>{xml_escape(message)}</text>"
+        '</binding></visual><audio src="ms-winsoundevent:Notification.Default"/></toast>'
+    )
+
+
+def show_windows_toast(title: str, message: str) -> None:
+    """Show a toast through the WinRT API via built-in Windows PowerShell.
+
+    Raises on failure so the caller can report it. Needs no third-party package.
+    """
+    env = dict(os.environ)
+    env["PFS_TOAST_XML"] = build_toast_xml(title, message)
+    env["PFS_TOAST_APP_ID"] = _TOAST_APP_ID
+    # Absolute path, so a powershell.exe earlier on PATH cannot be picked up.
+    system_root = os.environ.get("SYSTEMROOT", r"C:\Windows")
+    powershell = os.path.join(
+        system_root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"
+    )
+    result = subprocess.run(
+        [powershell, "-NoProfile", "-NonInteractive", "-Command", _TOAST_SCRIPT],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+    if result.returncode != 0:
+        raise RuntimeError((result.stderr or result.stdout or "powershell failed").strip()[:300])
 
 
 class NotificationService:
@@ -156,20 +214,5 @@ class NotificationService:
         logger.debug("Slack notification sent")
 
     def _send_windows_toast(self, title: str, message: str, success: bool) -> None:
-        try:
-            from winotify import Notification, audio
-
-            toast = Notification(
-                app_id="pfSentinel",
-                title=title,
-                msg=message,
-                duration="short",
-            )
-            toast.set_audio(audio.Default, loop=False)
-            toast.show()
-            logger.debug("Windows toast notification sent")
-        except ImportError:
-            # winotify not installed - silently skip
-            pass
-        except Exception as e:
-            logger.debug(f"Windows toast failed: {e}")
+        show_windows_toast(title, message)
+        logger.debug("Windows toast notification sent")

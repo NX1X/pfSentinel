@@ -9,8 +9,6 @@ from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
-from loguru import logger
-
 from pfsentinel.models.backup import BackupRecord
 from pfsentinel.models.config import AppConfig
 from pfsentinel.models.device import DeviceConfig
@@ -20,6 +18,9 @@ from pfsentinel.services.diff import DiffService
 from pfsentinel.services.notifications import NotificationService
 from pfsentinel.services.retention import RetentionService
 from pfsentinel.utils import checksum, compression, naming, xml_parser
+from pfsentinel.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 ProgressCallback = Callable[[str, int], None]
 

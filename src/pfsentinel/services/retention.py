@@ -7,10 +7,11 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from loguru import logger
-
 from pfsentinel.models.backup import BackupIndex, BackupRecord
 from pfsentinel.models.config import BackupPolicy
+from pfsentinel.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class RetentionService:
