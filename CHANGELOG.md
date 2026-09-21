@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-09-21
+
+### Fixed
+
+- **Self-update of a binary install failed at the last step with "New binary failed version check".** After verifying the download, the updater runs the new executable once to confirm it starts, but it inherited the running build's PyInstaller variables (`_MEIPASS2`, `_PYI_*`, and rewritten loader paths such as `LD_LIBRARY_PATH`). A one-file binary that sees those believes it is already unpacked and refuses to start, so a perfectly good download was rejected and rolled back; the same file ran fine from a shell. Every program pfSentinel spawns now gets a cleaned environment, with the caller's original loader variables restored from PyInstaller's `<NAME>_ORIG` copies
+- When the new binary really does fail to start, the error now names the exit code and the program's own message instead of only "failed version check", and the check allows 120 seconds instead of 10, since a 30 MB one-file binary can take that long to unpack and clear an antivirus scan on first run
+
+
 ## [0.2.2] - 2026-09-21
 
 ### Fixed

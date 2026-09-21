@@ -12,7 +12,7 @@ import pytest
 import responses
 
 from pfsentinel import __version__
-from pfsentinel.services.updater import UpdateError, UpdateService
+from pfsentinel.services.updater import UpdateError, UpdateService, child_env
 
 # ── Helpers ────────────────────────────────────────────────────────────
 
@@ -519,6 +519,83 @@ class TestInstallPipx:
         with patch("subprocess.run", return_value=mock_result):
             with pytest.raises(UpdateError, match="pipx upgrade failed"):
                 svc._install_pipx()
+
+
+class TestChildEnv:
+    """A frozen one-file binary must not pass its unpack state to a child.
+
+    PyInstaller exports _MEIPASS2/_PYI_* and rewrites loader variables. A child
+    one-file binary that sees them thinks it is already unpacked and refuses to
+    start, which is why `pfs update install` could verify the download and then
+    report that the new binary would not run.
+    """
+
+    def test_pyinstaller_markers_are_removed(self, monkeypatch):
+        monkeypatch.setenv("_MEIPASS2", "/tmp/_MEI123")
+        monkeypatch.setenv("_MEIPASS", "/tmp/_MEI123")
+        monkeypatch.setenv("_PYI_APPLICATION_HOME_DIR", "/tmp/_MEI123")
+        monkeypatch.setenv("PATH", "/usr/bin")
+
+        env = child_env()
+
+        assert "_MEIPASS2" not in env
+        assert "_MEIPASS" not in env
+        assert not [k for k in env if k.startswith("_PYI_")]
+        assert env["PATH"] == "/usr/bin"
+
+    def test_original_loader_variables_are_restored(self, monkeypatch):
+        monkeypatch.setenv("LD_LIBRARY_PATH", "/tmp/_MEI123")
+        monkeypatch.setenv("LD_LIBRARY_PATH_ORIG", "/usr/local/lib")
+
+        env = child_env()
+
+        assert env["LD_LIBRARY_PATH"] == "/usr/local/lib"
+        assert "LD_LIBRARY_PATH_ORIG" not in env
+
+    def test_variable_absent_before_freezing_is_dropped(self, monkeypatch):
+        """An empty _ORIG means the caller had no such variable at all."""
+        monkeypatch.setenv("LD_LIBRARY_PATH", "/tmp/_MEI123")
+        monkeypatch.setenv("LD_LIBRARY_PATH_ORIG", "")
+
+        env = child_env()
+
+        assert "LD_LIBRARY_PATH" not in env
+        assert "LD_LIBRARY_PATH_ORIG" not in env
+
+    @responses.activate
+    def test_install_binary_verifies_with_a_clean_env(self, tmp_path, monkeypatch):
+        """The post-install `--version` check must not inherit the markers."""
+        monkeypatch.setenv("_MEIPASS2", "/tmp/_MEI999")
+        download_url = "https://example.com/pfs"
+        content = b"new-binary-content"
+        responses.add(responses.GET, download_url, body=content, status=200)
+        responses.add(
+            responses.GET, CHECKSUMS_URL, body=_checksums_body(("pfs", content)), status=200
+        )
+
+        svc = _make_service(tmp_path)
+        svc._state["checksums_url"] = CHECKSUMS_URL
+        exe_dir = tmp_path / "bin"
+        exe_dir.mkdir()
+        fake_exe = exe_dir / "pfs"
+        fake_exe.write_bytes(b"old")
+
+        captured: dict = {}
+
+        def fake_run(cmd, **kwargs):
+            captured["env"] = kwargs.get("env")
+            return MagicMock(returncode=0, stdout="pfSentinel v99.0.0", stderr="")
+
+        with (
+            patch("pfsentinel.services.updater.is_windows", return_value=False),
+            patch("pfsentinel.services.updater.sys") as mock_sys,
+            patch("subprocess.run", side_effect=fake_run),
+        ):
+            mock_sys.executable = str(fake_exe)
+            svc._install_binary(download_url, "v99.0.0")
+
+        assert captured["env"] is not None, "verification must pass an explicit env"
+        assert "_MEIPASS2" not in captured["env"]
 
 
 class TestChecksumFileNaming:

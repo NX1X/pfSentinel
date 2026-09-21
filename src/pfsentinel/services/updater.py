@@ -23,6 +23,34 @@ from pfsentinel.utils.platform import app_config_dir, is_windows
 logger = get_logger(__name__)
 
 
+def child_env() -> dict[str, str]:
+    """Environment for spawning another program from a frozen (PyInstaller) build.
+
+    A one-file binary unpacks itself into a temp directory and records that in
+    ``_MEIPASS2`` / ``_PYI_*`` environment variables. Those are inherited by any
+    child process, so a second one-file binary started from here believes it is
+    already unpacked and fails to start. PyInstaller also rewrites loader
+    variables such as ``LD_LIBRARY_PATH`` and saves the caller's value in
+    ``<NAME>_ORIG``; the original has to be put back for a non-bundled child.
+
+    This is why self-update could verify the download and still report that the
+    new binary would not start, while the same file ran fine from a shell.
+    """
+    env = dict(os.environ)
+    for key in list(env):
+        if key in {"_MEIPASS", "_MEIPASS2"} or key.startswith("_PYI_"):
+            del env[key]
+            continue
+        if key.endswith("_ORIG"):
+            original = env.pop(key)
+            base = key[: -len("_ORIG")]
+            if original:
+                env[base] = original
+            else:
+                env.pop(base, None)
+    return env
+
+
 class UpdateError(Exception):
     """Raised when an update operation fails."""
 
@@ -87,6 +115,7 @@ class UpdateService:
                     capture_output=True,
                     text=True,
                     timeout=5,
+                    env=child_env(),
                 )
                 if "pfsentinel" in result.stdout.lower():
                     return "pipx"
@@ -302,6 +331,7 @@ class UpdateService:
                 capture_output=True,
                 text=True,
                 timeout=self.VERIFY_TIMEOUT,
+                env=child_env(),
             )
             if verify.returncode != 0:
                 detail = (verify.stderr or verify.stdout or "").strip().splitlines()
@@ -331,6 +361,7 @@ class UpdateService:
             capture_output=True,
             text=True,
             timeout=self.DOWNLOAD_TIMEOUT,
+            env=child_env(),
         )
         if result.returncode != 0:
             raise UpdateError(f"pip upgrade failed:\n{result.stderr}")
@@ -342,6 +373,7 @@ class UpdateService:
             capture_output=True,
             text=True,
             timeout=self.DOWNLOAD_TIMEOUT,
+            env=child_env(),
         )
         if result.returncode != 0:
             raise UpdateError(f"pipx upgrade failed:\n{result.stderr}")
@@ -465,6 +497,7 @@ class UpdateService:
             capture_output=True,
             text=True,
             timeout=self.DOWNLOAD_TIMEOUT,
+            env=child_env(),
         )
         if result.returncode != 0:
             raise UpdateError(f"pip revert failed:\n{result.stderr}")
@@ -476,6 +509,7 @@ class UpdateService:
             capture_output=True,
             text=True,
             timeout=self.DOWNLOAD_TIMEOUT,
+            env=child_env(),
         )
         if result.returncode != 0:
             raise UpdateError(f"pipx revert failed:\n{result.stderr}")
