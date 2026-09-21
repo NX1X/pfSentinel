@@ -489,7 +489,9 @@ jobs:
         shell: bash
         run: |
           cd release_files
-          sha256sum ./* > checksums-sha256.txt
+          # Bare filenames (no "./"): older pfSentinel releases match the
+          # asset name exactly when verifying a self-update.
+          sha256sum -- * > checksums-sha256.txt
           cat checksums-sha256.txt
 
       - name: Create GitHub Release

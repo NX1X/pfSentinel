@@ -521,6 +521,43 @@ class TestInstallPipx:
                 svc._install_pipx()
 
 
+class TestChecksumFileNaming:
+    """The checksums file has spelled names in several ways over time.
+
+    `sha256sum ./*` writes "./pfs.exe" and binary mode writes "*pfs.exe";
+    matching the name exactly broke self-update from 0.2.0 to 0.2.1.
+    """
+
+    @responses.activate
+    @pytest.mark.parametrize(
+        "written_name", ["pfs.exe", "./pfs.exe", "*pfs.exe", "release/pfs.exe"]
+    )
+    def test_name_variants_are_accepted(self, tmp_path, written_name):
+        content = b"binary"
+        digest = hashlib.sha256(content).hexdigest()
+        responses.add(responses.GET, CHECKSUMS_URL, body=f"{digest}  {written_name}\n", status=200)
+        target = tmp_path / "pfs.exe"
+        target.write_bytes(content)
+
+        svc = _make_service(tmp_path)
+        svc._state["checksums_url"] = CHECKSUMS_URL
+        svc._verify_checksum(target, asset_name="pfs.exe")  # must not raise
+
+    @responses.activate
+    def test_other_assets_do_not_match(self, tmp_path):
+        """'pfs' must never satisfy the checksum for 'pfs.exe'."""
+        content = b"binary"
+        digest = hashlib.sha256(content).hexdigest()
+        responses.add(responses.GET, CHECKSUMS_URL, body=f"{digest}  ./pfs\n", status=200)
+        target = tmp_path / "pfs.exe"
+        target.write_bytes(content)
+
+        svc = _make_service(tmp_path)
+        svc._state["checksums_url"] = CHECKSUMS_URL
+        with pytest.raises(UpdateError, match="not found"):
+            svc._verify_checksum(target, asset_name="pfs.exe")
+
+
 class TestInstallBinary:
     def _setup_binary_env(self, tmp_path):
         """Create a fake binary environment for testing."""
