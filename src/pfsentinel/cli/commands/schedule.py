@@ -141,6 +141,37 @@ def schedule_disable() -> None:
     print_success("Scheduling disabled")
 
 
+# Task Scheduler last-result codes worth explaining. A task can be registered
+# and still fail every single run, so the remediation matters more than the code.
+_WINDOWS_TASK_ERRORS: dict[int, tuple[str, tuple[str, ...]]] = {
+    0x80070002: (
+        "ERROR_FILE_NOT_FOUND",
+        (
+            "[red]The task points at a program that is no longer there[/] (moved,",
+            "uninstalled, or registered by an older pfSentinel). Re-run",
+            "'pfs schedule enable' from an [bold]Administrator[/] shell to point it",
+            "at the current pfs executable.",
+        ),
+    ),
+    0x80070057: (
+        "ERROR_INVALID_PARAMETER",
+        (
+            "[red]Task command line is malformed[/] - re-run 'pfs schedule enable'",
+            "from an [bold]Administrator[/] shell to re-register it with the",
+            "correct command.",
+        ),
+    ),
+    0x80070005: (
+        "ERROR_ACCESS_DENIED",
+        (
+            "The task could not start the program. Re-run 'pfs schedule enable'",
+            "from an [bold]Administrator[/] shell, and check that pfs is in a",
+            "folder your user can read and execute.",
+        ),
+    ),
+}
+
+
 def _format_windows_task(label: str, task: dict) -> list[str]:
     """Render a Windows task's real health, not just whether it's registered."""
     if not task or not task.get("exists"):
@@ -159,13 +190,11 @@ def _format_windows_task(label: str, task: dict) -> list[str]:
         out.append("  Last result: [green]OK[/]")
     elif lr & 0x80000000:
         code = f"0x{lr & 0xFFFFFFFF:08X}"
-        if (lr & 0xFFFFFFFF) == 0x80070057:
-            out.append(f"  Last result: [red]FAILED {code} (ERROR_INVALID_PARAMETER)[/]")
-            out.append(
-                "  [red]Task command line is malformed[/] - re-run"
-                " 'pfs schedule enable' from an [bold]Administrator[/] shell"
-                " to re-register it with the correct command."
-            )
+        known = _WINDOWS_TASK_ERRORS.get(lr & 0xFFFFFFFF)
+        if known is not None:
+            name, explanation = known
+            out.append(f"  Last result: [red]FAILED {code} ({name})[/]")
+            out.extend(f"  {line}" for line in explanation)
         else:
             out.append(f"  Last result: [red]FAILED {code}[/]")
     else:
