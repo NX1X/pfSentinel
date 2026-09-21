@@ -32,6 +32,10 @@ class UpdateService:
 
     GITHUB_API_URL = "https://api.github.com/repos/NX1X/pfSentinel/releases/latest"
     CHECK_INTERVAL = timedelta(hours=24)
+    # Generous: a one-file binary unpacks and may be antivirus-scanned on
+    # first run, which is slow on Windows.
+    VERIFY_TIMEOUT = 120
+
     REQUEST_TIMEOUT = 5
     DOWNLOAD_TIMEOUT = 120
 
@@ -289,16 +293,24 @@ class UpdateService:
             os.chmod(temp_path, 0o700)
             os.replace(temp_path, current_exe)
 
-        # Verify new binary
+        # Verify the new binary actually starts. A PyInstaller one-file build
+        # unpacks itself into %TEMP% on first run and an antivirus scan of a
+        # 30 MB executable can take a while, so the timeout is generous.
         try:
             verify = subprocess.run(
                 [str(current_exe), "--version"],
                 capture_output=True,
                 text=True,
-                timeout=10,
+                timeout=self.VERIFY_TIMEOUT,
             )
             if verify.returncode != 0:
-                raise UpdateError("New binary failed version check")
+                detail = (verify.stderr or verify.stdout or "").strip().splitlines()
+                first = detail[0][:200] if detail else "no output"
+                raise UpdateError(
+                    f"The new binary did not start (exit code {verify.returncode}): {first}. "
+                    "Antivirus or SmartScreen blocking the new file is the usual cause; "
+                    "the previous version has been restored."
+                )
         except UpdateError:
             shutil.copy2(backup_path, current_exe)
             raise

@@ -699,15 +699,22 @@ class TestInstallBinary:
         svc._state["checksums_url"] = CHECKSUMS_URL
         fake_exe = self._setup_binary_env(tmp_path)
 
-        verify_result = MagicMock(returncode=1)
+        # A blocked or broken binary: non-zero exit plus a message on stderr.
+        verify_result = MagicMock(
+            returncode=225, stderr="Operation did not complete: virus", stdout=""
+        )
         with (
             patch("pfsentinel.services.updater.is_windows", return_value=False),
             patch("pfsentinel.services.updater.sys") as mock_sys,
             patch("subprocess.run", return_value=verify_result),
         ):
             mock_sys.executable = str(fake_exe)
-            with pytest.raises(UpdateError, match="New binary failed version check"):
+            with pytest.raises(UpdateError) as exc:
                 svc._install_binary(download_url, "v99.0.0")
+
+        # The exit code and the program's own message must reach the user.
+        assert "225" in str(exc.value)
+        assert "virus" in str(exc.value)
 
         # Should have reverted to old binary
         assert fake_exe.read_bytes() == b"old-binary-content"
