@@ -355,11 +355,18 @@ class UpdateService:
         except Exception as e:
             raise UpdateError(f"Failed to download checksums file: {e}") from e
 
-        # Parse checksums file (format: "hash  filename" per line)
+        # Parse checksums file (format: "hash  filename" per line).
+        # Names are normalised because the generator's spelling has varied:
+        # `sha256sum ./*` writes "./pfs.exe", binary mode writes "*pfs.exe",
+        # and either separator can appear. Compare on the bare filename.
         expected_hash: str | None = None
         for line in resp.text.strip().splitlines():
             parts = line.split(None, 1)
-            if len(parts) == 2 and parts[1].strip() == asset_name:
+            if len(parts) != 2:
+                continue
+            name = parts[1].strip().lstrip("*")
+            name = name.replace("\\", "/").rsplit("/", 1)[-1]
+            if name == asset_name:
                 expected_hash = parts[0].strip().lower()
                 break
 
