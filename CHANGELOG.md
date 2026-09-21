@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-09-21
+
 ### Fixed
 
 - `pfs schedule status` now explains the Windows Task Scheduler result codes it can diagnose: `0x80070002` (the task points at a pfs executable that no longer exists, typically one registered by an older version), `0x80070005` and `0x80070057`, each with the command that fixes it. Previously only `0x80070057` was explained and the rest showed as a bare hex code
