@@ -38,6 +38,9 @@ Last updated: 2026-09-19
       (the same mechanism `notify-send` uses), with the same on/off setting
 - [ ] **System log on both.** Replace the Windows-only `windows_event_log_enabled` flag (never implemented)
       with one `system_log_enabled` setting: Windows Event Log on Windows, journald/syslog on Linux
+- [ ] **Linux-native backup directory.** The default is `~/Documents/pfSentinel` on both systems.
+      Linux should use `~/pfSentinel` (or an XDG path), with a migration for anyone who never set
+      `backup_policy.backup_root`, so existing backups are not orphaned
 - [ ] **File permissions on Windows.** On Linux, config, backups and the secret store are `0600`/`0700`.
       On Windows `chmod` does nothing, so set explicit owner-only ACLs as well
 - [ ] **Scheduling without admin on Windows.** Linux needs no root; Windows currently needs an elevated shell

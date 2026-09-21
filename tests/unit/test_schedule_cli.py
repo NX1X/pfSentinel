@@ -57,14 +57,28 @@ class TestFormatWindowsTask:
         # remediation hint present on a separate line
         assert any("re-run" in ln.lower() or "administrator" in ln.lower() for ln in lines)
 
-    def test_other_high_bit_failure_shows_hex_code_no_remediation(self):
-        # 0x80070005 (Access denied) as signed int
+    def test_file_not_found_explains_stale_task(self):
+        """0x80070002: the task points at a program that no longer exists."""
+        lines = _format_windows_task("Daily", {"exists": True, "last_result": -2147024894})
+        joined = "\n".join(lines)
+        assert "FAILED 0x80070002" in joined
+        assert "ERROR_FILE_NOT_FOUND" in joined
+        assert "no longer there" in joined
+        assert "schedule enable" in joined
+
+    def test_access_denied_explains(self):
+        lines = _format_windows_task("Daily", {"exists": True, "last_result": -2147024891})
+        joined = "\n".join(lines)
+        assert "ERROR_ACCESS_DENIED" in joined
+
+    def test_unknown_high_bit_failure_shows_hex_code_no_remediation(self):
+        # 0x8007000E (out of memory): not in the table, so just the code
         lines = _format_windows_task(
             "Daily",
-            {"exists": True, "last_result": -2147024891},
+            {"exists": True, "last_result": -2147024882},
         )
         joined = "\n".join(lines)
-        assert "FAILED 0x80070005" in joined
+        assert "FAILED 0x8007000E" in joined
         assert "ERROR_INVALID_PARAMETER" not in joined
 
     def test_last_result_none_omits_result_line(self):

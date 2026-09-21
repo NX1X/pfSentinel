@@ -473,6 +473,9 @@ Multiple categories are joined with `+` in the filename. All categories are stor
 
 ## 10. Troubleshooting
 
+**Windows: scheduled task fails with `0x80070002`.** The task points at a pfs executable that is no longer there (moved, uninstalled, or registered by an older pfSentinel version). Re-run `pfs schedule enable` from an Administrator PowerShell to re-register it against the current executable, then check `pfs schedule status`.
+
+
 ### SSH connection refused
 
 Verify SSH is enabled on pfSense: **System > Advanced > Admin Access > Enable Secure Shell**.

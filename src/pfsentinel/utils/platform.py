@@ -51,10 +51,14 @@ def app_config_dir() -> Path:
 
 
 def default_backup_dir() -> Path:
-    """Return a sensible default backup directory."""
-    if is_windows():
-        return Path.home() / "Documents" / "pfSentinel"
-    return Path.home() / "pfSentinel"
+    """Default backup directory when none is configured.
+
+    The same place on every OS (``~/Documents/pfSentinel``). A Linux-native
+    location would be nicer, but changing it now would silently relocate the
+    backups of everyone who never set ``backup_policy.backup_root``; see the
+    roadmap for the migration.
+    """
+    return Path.home() / "Documents" / "pfSentinel"
 
 
 def run_command(args: list[str], check: bool = True) -> subprocess.CompletedProcess:

@@ -101,10 +101,12 @@ class BackupPolicy(BaseModel):
 
     @property
     def resolved_root(self) -> Path:
-        """Return the configured root, or the default if not set."""
+        """Return the configured root, or the platform default if not set."""
         if self.backup_root is not None:
             return self.backup_root.expanduser()
-        return Path.home() / "Documents" / "pfSentinel"
+        from pfsentinel.utils.platform import default_backup_dir
+
+        return default_backup_dir()
 
 
 class ScheduleConfig(BaseModel):

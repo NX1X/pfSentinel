@@ -13,9 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `pfs schedule status` now explains the Windows Task Scheduler result codes it can diagnose: `0x80070002` (the task points at a pfs executable that no longer exists, typically one registered by an older version), `0x80070005` and `0x80070057`, each with the command that fixes it. Previously only `0x80070057` was explained and the rest showed as a bare hex code
+- The default backup directory is now defined in one place. `BackupPolicy.resolved_root` hardcoded `~/Documents/pfSentinel` while `utils.platform.default_backup_dir()` returned `~/pfSentinel` on Linux and was never called, so the documented Linux path was wrong. Behavior is unchanged (`~/Documents/pfSentinel` on both systems); the docs now match it
+
 ## [0.2.0] - 2026-09-19
 
-0.1.4 and 0.1.5 were delayed by a red Windows CI run and published afterwards from their original commits. They are yanked on PyPI because they contain known vulnerabilities (see their sections); use 0.2.0.
+0.1.4 and 0.1.5 were prepared but never published: the release jobs need a green Windows test run, and Windows CI was red from 2026-07-11 until this release. Their changes ship here. 0.1.4 also has a GitHub release for the record; neither version is on PyPI, so install 0.2.0.
 
 ### Fixed
 
@@ -75,7 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.5] - 2026-07-12
 
-Yanked on PyPI: depends on `cryptography<49` (GHSA-g6cj-pr64-35w5), and its scheduled backups do not run on Linux or read credentials on Windows. Use 0.2.0.
+Never published to PyPI (see 0.2.0). Depends on `cryptography<49` (GHSA-g6cj-pr64-35w5), and its scheduled backups do not run on Linux or read credentials on Windows.
 
 ### Fixed
 
@@ -94,7 +99,7 @@ Yanked on PyPI: depends on `cryptography<49` (GHSA-g6cj-pr64-35w5), and its sche
 
 ## [0.1.4] - 2026-07-11
 
-Yanked on PyPI: crashes on launch with current `typer` (missing `click`), and depends on `paramiko<5` (CVE-2026-44405) and `cryptography<49` (GHSA-g6cj-pr64-35w5). Use 0.2.0.
+Never published to PyPI (see 0.2.0). Crashes on launch with current `typer` (missing `click`), and depends on `paramiko<5` (CVE-2026-44405) and `cryptography<49` (GHSA-g6cj-pr64-35w5).
 
 ### Fixed
 

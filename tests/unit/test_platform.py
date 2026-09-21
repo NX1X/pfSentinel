@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
+
+import pytest
 
 from pfsentinel.utils import platform as platform_mod
 from pfsentinel.utils.platform import (
@@ -53,20 +56,15 @@ class TestPaths:
         d = app_config_dir()
         assert d.name == ".pfsentinel"
 
-    def test_default_backup_dir_windows(self, monkeypatch):
-        monkeypatch.setattr(sys, "platform", "win32")
-        d = default_backup_dir()
-        assert "Documents" in str(d)
-        assert "pfSentinel" in str(d)
+    def test_default_backup_dir_is_the_same_on_every_os(self, monkeypatch):
+        """One default for both systems; config.resolved_root must agree with it."""
+        from pfsentinel.models.config import BackupPolicy
 
-    def test_default_backup_dir_linux(self, monkeypatch):
-        monkeypatch.setattr(sys, "platform", "linux")
-        d = default_backup_dir()
-        assert "pfSentinel" in str(d)
-        assert "Documents" not in str(d)
-
-
-import pytest
+        expected = Path.home() / "Documents" / "pfSentinel"
+        for platform_name in ("win32", "linux", "darwin"):
+            monkeypatch.setattr(sys, "platform", platform_name)
+            assert default_backup_dir() == expected
+            assert BackupPolicy().resolved_root == expected
 
 
 class TestRunCommand:
