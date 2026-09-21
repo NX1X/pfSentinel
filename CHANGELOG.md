@@ -13,9 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-09-21
+
 ### Fixed
 
-- **Self-update from a binary install failed with "Checksum for 'pfs.exe' not found in release checksums file".** The release job generated the checksums with `sha256sum ./*`, so every name carried a `./` prefix, while the updater matched the asset name exactly. Releases now write bare filenames, and the updater normalises what it reads (`./name`, `*name` from binary mode, or a directory prefix), so a release built either way verifies. The v0.2.1 checksums file was regenerated in place so existing 0.2.0 installs can update
+- **Self-update from a binary install failed with "Checksum for 'pfs.exe' not found in release checksums file".** The release job generated the checksums with `sha256sum ./*`, so every name carried a `./` prefix, while the updater matched the asset name exactly. Releases now write bare filenames, and the updater normalises what it reads (`./name`, `*name` from binary mode, or a directory prefix), so a release built either way verifies. v0.2.1 itself cannot be repaired (GitHub releases are immutable), so 0.2.0 and 0.2.1 binary installs update to 0.2.2 instead
 
 
 ## [0.2.1] - 2026-09-21
