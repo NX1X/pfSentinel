@@ -36,7 +36,7 @@ dependencies = [
     "packaging>=26,<27",
     "requests>=2.34.2,<3",
     # urllib3: transitive via requests; floor enforces CVE-2026-44431 / CVE-2026-44432 fix (>=2.7.0)
-    "urllib3>=2.7.0,<3",
+    "urllib3>=2.8.0,<3",
     # keyring: OS keystore only (Windows Credential Manager, SecretService).
     # The headless fallback is our own AES-GCM store in services/secret_store.py.
     "keyring>=25.0,<26",
