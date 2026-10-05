@@ -63,7 +63,7 @@ dev = [
     # place pfSentinel parses untrusted network input (tests/unit/test_xml_parser_fuzz.py)
     "hypothesis>=6.100,<7",
     "mypy>=2,<3",
-    "types-paramiko>=5,<6",
+    "types-paramiko>=5.0.0.20260724,<6",
     "types-lxml>=2026.2.16",
     "pip-audit>=2.7.0,<3",
     "pip-tools>=7.4.0,<8",
