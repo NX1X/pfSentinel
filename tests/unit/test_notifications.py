@@ -252,7 +252,7 @@ class TestSecretsNeverReachOutput:
         with patch("pfsentinel.services.notifications.requests.post") as post:
             results = svc._dispatch("t", "m", success=True)
         post.assert_not_called()
-        assert "hooks.slack.com" in results["Slack"]
+        assert results["Slack"].startswith("Slack webhook host must be")
 
     def test_log_formatter_redacts_tracebacks_too(self):
         import io
