@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- CI runs on main are no longer cancelled by a later merge. A release run waits for its PyPI approval, and a merge during that wait cancelled the v0.2.5 publish. Only pull-request runs cancel superseded runs now
 - **Renovate now updates the lockfiles.** Two header options in the lockfiles (`-o` and `--extra dev`) made Renovate's pip-compile manager reject both files, so for months its PRs raised floors in `pyproject.toml` but never touched `requirements.lock` or `requirements-dev.lock`. The headers now use `--output-file=` and `--extra=dev`, and a test keeps them that way
 - Renovate rules matched the wrong manager: they named `pep621`, but the root `pyproject.toml` was read by the `poetry` manager. Grouping and automerge never applied, so every package got its own PR. The rules now target `pip-compile`, which owns the root project and its lockfiles. The `poetry` manager is off, and `pep621` handles only the Dagger module. A dry run shows 6 update branches where the dashboard listed about 25
 - Python versions (requires-python, CI `python-version`, Dagger module) are no longer bumped by Renovate. They change by hand once lxml, cryptography and paramiko have wheels for the new version. This removes the errored `python 3.15.1` update
