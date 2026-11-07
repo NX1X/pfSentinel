@@ -37,12 +37,19 @@
   "osvVulnerabilityAlerts": true,
 
   "lockFileMaintenance": {
+    "description": "Re-resolves every pin at once, so the per-version minimumReleaseAge cooldown cannot apply. Monthly, and only merged after a human checks the release dates.",
     "enabled": true,
-    "schedule": ["before 6am on monday"],
-    "automerge": true
+    "schedule": ["before 6am on the first day of the month"],
+    "automerge": false
+  },
+
+  "poetry": {
+    "description": "pfSentinel does not use Poetry. Left on, this manager reads pyproject.toml a second time without the lockfiles and opens duplicate PRs that raise floors but never update requirements*.lock.",
+    "enabled": false
   },
 
   "pip-compile": {
+    "description": "Owns pyproject.toml together with requirements.lock and requirements-dev.lock. Their headers must use --extra=dev and --output-file= (with '='); Renovate rejects the short or spaced forms and then manages neither lockfile.",
     "managerFilePatterns": [
       "/(^|/)requirements\\.lock$/",
       "/(^|/)requirements-dev\\.lock$/"
@@ -59,8 +66,14 @@
 
   "packageRules": [
     {
-      "description": "Group non-major Python runtime deps from pyproject.toml [project.dependencies]",
+      "description": "The root pyproject.toml belongs to pip-compile, which updates it together with requirements*.lock. pep621 would read it a second time and open duplicate PRs without lockfile changes. pep621 stays on for .dagger/pyproject.toml (uv.lock).",
       "matchManagers": ["pep621"],
+      "matchFileNames": ["pyproject.toml"],
+      "enabled": false
+    },
+    {
+      "description": "Group non-major Python runtime deps from pyproject.toml [project.dependencies]",
+      "matchManagers": ["pip-compile"],
       "matchDepTypes": ["project.dependencies"],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "python runtime deps",
@@ -69,7 +82,7 @@
     },
     {
       "description": "Group non-major Python dev deps from [project.optional-dependencies]",
-      "matchManagers": ["pep621"],
+      "matchManagers": ["pip-compile"],
       "matchDepTypes": ["project.optional-dependencies"],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "python dev deps",
@@ -78,7 +91,7 @@
     },
     {
       "description": "Major Python bumps: extra cooldown + manual review (C-extension wheel risk for lxml/cryptography/paramiko)",
-      "matchManagers": ["pep621"],
+      "matchManagers": ["pip-compile", "pep621"],
       "matchUpdateTypes": ["major"],
       "minimumReleaseAge": "14 days",
       "automerge": false
@@ -112,54 +125,17 @@
       "automerge": true
     },
     {
-      "description": "CI Python floats on the minor ('3.14' already resolves to the newest 3.14.x in setup-python). Do not rewrite it into an exact patch pin.",
+      "description": "The Dagger CI module (.dagger/): group its non-major updates into one PR.",
+      "matchFileNames": [".dagger/pyproject.toml"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "dagger ci module",
+      "labels": ["dependencies", "ci"],
+      "automerge": true
+    },
+    {
+      "description": "Python versions change by hand, everywhere: requires-python, the CI python-version pins and the Dagger module. A new Python needs wheels for lxml, cryptography and paramiko first, and an automatic requires-python >=3.15.0 bump already broke Dagger CI once.",
       "matchDepNames": ["python"],
-      "matchManagers": ["custom.regex"],
-      "matchUpdateTypes": ["patch"],
       "enabled": false
-    },
-    {
-      "description": "CI Python must only ever move to a final release, never an alpha, beta or release candidate. (Renovate forbids combining allowedVersions with matchUpdateTypes, so this is its own rule.)",
-      "matchDepNames": ["python"],
-      "matchManagers": ["custom.regex"],
-      "allowedVersions": "!/-(alpha|beta|rc)\\./"
-    },
-    {
-      "description": "Minor Python bumps (3.14 -> 3.15) need manual review: wheels for lxml, cryptography and paramiko may lag a new release.",
-      "matchDepNames": ["python"],
-      "matchManagers": ["custom.regex"],
-      "matchUpdateTypes": ["minor"],
-      "automerge": false
-    },
-    {
-      "description": "Block major Python version-manager jumps (e.g. 3.x -> 4.x) until wheels/support exist",
-      "matchDepNames": ["python"],
-      "matchManagers": ["custom.regex"],
-      "matchUpdateTypes": ["major"],
-      "enabled": false
-    },
-    {
-      "description": "requires-python is a support statement, not a dependency to chase. Renovate proposed requires-python >=3.15.0 for the Dagger module, which no Python in CI satisfied, so Dagger CI failed. Change it by hand when a new Python is supported.",
-      "matchDepNames": ["python"],
-      "matchManagers": ["pep621"],
-      "enabled": false
-    }
-  ],
-
-  "customManagers": [
-    {
-      "customType": "regex",
-      "description": "actions/setup-python python-version pin in workflow files",
-      "managerFilePatterns": [
-        "/^\\.github/workflows/[^/]+\\.ya?ml$/"
-      ],
-      "matchStrings": [
-        "python-version:\\s*['\"]?(?<currentValue>\\d+\\.\\d+(?:\\.\\d+)?)['\"]?"
-      ],
-      "depNameTemplate": "python",
-      "packageNameTemplate": "actions/python-versions",
-      "datasourceTemplate": "github-tags",
-      "versioningTemplate": "loose"
     }
   ]
 }

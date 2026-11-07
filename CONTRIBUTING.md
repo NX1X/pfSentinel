@@ -84,6 +84,29 @@ pytest tests/ -v -m "not integration"
 mypy src/pfsentinel
 ```
 
+## Dependencies and lockfiles
+
+Renovate keeps dependencies up to date. It edits `pyproject.toml` and both
+lockfiles in the same PR. When you change a dependency by hand, regenerate both
+lockfiles with exactly these commands:
+
+```bash
+UV_EXCLUDE_NEWER="14 days" uv pip compile --universal --generate-hashes pyproject.toml --output-file=requirements.lock
+UV_EXCLUDE_NEWER="14 days" uv pip compile --universal --extra=dev --generate-hashes pyproject.toml --output-file=requirements-dev.lock
+```
+
+- Keep the `=` in `--extra=dev` and `--output-file=`. Renovate replays the
+  command stored in each lockfile header, and it rejects `-o` and
+  `--extra dev`. With either one, Renovate stops managing both lockfiles
+  without telling anyone. `tests/unit/test_dependency_contracts.py` checks
+  the headers.
+- `UV_EXCLUDE_NEWER` applies the project's 14-day cooldown on new releases.
+  Pass it as an environment variable, not an option, so it stays out of the
+  header.
+- Regenerate both files in the same change, so their shared pins match.
+  A test checks that too.
+- Add `--upgrade` to move every pin to the newest version the cooldown allows.
+
 ## CI Pipeline
 
 Lint, test, security-audit and package-build run as a single [Dagger](https://dagger.io)

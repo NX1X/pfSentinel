@@ -139,3 +139,31 @@ class TestLockfileConsistency:
         assert not missing, (
             f"packages in requirements.lock but not requirements-dev.lock: {missing}"
         )
+
+
+class TestLockfileHeaders:
+    """Renovate replays the uv command stored in each lockfile header.
+
+    It refuses `-o FILE` and `--extra dev` (it needs `--output-file=` and
+    `--extra=dev`). One refused option made it skip both lockfiles for months,
+    so its PRs raised floors in pyproject.toml but never updated the locks.
+    """
+
+    @pytest.mark.parametrize(
+        ("lockfile", "extra"),
+        [("requirements.lock", None), ("requirements-dev.lock", "--extra=dev")],
+    )
+    def test_header_is_one_renovate_can_replay(self, lockfile: str, extra: str | None) -> None:
+        lines = (Path(__file__).resolve().parents[2] / lockfile).read_text(encoding="utf-8")
+        header = next(ln for ln in lines.splitlines()[:4] if "uv pip compile" in ln)
+        args = header.split("uv pip compile", 1)[1].split()
+        assert f"--output-file={lockfile}" in args, header
+        assert "-o" not in args, header
+        assert "--universal" in args, header
+        assert "--generate-hashes" in args, header
+        if extra:
+            assert extra in args, header
+        assert "--extra" not in args, "use --extra=NAME with an equals sign"
+        assert not any(a.startswith("--exclude-newer") for a in args), (
+            "pass the cooldown as UV_EXCLUDE_NEWER, not in the header"
+        )

@@ -87,7 +87,7 @@ jobs:
             python -m pip install --only-binary :all: --require-hashes --dry-run -r requirements.lock
             echo "Hash verification passed."
           else
-            echo "::warning::No requirements.lock found. Run 'pip-compile --generate-hashes pyproject.toml -o requirements.lock' to enable hash verification."
+            echo "::warning::No requirements.lock found. Regenerate it as described in CONTRIBUTING.md (Dependencies and lockfiles)."
           fi
 
   # ---------------------------------------------------------------------------
