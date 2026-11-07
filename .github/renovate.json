@@ -137,6 +137,12 @@
       "matchManagers": ["custom.regex"],
       "matchUpdateTypes": ["major"],
       "enabled": false
+    },
+    {
+      "description": "requires-python is a support statement, not a dependency to chase. Renovate proposed requires-python >=3.15.0 for the Dagger module, which no Python in CI satisfied, so Dagger CI failed. Change it by hand when a new Python is supported.",
+      "matchDepNames": ["python"],
+      "matchManagers": ["pep621"],
+      "enabled": false
     }
   ],
 

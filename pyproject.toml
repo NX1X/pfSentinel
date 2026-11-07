@@ -35,8 +35,12 @@ dependencies = [
     "cryptography>=50.0.1,<51",
     "packaging>=26,<27",
     "requests>=2.34.2,<3",
-    # urllib3: transitive via requests; floor enforces CVE-2026-44431 / CVE-2026-44432 fix (>=2.7.0)
-    "urllib3>=2.7.0,<3",
+    # urllib3: transitive via requests; floor enforces PYSEC-2026-4175/4176/4177 (>=2.8.0)
+    "urllib3>=2.8.0,<3",
+    # certifi: transitive via requests; floor enforces GHSA-6q48-6c7w-9gw2 /
+    # PYSEC-2026-4320 (>=2026.10.18). Declared so a lock regeneration cannot
+    # drift back onto a bundle with the revoked root.
+    "certifi>=2026.10.18",
     # keyring: OS keystore only (Windows Credential Manager, SecretService).
     # The headless fallback is our own AES-GCM store in services/secret_store.py.
     "keyring>=25.0,<26",
@@ -53,7 +57,7 @@ Changelog = "https://github.com/NX1X/pfSentinel/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = [
-    "ruff>=0.15,<0.17",
+    "ruff>=0.17,<0.18",
     # pytest: floor enforces CVE-2025-71176 fix (>=9.0.3); predictable
     # /tmp/pytest-of-{user} paths on UNIX. 9.1.1 matches the locked version.
     "pytest>=9.1.1,<10",
