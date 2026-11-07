@@ -177,11 +177,15 @@ def _telegram_send_test(token: str, chat_id: str) -> None:
                 "parse_mode": "Markdown",
             },
             timeout=10,
+            allow_redirects=False,
         )
         resp.raise_for_status()
         print_success("Test message sent!")
     except Exception as e:
-        print_error(f"Failed to send test message: {e}")
+        from pfsentinel.services.notifications import describe_send_error
+
+        # Never print the raw error: requests quotes the URL, which holds the token.
+        print_error(f"Failed to send test message: {describe_send_error(e)}")
 
 
 # ---------------------------------------------------------------------------
@@ -217,11 +221,18 @@ def slack_setup() -> None:
         print_info("Aborted.")
         return
 
-    if not webhook_url.startswith("https://hooks.slack.com/"):
-        print_warning(
-            "URL doesn't look like a Slack webhook"
-            " (expected https://hooks.slack.com/...). Continuing anyway."
-        )
+    from urllib.parse import urlparse
+
+    parsed = urlparse(webhook_url.strip())
+    host = parsed.hostname or ""
+    if parsed.scheme != "https" or not (
+        host == "hooks.slack.com" or host.endswith(".hooks.slack.com")
+    ):
+        # Backup notifications are only ever sent to Slack's webhook host.
+        print_error("That is not a Slack webhook URL (expected https://hooks.slack.com/...).")
+        print_info("  Nothing was saved. Copy the URL from Incoming Webhooks and try again.")
+        raise typer.Exit(1)
+    webhook_url = webhook_url.strip()
 
     creds.store_slack_webhook(webhook_url)
     config.notifications.slack_enabled = True
@@ -295,11 +306,12 @@ def _slack_send_test(webhook_url: str) -> None:
                 ]
             },
             timeout=10,
+            allow_redirects=False,
         )
         resp.raise_for_status()
         print_success("Test message sent!")
     except requests.exceptions.RequestException:
-        print_error("Failed to send test message — check your webhook URL and network")
+        print_error("Failed to send test message. Check your webhook URL and network.")
     except Exception:
         print_error("Failed to send test message")
 
@@ -339,7 +351,7 @@ def notify_test() -> None:
             print_success(f"  {channel}: sent")
             any_ok = True
         else:
-            print_error(f"  {channel}: failed — {err}")
+            print_error(f"  {channel}: failed: {err}")
             any_fail = True
 
     if any_ok and not any_fail:

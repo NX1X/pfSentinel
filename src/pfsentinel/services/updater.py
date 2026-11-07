@@ -23,6 +23,16 @@ from pfsentinel.utils.platform import app_config_dir, is_windows
 logger = get_logger(__name__)
 
 
+# Library search variables a PyInstaller build rewrites to point at its bundle.
+_LOADER_VARS = (
+    "LD_LIBRARY_PATH",
+    "LD_PRELOAD",
+    "DYLD_LIBRARY_PATH",
+    "DYLD_FRAMEWORK_PATH",
+    "LIBPATH",
+)
+
+
 def child_env() -> dict[str, str]:
     """Environment for spawning another program from a frozen (PyInstaller) build.
 
@@ -37,17 +47,28 @@ def child_env() -> dict[str, str]:
     new binary would not start, while the same file ran fine from a shell.
     """
     env = dict(os.environ)
+    # PyInstaller's own markers: these names mean nothing to anything else.
     for key in list(env):
         if key in {"_MEIPASS", "_MEIPASS2"} or key.startswith("_PYI_"):
             del env[key]
-            continue
-        if key.endswith("_ORIG"):
-            original = env.pop(key)
-            base = key[: -len("_ORIG")]
+
+    # Loader variables are only rewritten by a frozen build, and only these
+    # names. A user's own FOO_ORIG is left alone.
+    if getattr(sys, "frozen", False) is not True:
+        return env
+    bundle = getattr(sys, "_MEIPASS", "")
+    if not isinstance(bundle, str):
+        bundle = ""
+    for var in _LOADER_VARS:
+        original = env.pop(f"{var}_ORIG", None)
+        if original is not None:
             if original:
-                env[base] = original
+                env[var] = original
             else:
-                env.pop(base, None)
+                env.pop(var, None)
+        elif bundle and bundle in env.get(var, ""):
+            # No saved original: the caller had none, so drop the bundle path.
+            env.pop(var, None)
     return env
 
 

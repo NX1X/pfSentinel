@@ -13,7 +13,7 @@ import requests
 from pfsentinel.models.backup import BackupRecord
 from pfsentinel.models.config import NotificationConfig
 from pfsentinel.services.credentials import CredentialService
-from pfsentinel.utils.logging import get_logger
+from pfsentinel.utils.logging import get_logger, redact_secrets
 from pfsentinel.utils.platform import is_windows
 
 logger = get_logger(__name__)
@@ -70,6 +70,20 @@ def show_windows_toast(title: str, message: str) -> None:
     )
     if result.returncode != 0:
         raise RuntimeError((result.stderr or result.stdout or "powershell failed").strip()[:300])
+
+
+def describe_send_error(error: Exception) -> str:
+    """A user-facing description of a failed send that never contains a secret.
+
+    requests puts the full URL into its messages, and for Telegram (token in
+    the path) and Slack (the URL is the credential) that URL is the secret.
+    """
+    if isinstance(error, requests.HTTPError) and error.response is not None:
+        resp = error.response
+        return f"HTTP {resp.status_code} {resp.reason or ''}".strip()
+    if isinstance(error, requests.RequestException):
+        return f"{type(error).__name__}: {redact_secrets(str(error))}"
+    return redact_secrets(str(error))
 
 
 class NotificationService:
@@ -137,24 +151,27 @@ class NotificationService:
                 self._send_telegram(title, message)
                 results["Telegram"] = None
             except Exception as e:
-                logger.warning(f"Telegram notification failed: {e}")
-                results["Telegram"] = str(e)
+                reason = describe_send_error(e)
+                logger.warning(f"Telegram notification failed: {reason}")
+                results["Telegram"] = reason
 
         if self._config.slack_enabled:
             try:
                 self._send_slack(title, message, success)
                 results["Slack"] = None
             except Exception as e:
-                logger.warning(f"Slack notification failed: {e}")
-                results["Slack"] = str(e)
+                reason = describe_send_error(e)
+                logger.warning(f"Slack notification failed: {reason}")
+                results["Slack"] = reason
 
         if self._config.windows_toast_enabled and is_windows():
             try:
                 self._send_windows_toast(title, message, success)
                 results["Windows Toast"] = None
             except Exception as e:
-                logger.debug(f"Windows toast failed: {e}")
-                results["Windows Toast"] = str(e)
+                reason = describe_send_error(e)
+                logger.debug(f"Windows toast failed: {reason}")
+                results["Windows Toast"] = reason
 
         return results
 
@@ -177,6 +194,7 @@ class NotificationService:
                 url,
                 json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"},
                 timeout=10,
+                allow_redirects=False,
             )
             resp.raise_for_status()
         finally:
@@ -196,7 +214,12 @@ class NotificationService:
             parsed.hostname != "hooks.slack.com"
             and not parsed.hostname.endswith(".hooks.slack.com")
         ):
-            logger.warning(f"Slack webhook hostname is not hooks.slack.com: {parsed.hostname}")
+            # Refuse rather than warn: the message carries backup details, and
+            # a webhook stored for some other host would send them there.
+            raise RuntimeError(
+                f"Slack webhook host must be hooks.slack.com, not {parsed.hostname!r}. "
+                "Run: pfs notify slack setup"
+            )
 
         icon = ":white_check_mark:" if success else ":x:"
         payload = {
@@ -209,7 +232,7 @@ class NotificationService:
                 }
             ]
         }
-        resp = requests.post(webhook_url, json=payload, timeout=10)
+        resp = requests.post(webhook_url, json=payload, timeout=10, allow_redirects=False)
         resp.raise_for_status()
         logger.debug("Slack notification sent")
 

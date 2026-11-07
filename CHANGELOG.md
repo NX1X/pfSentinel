@@ -13,6 +13,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-11-07
+
+Fixes from a security review of the code shipped since 0.2.0.
+
+### Security
+
+- **Notification credentials no longer reach logs or the console.** A Telegram bot token travels in the request URL, and a Slack webhook URL is itself the credential. When a send failed, `requests` quoted that URL in its error, and pfSentinel printed the error to the console and to the scheduled-run log. Errors now show only the HTTP status or the error type, and every log line passes through a filter that redacts bot tokens and webhook paths, tracebacks included
+- **The Slack webhook host is enforced.** A webhook URL that is not on `hooks.slack.com` was only warned about and still received backup details. pfSentinel now refuses to send there, and `pfs notify slack setup` refuses to save it. Notification requests no longer follow redirects
+- **A key pinned with `pfs device trust-key` now always wins.** paramiko checks the system and `~/.ssh/known_hosts` keys before the client's own, so a stale OpenSSH entry for the same host overrode the pin, and re-trusting could not fix the mismatch. For a trusted device, only `~/.pfsentinel/known_hosts` is used now
+- **Re-trusting replaces every old key for the host.** paramiko removes only the first matching entry, so a second key type could stay pinned. The pinned-keys file is now written atomically and is owner-only from the moment it exists
+- An untrusted host key now raises pfSentinel's own error directly, instead of being recognised from paramiko's English message text. The rule that a host key problem never falls back to HTTPS no longer depends on that wording
+- Scheduled jobs: a line break or NUL in the command path is rejected instead of writing extra lines into the systemd unit or crontab. A `$` in the path is written as `$$`, because systemd expands variables even inside quotes. The cron log is created owner-only (0600, folder 0700)
+- Windows: times read from `config.json` are validated before they reach the Task Scheduler XML, as on Linux already
+- Release files, including the `pfs` and `pfs.exe` binaries, now carry signed build provenance. Check a download with `gh attestation verify pfs.exe --repo NX1X/pfSentinel`
+- OSV-Scanner now checks all three lockfiles (runtime, development, Dagger CI), not only the runtime one
+
+### Fixed
+
+- Windows: a schedule time with a one-digit hour, such as `2:05`, produced an invalid Task Scheduler start time (`T2:05:00`). Times are now zero-padded
+- A schedule time with a non-ASCII digit, such as `²:00`, crashed with a traceback. It is now rejected with a clear message
+- `child_env()` now restores only PyInstaller's library-path variables, and only in a frozen build. It used to rewrite any `*_ORIG` variable, including ones that belong to the user. It also drops a library path that points into the bundle when PyInstaller saved no original
+
+### Changed
+
+- The `publish-pypi` job no longer requests `attestations: write`; trusted publishing needs only `id-token: write`
+- `SECURITY.md` describes the current host key behavior. It still described the pre-0.2.0 permissive default and a `--strict-host-keys` option that does not exist
+
+
 ## [0.2.4] - 2026-11-07
 
 ### Security

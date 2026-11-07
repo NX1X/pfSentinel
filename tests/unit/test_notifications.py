@@ -5,6 +5,8 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
+import responses
 
 from pfsentinel.models.backup import BackupRecord, BackupType, ChangeCategory
 from pfsentinel.models.config import NotificationConfig
@@ -196,3 +198,76 @@ class TestWindowsToastBuiltin:
         )
         with pytest.raises(RuntimeError, match="WinRT unavailable"):
             n.show_windows_toast("t", "m")
+
+
+class TestSecretsNeverReachOutput:
+    """Telegram puts the bot token in the URL, and a Slack webhook URL is the secret.
+
+    requests quotes the URL in its error messages, so a failed send used to
+    print the credential to the console and to scheduled-run logs.
+    """
+
+    TOKEN = "123456789:AAHsecretTOKENvalue_-x"
+    WEBHOOK = "https://hooks.slack.com/services/T000/B000/SECRETpart"
+
+    def _service(self, **flags):
+        config = NotificationConfig(
+            telegram_chat_id="42", notify_on_success=True, windows_toast_enabled=False, **flags
+        )
+        creds = CredentialService()
+        creds.store_telegram_token(self.TOKEN)
+        creds.store_slack_webhook(self.WEBHOOK)
+        return NotificationService(config, creds)
+
+    @responses.activate
+    def test_telegram_http_error_hides_token(self, caplog):
+        responses.add(
+            responses.POST,
+            f"https://api.telegram.org/bot{self.TOKEN}/sendMessage",
+            status=401,
+        )
+        svc = self._service(telegram_enabled=True)
+        with caplog.at_level("WARNING"):
+            results = svc._dispatch("t", "m", success=True)
+        assert results["Telegram"].startswith("HTTP 401")
+        assert "AAHsecret" not in results["Telegram"]
+        assert "AAHsecret" not in caplog.text
+
+    @responses.activate
+    def test_slack_connection_error_hides_webhook(self, caplog):
+        responses.add(
+            responses.POST,
+            self.WEBHOOK,
+            body=requests.ConnectionError(f"Max retries exceeded with url: {self.WEBHOOK}"),
+        )
+        svc = self._service(slack_enabled=True)
+        with caplog.at_level("WARNING"):
+            results = svc._dispatch("t", "m", success=True)
+        assert "SECRETpart" not in results["Slack"]
+        assert "SECRETpart" not in caplog.text
+
+    def test_slack_webhook_on_another_host_is_refused(self):
+        svc = self._service(slack_enabled=True)
+        svc._creds.store_slack_webhook("https://evil.example/services/x")
+        with patch("pfsentinel.services.notifications.requests.post") as post:
+            results = svc._dispatch("t", "m", success=True)
+        post.assert_not_called()
+        assert "hooks.slack.com" in results["Slack"]
+
+    def test_log_formatter_redacts_tracebacks_too(self):
+        import io
+        import logging
+
+        from pfsentinel.utils.logging import configure_logging
+
+        buf = io.StringIO()
+        configure_logging("DEBUG", stream=buf)
+        log = logging.getLogger("pfsentinel.test")
+        try:
+            raise RuntimeError(f"failed for https://api.telegram.org/bot{self.TOKEN}/x")
+        except RuntimeError:
+            log.exception("send failed via %s", self.WEBHOOK)
+        out = buf.getvalue()
+        assert "AAHsecret" not in out
+        assert "SECRETpart" not in out
+        assert "bot<redacted>" in out

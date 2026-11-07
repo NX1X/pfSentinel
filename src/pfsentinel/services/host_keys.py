@@ -11,9 +11,11 @@ pfSense reinstall).
 from __future__ import annotations
 
 import base64
+import contextlib
 import hashlib
 import os
 import socket
+import tempfile
 from pathlib import Path
 
 import paramiko
@@ -69,19 +71,36 @@ def trusted_key(host: str, port: int) -> paramiko.PKey | None:
 
 
 def trust(host: str, port: int, key: paramiko.PKey) -> Path:
-    """Pin ``key`` for host:port, replacing any previous key for that entry."""
+    """Pin ``key`` for host:port, replacing every previous key for that entry.
+
+    The file is written to a temporary file with owner-only permissions and
+    then moved into place, so a crash cannot leave a half-written file and the
+    pins are never readable by other users, even briefly.
+    """
     path = known_hosts_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    keys = paramiko.HostKeys(str(path)) if path.is_file() else paramiko.HostKeys()
+    existing = paramiko.HostKeys(str(path)) if path.is_file() else paramiko.HostKeys()
     name = host_entry(host, port)
-    # Drop every key type for this host so a re-trust fully replaces the old key.
-    if name in keys:
-        del keys[name]
+    # paramiko's `del keys[name]` removes only the first matching entry, which
+    # would leave other key types for this host pinned. Rebuild the set without
+    # this host instead, keeping every other host's keys.
+    keys = paramiko.HostKeys()
+    for hostname in existing:
+        if hostname == name:
+            continue
+        for keytype, hostkey in existing[hostname].items():
+            keys.add(hostname, keytype, hostkey)
     keys.add(name, key.get_name(), key)
-    keys.save(str(path))
+
+    # mkstemp creates the file with mode 0600, and save() keeps that mode.
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".known_hosts.", suffix=".tmp")
     try:
-        os.chmod(path, 0o600)
-    except OSError:
-        pass
+        os.close(fd)
+        keys.save(tmp)
+        os.replace(tmp, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
     logger.info(f"Trusted {key.get_name()} host key {fingerprint(key)} for {name}")
     return path

@@ -543,7 +543,15 @@ class TestChildEnv:
         assert not [k for k in env if k.startswith("_PYI_")]
         assert env["PATH"] == "/usr/bin"
 
-    def test_original_loader_variables_are_restored(self, monkeypatch):
+    @pytest.fixture
+    def frozen(self, monkeypatch):
+        """Simulate running inside a PyInstaller one-file build."""
+        import sys as real_sys
+
+        monkeypatch.setattr(real_sys, "frozen", True, raising=False)
+        monkeypatch.setattr(real_sys, "_MEIPASS", "/tmp/_MEI123", raising=False)
+
+    def test_original_loader_variables_are_restored(self, monkeypatch, frozen):
         monkeypatch.setenv("LD_LIBRARY_PATH", "/tmp/_MEI123")
         monkeypatch.setenv("LD_LIBRARY_PATH_ORIG", "/usr/local/lib")
 
@@ -552,7 +560,7 @@ class TestChildEnv:
         assert env["LD_LIBRARY_PATH"] == "/usr/local/lib"
         assert "LD_LIBRARY_PATH_ORIG" not in env
 
-    def test_variable_absent_before_freezing_is_dropped(self, monkeypatch):
+    def test_variable_absent_before_freezing_is_dropped(self, monkeypatch, frozen):
         """An empty _ORIG means the caller had no such variable at all."""
         monkeypatch.setenv("LD_LIBRARY_PATH", "/tmp/_MEI123")
         monkeypatch.setenv("LD_LIBRARY_PATH_ORIG", "")
@@ -561,6 +569,26 @@ class TestChildEnv:
 
         assert "LD_LIBRARY_PATH" not in env
         assert "LD_LIBRARY_PATH_ORIG" not in env
+
+    def test_bundle_path_without_orig_is_dropped(self, monkeypatch, frozen):
+        """PyInstaller saves no _ORIG when the caller had no such variable."""
+        monkeypatch.setenv("LD_LIBRARY_PATH", "/tmp/_MEI123/lib")
+        monkeypatch.delenv("LD_LIBRARY_PATH_ORIG", raising=False)
+        assert "LD_LIBRARY_PATH" not in child_env()
+
+    def test_unrelated_orig_variables_are_left_alone(self, monkeypatch, frozen):
+        monkeypatch.setenv("MYAPP_ORIG", "keep-me")
+        monkeypatch.setenv("MYAPP", "current")
+        env = child_env()
+        assert env["MYAPP_ORIG"] == "keep-me"
+        assert env["MYAPP"] == "current"
+
+    def test_not_frozen_leaves_loader_variables_alone(self, monkeypatch):
+        """A pip install is not bundled, so its loader path is the user's own."""
+        monkeypatch.setenv("LD_LIBRARY_PATH", "/opt/lib")
+        monkeypatch.setenv("LD_LIBRARY_PATH_ORIG", "/usr/lib")
+        env = child_env()
+        assert env["LD_LIBRARY_PATH"] == "/opt/lib"
 
     @responses.activate
     def test_install_binary_verifies_with_a_clean_env(self, tmp_path, monkeypatch):

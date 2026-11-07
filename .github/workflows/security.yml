@@ -119,9 +119,13 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Scan requirements.lock against OSV
+      - name: Scan lockfiles against OSV
         uses: google/osv-scanner-action/osv-scanner-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36  # v2.7.0
         with:
+          # Runtime, dev/CI tools, and the Dagger CI module. A vulnerable dev
+          # tool still runs in CI with access to the release pipeline.
           scan-args: |-
             --config=osv-scanner.toml
             --lockfile=requirements.txt:requirements.lock
+            --lockfile=requirements.txt:requirements-dev.lock
+            --lockfile=.dagger/uv.lock

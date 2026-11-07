@@ -128,6 +128,17 @@ class SchedulerService:
         return success
 
     def _apply_windows_schedule(self) -> bool:
+        # Times come from config.json and end up inside the task XML, so check
+        # them here too, not only in the `schedule enable` command.
+        try:
+            if self._config.daily_enabled:
+                unix_schedule.validate_spec(self._config.daily_time)
+            if self._config.weekly_enabled:
+                unix_schedule.validate_spec(self._config.weekly_time, self._config.weekly_day)
+        except unix_schedule.ScheduleSpecError as e:
+            logger.error(f"Invalid schedule in config.json: {e}")
+            return False
+
         executable, prefix_args = get_executable_path()
         args = f"{prefix_args} backup run --non-interactive".strip()
         success = True
@@ -138,7 +149,7 @@ class SchedulerService:
                 executable=executable,
                 args=args,
                 schedule_type="DAILY",
-                start_time=self._config.daily_time,
+                start_time=unix_schedule.normalize_hhmm(self._config.daily_time),
             )
             if not ok:
                 logger.error("Failed to create daily Windows Task Scheduler task")
@@ -154,7 +165,7 @@ class SchedulerService:
                 executable=executable,
                 args=args,
                 schedule_type="WEEKLY",
-                start_time=self._config.weekly_time,
+                start_time=unix_schedule.normalize_hhmm(self._config.weekly_time),
                 day_of_week=self._config.weekly_day,
             )
             if not ok:
@@ -196,18 +207,22 @@ class SchedulerService:
             return False
 
         argv = self._backup_argv()
-        if unix_schedule.systemd_user_available():
-            self.backend = "systemd"
-            ok = unix_schedule.install_systemd_timers(argv, daily, weekly)
-            if ok:
-                # Do not leave a stale cron copy that would double-run backups.
-                unix_schedule.remove_cron()
-            return ok
+        try:
+            if unix_schedule.systemd_user_available():
+                self.backend = "systemd"
+                ok = unix_schedule.install_systemd_timers(argv, daily, weekly)
+                if ok:
+                    # Do not leave a stale cron copy that would double-run backups.
+                    unix_schedule.remove_cron()
+                return ok
 
-        if unix_schedule.cron_available():
-            self.backend = "cron"
-            log_path = app_config_dir() / "logs" / "scheduled.log"
-            return unix_schedule.install_cron(argv, daily, weekly, log_path)
+            if unix_schedule.cron_available():
+                self.backend = "cron"
+                log_path = app_config_dir() / "logs" / "scheduled.log"
+                return unix_schedule.install_cron(argv, daily, weekly, log_path)
+        except unix_schedule.ScheduleSpecError as e:
+            logger.error(f"Cannot install the schedule: {e}")
+            return False
 
         logger.error(
             "No persistent scheduler found: need a systemd user session or crontab. "

@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
+from pathlib import Path
 
 import paramiko
 import pytest
@@ -125,3 +127,67 @@ def test_fingerprint_matches_openssh(tmp_path) -> None:
         ["ssh-keygen", "-lf", str(pub)], capture_output=True, text=True, check=True
     ).stdout
     assert host_keys.fingerprint(key) in out
+
+
+def test_stale_openssh_entry_does_not_override_the_pin(
+    cli_runner: CliRunner, strict_config, ssh_server: FakeSSHServer, tmp_path, monkeypatch
+) -> None:
+    """A wrong key in ~/.ssh/known_hosts must not beat a key pinned with trust-key.
+
+    paramiko checks its "system" keys first, so loading ~/.ssh/known_hosts next
+    to the pin used to make the stale entry win, and re-trusting never helped.
+    """
+    fake_home = tmp_path / "userhome"
+    (fake_home / ".ssh").mkdir(parents=True)
+    stale = paramiko.ECDSAKey.generate()
+    entry = host_keys.host_entry(ssh_server.host, ssh_server.port)
+    (fake_home / ".ssh" / "known_hosts").write_text(
+        f"{entry} {stale.get_name()} {stale.get_base64()}\n"
+    )
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: fake_home))
+
+    assert cli_runner.invoke(app, ["device", "trust-key", "home-fw", "--yes"]).exit_code == 0
+    result = cli_runner.invoke(app, BACKUP)
+    assert result.exit_code == 0, _output(result)
+
+
+def test_retrust_removes_every_key_type_for_the_host(ssh_server: FakeSSHServer, e2e_home) -> None:
+    """paramiko's del removes only the first match; trust() must remove them all."""
+    entry = host_keys.host_entry(ssh_server.host, ssh_server.port)
+    path = host_keys.known_hosts_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    old_rsa = paramiko.RSAKey.generate(1024)
+    old_ecdsa = paramiko.ECDSAKey.generate()
+    path.write_text(
+        f"{entry} {old_rsa.get_name()} {old_rsa.get_base64()}\n"
+        f"{entry} {old_ecdsa.get_name()} {old_ecdsa.get_base64()}\n"
+        "other-host ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl\n"
+    )
+
+    new_key = paramiko.ECDSAKey.generate()
+    host_keys.trust(ssh_server.host, ssh_server.port, new_key)
+
+    keys = paramiko.HostKeys(str(path))
+    ours = keys.lookup(entry)
+    assert ours is not None
+    assert [k.get_base64() for k in ours.values()] == [new_key.get_base64()]
+    assert keys.lookup("other-host") is not None, "other hosts must be kept"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX permission bits")
+def test_pinned_keys_file_is_owner_only(ssh_server: FakeSSHServer, e2e_home) -> None:
+    host_keys.trust(ssh_server.host, ssh_server.port, paramiko.ECDSAKey.generate())
+    mode = host_keys.known_hosts_path().stat().st_mode & 0o777
+    assert mode == 0o600
+
+
+def test_untrusted_key_raises_our_error_not_a_paramiko_message(
+    strict_config, ssh_server: FakeSSHServer
+) -> None:
+    """The no-HTTPS-fallback rule must not depend on paramiko's wording."""
+    from pfsentinel.services.connection import SSHConnector, UnknownHostKeyError
+
+    device = strict_config.get_device("home-fw")
+    with pytest.raises(UnknownHostKeyError):
+        SSHConnector(device, ssh_server.password).connect()

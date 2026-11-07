@@ -174,7 +174,7 @@ pfs device trust-key home-fw        # shows the SHA256 fingerprint and asks
 pfs device trust-key home-fw --yes  # no prompt (check the fingerprint yourself)
 ```
 
-Compare the fingerprint with the pfSense console (option 8, Shell): `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`. Trusted keys are stored in `~/.pfsentinel/known_hosts`. If the key later changes, backups stop with a "host key CHANGED" error instead of silently connecting: that is either a reinstall (re-run `trust-key`) or someone intercepting the connection.
+Compare the fingerprint with the pfSense console (option 8, Shell): `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`. Trusted keys are stored in `~/.pfsentinel/known_hosts`, and for a trusted device they override any entry in `~/.ssh/known_hosts`. If the key later changes, backups stop with a "host key CHANGED" error instead of silently connecting: that is either a reinstall (re-run `trust-key`) or someone intercepting the connection.
 
 Devices added with older versions keep permissive checking until you run `trust-key` once, which also switches them to strict.
 

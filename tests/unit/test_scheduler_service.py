@@ -531,3 +531,46 @@ class TestInProcessLifecycle:
             assert svc.start_in_process() is True
         finally:
             svc.stop_in_process()
+
+
+class TestWindowsScheduleValidation:
+    """config.json values reach the task XML, so they are checked there too."""
+
+    def test_hand_edited_time_is_rejected_before_xml(self):
+        cfg = ScheduleConfig(
+            enabled=True,
+            daily_enabled=True,
+            weekly_enabled=False,
+            daily_time="02:00:00</StartBoundary><Actions>",
+        )
+        svc = SchedulerService(cfg)
+        with (
+            patch.object(scheduler_mod, "is_windows", return_value=True),
+            patch.object(scheduler_mod, "create_windows_task") as create,
+        ):
+            assert svc.apply_schedule() is False
+        create.assert_not_called()
+
+    def test_single_digit_hour_is_zero_padded(self):
+        cfg = ScheduleConfig(
+            enabled=True, daily_enabled=True, weekly_enabled=False, daily_time="2:05"
+        )
+        svc = SchedulerService(cfg)
+        with (
+            patch.object(scheduler_mod, "is_windows", return_value=True),
+            patch.object(scheduler_mod, "create_windows_task", return_value=True) as create,
+            patch.object(scheduler_mod, "get_executable_path", return_value=("pfs.exe", "")),
+        ):
+            assert svc.apply_schedule() is True
+        assert create.call_args.kwargs["start_time"] == "02:05"
+
+    def test_unix_install_error_is_reported_not_raised(self):
+        cfg = ScheduleConfig(enabled=True, daily_enabled=True, weekly_enabled=False)
+        svc = SchedulerService(cfg)
+        us = scheduler_mod.unix_schedule
+        with (
+            patch.object(scheduler_mod, "is_windows", return_value=False),
+            patch.object(us, "systemd_user_available", return_value=True),
+            patch.object(svc, "_backup_argv", return_value=["/opt/x\nbad", "backup", "run"]),
+        ):
+            assert svc.apply_schedule() is False
