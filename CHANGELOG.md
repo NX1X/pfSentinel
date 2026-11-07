@@ -13,6 +13,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-11-07
+
+### Security
+
+- Update `certifi` to 2026.10.23 (GHSA-6q48-6c7w-9gw2 / PYSEC-2026-4320, critical). `certifi` reaches pfSentinel through `requests`. It is now a declared dependency with a floor of `>=2026.10.18`, so a lockfile update cannot fall back below the fix
+- Update `urllib3` to 2.8.0 (PYSEC-2026-4175, PYSEC-2026-4176, PYSEC-2026-4177). The floor is now `>=2.8.0`
+- Update the PyPI publish action, `pypa/gh-action-pypi-publish`, from 1.14.2 to 1.14.3 (GHSA-5xjx-3w67-w9x9, critical). Version 1.14.2 trusted a revoked certificate authority in the chain that Sigstore uses for Trusted Publishing and attestations
+- Update the Dagger CI module lockfile: OpenTelemetry 1.44.0 to 1.45.1 (GHSA-xcq7-p3pf-p88h), `certifi` to 2026.10.23 and `multidict` to 6.9.1 (PYSEC-2026-4244). These packages run only in CI, not in pfSentinel
+- The Security workflow (OSV-Scanner, Bandit, zizmor) now runs every day instead of once a week. The weekly scan let the critical `certifi` advisory go unreported for days
+
+### Changed
+
+- Runtime dependencies: `cryptography` 50.0.2, `paramiko` 5.1.0, `pydantic` 2.14.1, `typer` 0.27.3
+- Development tools: `ruff` 0.17 (the allowed range moves from `<0.17` to `>=0.17,<0.18`), `mypy` 2.4, `hypothesis` 6.170, `pyinstaller` 6.22.3
+- GitHub Actions, each pinned by commit SHA: `setup-python` 7.1.0, `upload-artifact` 7.0.2, `download-artifact` 8.0.2, `codecov-action` 7.1.1, `codeql-action` 4.39.1, `osv-scanner-action` 2.7.0
+- Renovate no longer proposes changes to `requires-python`. It suggested `>=3.15.0` for the Dagger module, which no Python in CI satisfied, so every Dagger CI run on that branch failed
+
+
 ## [0.2.3] - 2026-09-21
 
 ### Fixed

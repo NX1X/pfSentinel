@@ -5,7 +5,9 @@ on:
     branches: [main]
   pull_request:
   schedule:
-    - cron: '0 5 * * 6'
+    # Daily: advisories land continuously, and a weekly scan let a critical
+    # certifi CVE sit unnoticed for days.
+    - cron: '17 5 * * *'
   workflow_dispatch:
 
 concurrency:
@@ -30,7 +32,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Python 3.14
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: '3.14'
           cache: 'pip'
@@ -62,7 +64,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Python 3.14
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: '3.14'
           cache: 'pip'
@@ -76,7 +78,7 @@ jobs:
         run: zizmor --persona regular --format sarif . > zizmor.sarif
 
       - name: Upload zizmor SARIF
-        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938  # v4.37.9
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370  # v4.39.1
         with:
           sarif_file: zizmor.sarif
           category: zizmor
@@ -118,7 +120,7 @@ jobs:
           persist-credentials: false
 
       - name: Scan requirements.lock against OSV
-        uses: google/osv-scanner-action/osv-scanner-action@6e4298ebc4db23e847df9b2e2de2939d6f066c67  # v2.5.1
+        uses: google/osv-scanner-action/osv-scanner-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36  # v2.7.0
         with:
           scan-args: |-
             --config=osv-scanner.toml
