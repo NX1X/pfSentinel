@@ -50,6 +50,19 @@ Last updated: 2026-09-19
 - [ ] **Parity check in CI:** a test that fails if a user-facing feature is gated to one OS without a
       counterpart on the other
 
+### Self-update hardening
+
+From the 2026-11 security review. The updater already checks SHA-256 against the release checksums, but:
+
+- [ ] **Verify the signed build provenance** before installing. Releases are attested from 0.2.5;
+      the updater should check that attestation, not only a checksum fetched from the same release
+- [ ] **Stage the download next to the binary** (`mkstemp` in the install folder, owner-only, hash
+      while streaming), so there is no window between the checksum and the replace. This also fixes
+      updates failing when `~/.pfsentinel` and the install folder are on different file systems
+- [ ] **Revert only to a backup path the updater derives itself**, not one read from the state file
+- [ ] **Refuse a binary update run as root** unless the staging folder is root-owned
+- [ ] Cap the download size, and accept download URLs only on `https` GitHub hosts
+
 ### Verification
 
 These features exist and are unit tested, but have never been observed working for real:

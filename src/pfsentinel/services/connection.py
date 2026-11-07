@@ -40,6 +40,24 @@ class ChangedHostKeyError(HostKeyError):
     """The device presented a different SSH host key from the trusted one."""
 
 
+def _reject_unknown_host_key(device_id: str):  # type: ignore[no-untyped-def]
+    """A paramiko policy that refuses an untrusted host with UnknownHostKeyError.
+
+    paramiko's own RejectPolicy raises a generic SSHException, which would have
+    to be recognised by its English message text.
+    """
+    import paramiko
+
+    class _RejectUnknownHostKey(paramiko.MissingHostKeyPolicy):  # type: ignore[misc]
+        def missing_host_key(self, client, hostname, key) -> None:  # type: ignore[no-untyped-def]
+            raise UnknownHostKeyError(
+                f"SSH host key for {hostname} is not trusted yet. "
+                f"Run: pfs device trust-key {device_id}"
+            )
+
+    return _RejectUnknownHostKey()
+
+
 class SSHConnector:
     """Connect to pfSense via SSH using Paramiko (password or key-based auth)."""
 
@@ -86,22 +104,26 @@ class SSHConnector:
         import paramiko
 
         client = self._get_client()
-        # Load system host keys and ~/.ssh/known_hosts so that hosts with
-        # a known key ARE verified strictly.
         from pfsentinel.services import host_keys
 
-        client.load_system_host_keys()
-        known_hosts = Path.home() / ".ssh" / "known_hosts"
-        if known_hosts.is_file():
-            client.load_host_keys(str(known_hosts))
-        # Keys trusted with `pfs device trust-key` take precedence.
-        pinned = host_keys.known_hosts_path()
-        if pinned.is_file():
-            client.get_host_keys().load(str(pinned))  # type: ignore[attr-defined]
+        # A key pinned with `pfs device trust-key` is the only key accepted for
+        # this host. paramiko consults its "system" keys before the client's
+        # own, so loading ~/.ssh/known_hosts as well would let a stale OpenSSH
+        # entry override the pin, and re-trusting could never fix a mismatch.
+        # Without a pin, fall back to the user's OpenSSH known_hosts.
+        if host_keys.trusted_key(self.device.host, self.device.ssh_port) is not None:
+            client.get_host_keys().load(str(host_keys.known_hosts_path()))  # type: ignore[attr-defined]
+        else:
+            client.load_system_host_keys()  # type: ignore[attr-defined]
+            known_hosts = Path.home() / ".ssh" / "known_hosts"
+            if known_hosts.is_file():
+                client.load_host_keys(str(known_hosts))  # type: ignore[attr-defined]
 
         if self.device.strict_host_keys:
             # Strict mode (default): reject any host whose key was never trusted.
-            client.set_missing_host_key_policy(paramiko.RejectPolicy())  # type: ignore[attr-defined]
+            # Raises our own error directly, so the "never fall back to HTTPS
+            # on a host key problem" rule does not depend on paramiko's wording.
+            client.set_missing_host_key_policy(_reject_unknown_host_key(self.device.id))  # type: ignore[attr-defined]
         else:
             # Permissive mode: log unknown host keys but allow connection.
             # Pragmatic default for homelab use where host keys change on firmware
@@ -147,6 +169,8 @@ class SSHConnector:
             )
         except paramiko.AuthenticationException as e:
             raise AuthenticationError(f"SSH authentication failed: {e}") from e
+        except HostKeyError:
+            raise
         except paramiko.BadHostKeyException as e:
             raise ChangedHostKeyError(
                 f"SSH host key for {self.device.host} has CHANGED (now "

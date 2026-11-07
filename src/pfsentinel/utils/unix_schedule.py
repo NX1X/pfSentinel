@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import getpass
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -50,14 +51,25 @@ class ScheduleSpecError(ValueError):
     """Raised for a time or weekday that cannot be scheduled."""
 
 
+_HHMM = re.compile(r"(\d{1,2}):(\d{2})", re.ASCII)
+
+
 def _hhmm(value: str) -> tuple[int, int]:
-    hour_str, sep, minute_str = value.strip().partition(":")
-    if not sep or not hour_str.isdigit() or not minute_str.isdigit():
+    # re.ASCII: str.isdigit() also accepts characters such as "²", which
+    # int() then rejects with a bare ValueError instead of a clean error.
+    match = _HHMM.fullmatch(value.strip())
+    if match is None:
         raise ScheduleSpecError(f"Invalid time {value!r}, expected HH:MM")
-    hour, minute = int(hour_str), int(minute_str)
+    hour, minute = int(match.group(1)), int(match.group(2))
     if not (0 <= hour <= 23 and 0 <= minute <= 59):
         raise ScheduleSpecError(f"Time out of range: {value!r}")
     return hour, minute
+
+
+def normalize_hhmm(value: str) -> str:
+    """Return ``value`` as zero-padded "HH:MM" (Task Scheduler needs two digits)."""
+    hour, minute = _hhmm(value)
+    return f"{hour:02d}:{minute:02d}"
 
 
 def _day(value: str) -> tuple[str, int]:
@@ -131,15 +143,27 @@ def weekly_on_calendar(day: str, at: str) -> str:
     return f"{_day(day)[0]} *-*-* {hour:02d}:{minute:02d}:00"
 
 
+def _reject_line_breaks(argv: list[str]) -> None:
+    """A newline in an argument would start a new unit directive or crontab line."""
+    for arg in argv:
+        if any(c in arg for c in "\n\r\x00"):
+            raise ScheduleSpecError(f"Command argument contains a line break: {arg!r}")
+
+
 def _systemd_quote(arg: str) -> str:
-    """Quote one ExecStart argument. '%' is a unit specifier, so it is doubled."""
-    arg = arg.replace("%", "%%")
+    """Quote one ExecStart argument.
+
+    '%' starts a unit specifier and '$' a variable, even inside quotes, so both
+    are doubled to stay literal (see "literal dollar sign" in systemd.service(5)).
+    """
+    arg = arg.replace("%", "%%").replace("$", "$$")
     if arg and not any(c.isspace() or c in "\"'\\;$" for c in arg):
         return arg
     return '"' + arg.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
 def render_service(argv: list[str]) -> str:
+    _reject_line_breaks(argv)
     exec_start = " ".join(_systemd_quote(a) for a in argv)
     return (
         "[Unit]\n"
@@ -295,6 +319,7 @@ def cron_lines(
     argv: list[str], daily_at: str | None, weekly: tuple[str, str] | None, log_path: Path
 ) -> list[str]:
     """Crontab entries for the requested schedule. '%' is escaped (cron treats it as newline)."""
+    _reject_line_breaks([*argv, str(log_path)])
     command = " ".join(shlex.quote(a) for a in argv) + f" >> {shlex.quote(str(log_path))} 2>&1"
     command = command.replace("%", "\\%")
     lines: list[str] = []
@@ -306,6 +331,18 @@ def cron_lines(
         hour, minute = _hhmm(at)
         lines.append(f"{minute} {hour} * * {_day(day)[1]} {command} {CRON_MARKER} weekly")
     return lines
+
+
+def _prepare_private_log(log_path: Path) -> None:
+    """Create the cron log owner-only before cron first appends to it.
+
+    cron's ">>" would otherwise create it with the default umask (often 0644),
+    and the log can contain device names, hosts and error details.
+    """
+    log_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    os.close(fd)
+    os.chmod(log_path, 0o600)
 
 
 def install_cron(
@@ -320,9 +357,9 @@ def install_cron(
     if not new:
         return False
     try:
-        log_path.parent.mkdir(parents=True, exist_ok=True)
+        _prepare_private_log(log_path)
     except OSError as e:
-        logger.warning(f"Cannot create log directory {log_path.parent}: {e}")
+        logger.warning(f"Cannot prepare log file {log_path}: {e}")
     kept = [ln for ln in current if CRON_MARKER not in ln]
     return _write_crontab(kept + new)
 

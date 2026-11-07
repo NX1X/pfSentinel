@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import sys
 from typing import TextIO
 
@@ -11,6 +12,31 @@ LOG_FORMAT = "%(asctime)s | %(levelname)-8s | %(message)s"
 DATE_FORMAT = "%H:%M:%S"
 
 _HANDLER_TAG = "pfsentinel_console"
+
+# Credentials that travel inside URLs, so any error message that quotes the
+# URL would print them: a Telegram bot token sits in the path
+# (/bot<id>:<secret>/...), and a Slack incoming-webhook URL is itself the secret.
+_SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"bot\d+:[A-Za-z0-9_-]+"), "bot<redacted>"),
+    (
+        re.compile(r"(https?://(?:[\w-]+\.)*hooks\.slack\.com/services/)[^\s'\"<>]+"),
+        r"\1<redacted>",
+    ),
+)
+
+
+def redact_secrets(text: str) -> str:
+    """Replace Telegram bot tokens and Slack webhook paths in ``text``."""
+    for pattern, replacement in _SECRET_PATTERNS:
+        text = pattern.sub(replacement, text)
+    return text
+
+
+class RedactingFormatter(logging.Formatter):
+    """Formatter that redacts secrets from the whole record, traceback included."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        return redact_secrets(super().format(record))
 
 
 def configure_logging(level: str = "INFO", *, stream: TextIO | None = None) -> None:
@@ -29,7 +55,7 @@ def configure_logging(level: str = "INFO", *, stream: TextIO | None = None) -> N
     if handler is None:
         handler = logging.StreamHandler(target)
         setattr(handler, _HANDLER_TAG, True)
-        handler.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=DATE_FORMAT))
+        handler.setFormatter(RedactingFormatter(LOG_FORMAT, datefmt=DATE_FORMAT))
         logger.addHandler(handler)
     else:
         handler.setStream(target)

@@ -32,18 +32,23 @@ The following behaviors are intentional design decisions for homelab use cases. 
 
 ### SSH Host Key Verification
 
-**Behavior:** pfSentinel uses `paramiko.WarningPolicy` for SSH connections. Unknown host keys are logged as warnings but the connection proceeds.
+**Behavior (since 0.2.0):** strict host key checking is the default. pfSentinel connects only to a pfSense device whose SSH host key you confirmed once with `pfs device trust-key <id>` (or at the end of `pfs device add`). A key that changes later is refused with a "possible man-in-the-middle" error, and pfSentinel does not fall back to HTTPS on any host key error.
 
-**Reason:** Home firewall host keys frequently change (firmware updates, full reinstalls). Strict rejection would break backups silently after common maintenance events in a homelab environment.
+**Where keys live:** pinned keys are in `~/.pfsentinel/known_hosts` (owner-only, written atomically). For a pinned device, only that file counts: an entry in `~/.ssh/known_hosts` cannot override it. Without a pin, pfSentinel falls back to your OpenSSH `~/.ssh/known_hosts`.
 
-**Risk:** An attacker on your local network capable of ARP spoofing could perform a man-in-the-middle attack on SSH connections. This is unlikely in a typical homelab but is a real threat on untrusted networks.
+**Verify the fingerprint:** `trust-key` shows the key's SHA256 fingerprint. Compare it on the pfSense console (option 8, Shell):
 
-**Mitigation:** Set `strict_host_keys: true` in your device config (or use `--strict-host-keys` when adding a device). This uses `paramiko.RejectPolicy` - the host must already be in `~/.ssh/known_hosts` or the connection is refused.
+```
+for f in /etc/ssh/ssh_host_*_key.pub; do ssh-keygen -lf "$f"; done
+```
 
-Additional steps:
-1. Pre-populate `~/.ssh/known_hosts` for your pfSense device: `ssh-keyscan -p 22 <host> >> ~/.ssh/known_hosts`
-2. Use SSH key authentication instead of passwords.c
-3. Prefer SSH over HTTPS as the primary connection method.
+**After a pfSense reinstall:** the host key changes, so backups stop. Check the new fingerprint on the console, then run `pfs device trust-key <id>` again.
+
+**Older configs:** devices saved before 0.2.0 carry `strict_host_keys: false` and still accept unknown keys with a warning, so upgrading does not break existing backups. Run `pfs device trust-key <id>` once to pin the key and switch the device to strict mode.
+
+Also recommended:
+1. Use SSH key authentication instead of passwords.
+2. Prefer SSH over HTTPS as the primary connection method.
 
 ---
 

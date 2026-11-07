@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -235,3 +236,50 @@ class TestSystemd:
         assert info["next_run"].startswith("Mon 2026-09-21")
         assert info["last_result"] == "exit-code"
         assert us.query_systemd_timer(us.WEEKLY_TIMER) == {"exists": False}
+
+
+class TestReviewHardening:
+    """Fixes from the 2026-11 security review."""
+
+    @pytest.mark.parametrize("value", ["²:00", "1²:00", "٠٢:٠٠"])
+    def test_non_ascii_digits_give_a_clean_error(self, value: str) -> None:
+        # "²".isdigit() is True but int("²") raises a bare ValueError.
+        with pytest.raises(us.ScheduleSpecError):
+            us.validate_spec(value)
+
+    def test_dollar_is_doubled_in_execstart(self) -> None:
+        # systemd expands $VAR even inside quotes; "$$" is a literal "$".
+        body = us.render_service(["/opt/a$HOME/python", "-m", "pfsentinel"])
+        assert 'ExecStart="/opt/a$$HOME/python" -m pfsentinel' in body
+
+    @pytest.mark.parametrize("bad", ["/opt/x\nExecStartPre=/bin/sh", "/opt/x\rY", "/opt/x\x00"])
+    def test_line_breaks_are_rejected_in_systemd_units(self, bad: str) -> None:
+        with pytest.raises(us.ScheduleSpecError):
+            us.render_service([bad, "-m", "pfsentinel"])
+
+    def test_line_breaks_are_rejected_in_crontab_lines(self, tmp_path: Path) -> None:
+        with pytest.raises(us.ScheduleSpecError):
+            us.cron_lines(["/opt/x\n* * * * * evil"], "02:00", None, tmp_path / "s.log")
+
+    def test_normalize_hhmm_zero_pads(self) -> None:
+        assert us.normalize_hhmm("2:05") == "02:05"
+        assert us.normalize_hhmm(" 23:59 ") == "23:59"
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX permission bits")
+    def test_cron_log_is_created_owner_only(self, fake_cron, tmp_path: Path) -> None:
+        fake_cron(None)
+        log = tmp_path / "logs" / "scheduled.log"
+        assert us.install_cron(ARGV, "02:00", None, log)
+        assert log.stat().st_mode & 0o777 == 0o600
+        assert log.parent.stat().st_mode & 0o777 == 0o700
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX permission bits")
+    def test_existing_world_readable_cron_log_is_tightened(self, fake_cron, tmp_path: Path) -> None:
+        fake_cron(None)
+        log = tmp_path / "logs" / "scheduled.log"
+        log.parent.mkdir()
+        log.write_text("old\n")
+        log.chmod(0o644)
+        assert us.install_cron(ARGV, "02:00", None, log)
+        assert log.stat().st_mode & 0o777 == 0o600
+        assert log.read_text() == "old\n", "existing log content must be kept"
