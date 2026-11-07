@@ -13,7 +13,10 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Cancel superseded runs only on pull requests. A run on main may be a
+  # release waiting for its PyPI approval; a later merge used to cancel it
+  # (v0.2.5 was cancelled this way and had to be re-run).
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
