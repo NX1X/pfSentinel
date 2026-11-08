@@ -191,3 +191,56 @@ def test_untrusted_key_raises_our_error_not_a_paramiko_message(
     device = strict_config.get_device("home-fw")
     with pytest.raises(UnknownHostKeyError):
         SSHConnector(device, ssh_server.password).connect()
+
+
+CA_LINE = (
+    "@cert-authority 192.168.30.*,!192.168.30.1 ssh-ed25519 "
+    "AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl ca.pub\n"
+)
+
+
+def _openssh_home(tmp_path, monkeypatch, content: str) -> None:
+    fake_home = tmp_path / "userhome"
+    (fake_home / ".ssh").mkdir(parents=True)
+    (fake_home / ".ssh" / "known_hosts").write_text(content)
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("USERPROFILE", str(fake_home))
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: fake_home))
+
+
+def test_cert_authority_line_does_not_break_connect(
+    strict_config, ssh_server: FakeSSHServer, tmp_path, monkeypatch
+) -> None:
+    """paramiko's loader stops at an @cert-authority line ('Incorrect padding')."""
+    from pfsentinel.services.connection import SSHConnector, UnknownHostKeyError
+
+    _openssh_home(tmp_path, monkeypatch, CA_LINE)
+    device = strict_config.get_device("home-fw")
+    with pytest.raises(UnknownHostKeyError):
+        SSHConnector(device, ssh_server.password).connect()
+
+
+def test_openssh_entry_next_to_a_ca_line_is_used(
+    strict_config, ssh_server: FakeSSHServer, tmp_path, monkeypatch
+) -> None:
+    from pfsentinel.services.connection import SSHConnector
+
+    key = host_keys.fetch_host_key(ssh_server.host, ssh_server.port)
+    entry = host_keys.host_entry(ssh_server.host, ssh_server.port)
+    _openssh_home(tmp_path, monkeypatch, CA_LINE + f"{entry} {key.get_name()} {key.get_base64()}\n")
+    connector = SSHConnector(strict_config.get_device("home-fw"), ssh_server.password)
+    connector.connect()
+    connector.disconnect()
+
+
+def test_revoked_openssh_key_is_not_loaded(tmp_path) -> None:
+    key = paramiko.ECDSAKey.generate()
+    path = tmp_path / "known_hosts"
+    path.write_text(
+        f"fw {key.get_name()} {key.get_base64()}\n"
+        f"@revoked * {key.get_name()} {key.get_base64()}\n"
+        "broken-line ssh-ed25519 not-base64!\n"
+    )
+    keys = paramiko.HostKeys()
+    host_keys.load_openssh_known_hosts(keys, path)
+    assert keys.lookup("fw") is None

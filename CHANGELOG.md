@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Lockfile maintenance runs monthly and no longer automerges. It re-resolves every pin at once, so the 14-day release cooldown cannot apply to it
 - `CONTRIBUTING.md` documents the exact lockfile commands, with the cooldown passed as `UV_EXCLUDE_NEWER`
 
+### Fixed
+
+- An `@cert-authority` line in `~/.ssh/known_hosts` (an SSH host CA) no longer breaks SSH connections. paramiko's loader stopped at that line with "Incorrect padding", so every device without a pinned key failed. pfSentinel now reads that file itself: it skips `@cert-authority` lines and never loads a key that a `@revoked` line lists. paramiko cannot check host certificates, so pin a CA-signed host with `pfs device trust-key`
+- The SSH troubleshooting hint no longer tells Windows users to give a Linux key path
+
 
 ## [0.2.5] - 2026-11-07
 
