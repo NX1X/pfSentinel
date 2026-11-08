@@ -70,30 +70,36 @@ def load_openssh_known_hosts(keys: paramiko.HostKeys, path: Path) -> None:
     """
     entries: list[HostKeyEntry] = []
     revoked: set[str] = set()
-    for lineno, raw in enumerate(
-        path.read_text(encoding="utf-8", errors="replace").splitlines(), 1
-    ):
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    for lineno, raw in enumerate(lines, 1):
         line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
         if line.startswith("@"):
-            fields = line.split()
-            if fields[0] == "@revoked" and len(fields) >= 4:
-                revoked.add(fields[3])
-            continue
-        try:
-            entry = HostKeyEntry.from_line(line, lineno)
-        except (paramiko.SSHException, InvalidHostKey):
-            logger.debug(f"Skipping unreadable line {lineno} of {path}")
-            continue
-        if entry is not None:
-            entries.append(entry)
+            revoked.update(_revoked_key(line))
+        elif line and not line.startswith("#"):
+            entries.extend(_plain_entry(line, lineno, path))
 
     for entry in entries:
-        if entry.key.get_base64() in revoked:
-            continue
-        for hostname in entry.hostnames:
-            keys.add(hostname, entry.key.get_name(), entry.key)
+        if entry.key.get_base64() not in revoked:
+            for hostname in entry.hostnames:
+                keys.add(hostname, entry.key.get_name(), entry.key)
+
+
+def _revoked_key(line: str) -> list[str]:
+    """The base64 key of an ``@revoked`` line; nothing for other markers."""
+    fields = line.split()
+    if fields[0] == "@revoked" and len(fields) >= 4:
+        return [fields[3]]
+    return []
+
+
+def _plain_entry(line: str, lineno: int, path: Path) -> list[HostKeyEntry]:
+    """The entry of a plain known_hosts line; nothing if paramiko cannot read it."""
+    try:
+        entry = HostKeyEntry.from_line(line, lineno)
+    except (paramiko.SSHException, InvalidHostKey):
+        logger.debug(f"Skipping unreadable line {lineno} of {path}")
+        return []
+    return [entry] if entry is not None else []
 
 
 def trusted_key(host: str, port: int) -> paramiko.PKey | None:

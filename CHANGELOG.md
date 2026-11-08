@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-11-08
+
+Fixes SSH for users with an SSH host CA in `~/.ssh/known_hosts`.
+
 ### Changed
 
 - CI runs on main are no longer cancelled by a later merge. A release run waits for its PyPI approval, and a merge during that wait cancelled the v0.2.5 publish. Only pull-request runs cancel superseded runs now

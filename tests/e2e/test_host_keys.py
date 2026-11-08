@@ -215,9 +215,9 @@ def test_cert_authority_line_does_not_break_connect(
     from pfsentinel.services.connection import SSHConnector, UnknownHostKeyError
 
     _openssh_home(tmp_path, monkeypatch, CA_LINE)
-    device = strict_config.get_device("home-fw")
+    connector = SSHConnector(strict_config.get_device("home-fw"), ssh_server.password)
     with pytest.raises(UnknownHostKeyError):
-        SSHConnector(device, ssh_server.password).connect()
+        connector.connect()
 
 
 def test_openssh_entry_next_to_a_ca_line_is_used(
