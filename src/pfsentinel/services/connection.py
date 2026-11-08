@@ -110,14 +110,14 @@ class SSHConnector:
         # this host. paramiko consults its "system" keys before the client's
         # own, so loading ~/.ssh/known_hosts as well would let a stale OpenSSH
         # entry override the pin, and re-trusting could never fix a mismatch.
-        # Without a pin, fall back to the user's OpenSSH known_hosts.
+        # Without a pin, fall back to the user's OpenSSH known_hosts, read with
+        # our own loader: paramiko's stops at an @cert-authority line.
         if host_keys.trusted_key(self.device.host, self.device.ssh_port) is not None:
             client.get_host_keys().load(str(host_keys.known_hosts_path()))  # type: ignore[attr-defined]
         else:
-            client.load_system_host_keys()  # type: ignore[attr-defined]
             known_hosts = Path.home() / ".ssh" / "known_hosts"
             if known_hosts.is_file():
-                client.load_host_keys(str(known_hosts))  # type: ignore[attr-defined]
+                host_keys.load_openssh_known_hosts(client.get_host_keys(), known_hosts)  # type: ignore[attr-defined]
 
         if self.device.strict_host_keys:
             # Strict mode (default): reject any host whose key was never trusted.

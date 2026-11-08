@@ -327,7 +327,7 @@ def _test_device(device: DeviceConfig, creds: CredentialService) -> None:
             console.print("[dim]  SSH: Enable via pfSense > System > Advanced > Secure Shell[/]")
             console.print("[dim]  Key auth: Ensure your public key is added to the pfSense user[/]")
             console.print(
-                "[dim]  Key path: Use a Linux path (e.g. ~/.ssh/id_rsa), not a Windows path[/]"
+                "[dim]  Key path: the private key file on this machine (e.g. ~/.ssh/id_ed25519)[/]"
             )
         else:
             console.print("[dim]  HTTPS: Ensure pfSense web GUI is reachable from this machine[/]")

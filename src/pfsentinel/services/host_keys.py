@@ -19,6 +19,7 @@ import tempfile
 from pathlib import Path
 
 import paramiko
+from paramiko.hostkeys import HostKeyEntry, InvalidHostKey
 
 from pfsentinel.models.config import AppConfig
 from pfsentinel.services.connection import HostKeyError
@@ -56,6 +57,49 @@ def fetch_host_key(host: str, port: int, timeout: int = 15) -> paramiko.PKey:
         raise HostKeyError(f"SSH handshake with {host}:{port} failed: {e}") from e
     finally:
         transport.close()
+
+
+def load_openssh_known_hosts(keys: paramiko.HostKeys, path: Path) -> None:
+    """Add the plain host keys of an OpenSSH known_hosts file to ``keys``.
+
+    paramiko's own loader cannot parse the ``@cert-authority`` and ``@revoked``
+    markers and stops at the first such line, so one SSH CA entry would break
+    every connection. Marker lines are skipped here: paramiko cannot verify
+    host certificates, so a CA-signed host must be pinned with trust-key.
+    Keys listed as ``@revoked`` are never added, whatever line lists them.
+    """
+    entries: list[HostKeyEntry] = []
+    revoked: set[str] = set()
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    for lineno, raw in enumerate(lines, 1):
+        line = raw.strip()
+        if line.startswith("@"):
+            revoked.update(_revoked_key(line))
+        elif line and not line.startswith("#"):
+            entries.extend(_plain_entry(line, lineno, path))
+
+    for entry in entries:
+        if entry.key.get_base64() not in revoked:
+            for hostname in entry.hostnames:
+                keys.add(hostname, entry.key.get_name(), entry.key)
+
+
+def _revoked_key(line: str) -> list[str]:
+    """The base64 key of an ``@revoked`` line; nothing for other markers."""
+    fields = line.split()
+    if fields[0] == "@revoked" and len(fields) >= 4:
+        return [fields[3]]
+    return []
+
+
+def _plain_entry(line: str, lineno: int, path: Path) -> list[HostKeyEntry]:
+    """The entry of a plain known_hosts line; nothing if paramiko cannot read it."""
+    try:
+        entry = HostKeyEntry.from_line(line, lineno)
+    except (paramiko.SSHException, InvalidHostKey):
+        logger.debug(f"Skipping unreadable line {lineno} of {path}")
+        return []
+    return [entry] if entry is not None else []
 
 
 def trusted_key(host: str, port: int) -> paramiko.PKey | None:

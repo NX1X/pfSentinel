@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-11-08
+
+Fixes SSH for users with an SSH host CA in `~/.ssh/known_hosts`.
+
 ### Changed
 
 - CI runs on main are no longer cancelled by a later merge. A release run waits for its PyPI approval, and a merge during that wait cancelled the v0.2.5 publish. Only pull-request runs cancel superseded runs now
@@ -21,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Python versions (requires-python, CI `python-version`, Dagger module) are no longer bumped by Renovate. They change by hand once lxml, cryptography and paramiko have wheels for the new version. This removes the errored `python 3.15.1` update
 - Lockfile maintenance runs monthly and no longer automerges. It re-resolves every pin at once, so the 14-day release cooldown cannot apply to it
 - `CONTRIBUTING.md` documents the exact lockfile commands, with the cooldown passed as `UV_EXCLUDE_NEWER`
+
+### Fixed
+
+- An `@cert-authority` line in `~/.ssh/known_hosts` (an SSH host CA) no longer breaks SSH connections. paramiko's loader stopped at that line with "Incorrect padding", so every device without a pinned key failed. pfSentinel now reads that file itself: it skips `@cert-authority` lines and never loads a key that a `@revoked` line lists. paramiko cannot check host certificates, so pin a CA-signed host with `pfs device trust-key`
+- The SSH troubleshooting hint no longer tells Windows users to give a Linux key path
 
 
 ## [0.2.5] - 2026-11-07
