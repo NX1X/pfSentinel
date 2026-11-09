@@ -28,7 +28,7 @@ dependencies = [
     "typer>=0.26,<1",
     "rich>=15,<16",
     "pydantic>=2.10.0,<3",
-    "paramiko>=5,<6",
+    "paramiko>=5.1.0,<6",
     # cryptography: floor enforces GHSA-g6cj-pr64-35w5 / CVE-2026-69247 fix (>=50.0.0,
     # PKCS#7 Bleichenbacher oracle). pfSentinel uses only AES-GCM, so the vulnerable
     # pkcs7_decrypt_* path is unreachable here - the floor keeps it that way on upgrade.
