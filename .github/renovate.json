@@ -16,10 +16,12 @@
   "assignees": ["NX1X"],
   "reviewers": ["NX1X"],
 
-  "dependencyDashboard": true,
-  "dependencyDashboardTitle": "Dependency Dashboard",
-  "dependencyDashboardLabels": ["dependencies"],
-  "dependencyDashboardAutoclose": true,
+  "dependencyDashboard": {
+    "enabled": true,
+    "title": "Dependency Dashboard",
+    "labels": ["dependencies"],
+    "autoclose": true
+  },
 
   "prConcurrentLimit": 5,
   "prHourlyLimit": 2,
