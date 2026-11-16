@@ -25,25 +25,25 @@ dependencies = [
     # typer >=0.26 vendors click, so typer.Abort is NOT click.Abort. The CLI
     # catches typer.Abort; pinning the floor here keeps that assumption true
     # (a pre-0.26 typer would raise the external click.Abort instead).
-    "typer>=0.26,<1",
+    "typer>=0.27.3,<1",
     "rich>=15,<16",
-    "pydantic>=2.10.0,<3",
+    "pydantic>=2.14.2,<3",
     "paramiko>=5,<6",
     # cryptography: floor enforces GHSA-g6cj-pr64-35w5 / CVE-2026-69247 fix (>=50.0.0,
     # PKCS#7 Bleichenbacher oracle). pfSentinel uses only AES-GCM, so the vulnerable
     # pkcs7_decrypt_* path is unreachable here - the floor keeps it that way on upgrade.
     "cryptography>=50.0.1,<51",
-    "packaging>=26,<27",
+    "packaging>=26.3,<27",
     "requests>=2.34.2,<3",
     # urllib3: transitive via requests; floor enforces PYSEC-2026-4175/4176/4177 (>=2.8.0)
     "urllib3>=2.8.0,<3",
     # certifi: transitive via requests; floor enforces GHSA-6q48-6c7w-9gw2 /
     # PYSEC-2026-4320 (>=2026.10.18). Declared so a lock regeneration cannot
     # drift back onto a bundle with the revoked root.
-    "certifi>=2026.10.18",
+    "certifi>=2026.10.23",
     # keyring: OS keystore only (Windows Credential Manager, SecretService).
     # The headless fallback is our own AES-GCM store in services/secret_store.py.
-    "keyring>=25.0,<26",
+    "keyring>=25.7.0,<26",
     # lxml: HTML parsing for the pfSense web UI, and the hardened XML parser
     # used for config.xml (see utils/xml_parser.py - XXE/entity protection).
     "lxml>=6.1.1,<7",
