@@ -1,9 +1,10 @@
-"""Notification service - Telegram and Windows toast."""
+"""Notification service: Telegram, Slack, email, system log and desktop notifications."""
 
 from __future__ import annotations
 
 import logging
 import os
+import shutil
 import subprocess
 from enum import IntEnum
 from urllib.parse import urlparse
@@ -13,9 +14,11 @@ import requests
 
 from pfsentinel.models.backup import BackupRecord
 from pfsentinel.models.config import NotificationConfig
+from pfsentinel.services import alert_history
 from pfsentinel.services.credentials import CredentialService
+from pfsentinel.services.email_sender import SMTP_KEYSTORE_NAME, send_email
 from pfsentinel.utils.logging import get_logger, redact_secrets
-from pfsentinel.utils.platform import is_windows
+from pfsentinel.utils.platform import is_linux, is_windows
 
 logger = get_logger(__name__)
 
@@ -68,10 +71,11 @@ class AlertKind(IntEnum):
     RESTORE_CHECK_FAILED = 1004
     SECOND_COPY_FAILED = 1005
     UPDATE_AVAILABLE = 1006
+    DAILY_DIGEST = 1007
 
     @property
     def entry_type(self) -> str:
-        if self in (AlertKind.BACKUP_OK, AlertKind.UPDATE_AVAILABLE):
+        if self in (AlertKind.BACKUP_OK, AlertKind.UPDATE_AVAILABLE, AlertKind.DAILY_DIGEST):
             return "Information"
         if self is AlertKind.RISKY_CHANGE:
             return "Warning"
@@ -120,6 +124,55 @@ def _run_powershell(script: str, env_extra: dict[str, str]) -> None:
 def register_event_source() -> None:
     """Register the "pfSentinel" Application log source (Windows, needs admin once)."""
     _run_powershell(_REGISTER_SCRIPT, {"PFS_EVENT_SOURCE": EVENT_SOURCE})
+
+
+# notify-send fails this way when a session bus exists but no notification
+# daemon runs on it (a headless machine): that is "no desktop", not an error.
+_NO_NOTIFICATION_DAEMON = ("org.freedesktop.Notifications", "ServiceUnknown")
+
+
+def _has_desktop_session() -> bool:
+    return any(
+        os.environ.get(name) for name in ("DISPLAY", "WAYLAND_DISPLAY", "DBUS_SESSION_BUS_ADDRESS")
+    )
+
+
+def show_linux_notification(title: str, message: str, kind: AlertKind) -> bool:
+    """Show a freedesktop notification through notify-send.
+
+    Returns False, without error, when there is no desktop to show it on: not
+    Linux, notify-send not installed, no session, or no notification daemon.
+    Raises RuntimeError when notify-send itself fails.
+    """
+    if not is_linux() or not _has_desktop_session():
+        return False
+    notify_send = shutil.which("notify-send")
+    if notify_send is None:
+        return False
+    urgency = "critical" if kind.entry_type == "Error" else "normal"
+    # The summary is plain text; the body may be read as markup, so escape it.
+    # "--" ends the options: a title starting with "-" stays a title.
+    result = subprocess.run(
+        [
+            notify_send,
+            "--app-name=pfSentinel",
+            f"--urgency={urgency}",
+            "--",
+            title,
+            xml_escape(message),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+    if result.returncode == 0:
+        return True
+    error = (result.stderr or result.stdout or "notify-send failed").strip()
+    if any(marker in error for marker in _NO_NOTIFICATION_DAEMON):
+        logger.debug(f"No desktop notification service: {error[:200]}")
+        return False
+    raise RuntimeError(error[:300])
 
 
 def write_system_log(kind: AlertKind, title: str, message: str) -> None:
@@ -179,7 +232,8 @@ class NotificationService:
         self._creds = credential_service
 
     def notify_success(self, record: BackupRecord | list[BackupRecord]) -> None:
-        if not self._config.notify_on_success:
+        # With the daily digest on, successful backups are only in the digest.
+        if not self._config.notify_on_success or self._config.digest_enabled:
             return
 
         records = record if isinstance(record, list) else [record]
@@ -219,12 +273,24 @@ class NotificationService:
 
     def alert(self, kind: AlertKind, title: str, message: str) -> dict[str, str | None]:
         """Send a problem alert (anything but BACKUP_OK) to every enabled channel."""
+        if self._config.digest_enabled:
+            alert_history.record_alert(kind, title, message)
         if not self._config.notify_on_failure:
             return {}
         results = self._dispatch(title, message, success=False, kind=kind)
         for channel, err in results.items():
             if err:
                 logger.warning(f"{channel} alert ({kind.name}) failed: {err}")
+        return results
+
+    def send_digest(self, title: str, message: str, has_problems: bool) -> dict[str, str | None]:
+        """Send the daily digest to every enabled channel. Returns per-channel results."""
+        results = self._dispatch(
+            title, message, success=not has_problems, kind=AlertKind.DAILY_DIGEST
+        )
+        for channel, err in results.items():
+            if err:
+                logger.warning(f"{channel} daily digest failed: {err}")
         return results
 
     def notify_info(self, title: str, message: str) -> dict[str, str | None]:
@@ -239,9 +305,9 @@ class NotificationService:
     ) -> dict[str, str | None]:
         """Send to all enabled channels. Returns {channel: error_or_None}."""
         results: dict[str, str | None] = {}
+        event_kind = kind or (AlertKind.BACKUP_OK if success else AlertKind.BACKUP_FAILED)
 
         if self._config.windows_event_log_enabled:
-            event_kind = kind or (AlertKind.BACKUP_OK if success else AlertKind.BACKUP_FAILED)
             channel = "Windows Event Log" if is_windows() else "System log"
             try:
                 write_system_log(event_kind, title, message)
@@ -278,7 +344,32 @@ class NotificationService:
                 logger.debug(f"Windows toast failed: {reason}")
                 results["Windows Toast"] = reason
 
+        if self._config.linux_desktop_enabled and is_linux():
+            try:
+                if show_linux_notification(title, message, event_kind):
+                    results["Desktop"] = None
+            except Exception as e:
+                reason = redact_secrets(str(e))
+                logger.debug(f"Desktop notification failed: {reason}")
+                results["Desktop"] = reason
+
+        if self._config.email_enabled:
+            try:
+                self._send_email(title, message, event_kind)
+                results["Email"] = None
+            except Exception as e:
+                reason = describe_send_error(e)
+                logger.warning(f"Email notification failed: {reason}")
+                results["Email"] = reason
+
         return results
+
+    def _send_email(self, title: str, message: str, kind: AlertKind) -> None:
+        password = (
+            self._creds.get_secret(SMTP_KEYSTORE_NAME) if self._config.email_username else None
+        )
+        body = f"{message}\n\n--\npfSentinel event {int(kind)} ({kind.name})\n"
+        send_email(self._config, password, title, body)
 
     def _send_telegram(self, title: str, message: str) -> None:
         token = self._creds.get_telegram_token()

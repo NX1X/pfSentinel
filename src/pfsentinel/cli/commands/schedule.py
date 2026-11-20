@@ -5,7 +5,13 @@ from __future__ import annotations
 import typer
 from rich.panel import Panel
 
-from pfsentinel.cli.formatters import console, print_error, print_info, print_success
+from pfsentinel.cli.formatters import (
+    console,
+    print_error,
+    print_info,
+    print_success,
+    print_warning,
+)
 from pfsentinel.models.config import AppConfig
 from pfsentinel.services.scheduler import SchedulerService
 from pfsentinel.utils import unix_schedule
@@ -15,7 +21,20 @@ app = typer.Typer(help="Backup scheduling")
 
 def _get_scheduler() -> tuple[AppConfig, SchedulerService]:
     config = AppConfig.load()
-    return config, SchedulerService(config.schedule)
+    return config, scheduler_for(config)
+
+
+def scheduler_for(config: AppConfig) -> SchedulerService:
+    """The scheduler for this config, with the daily digest time when the digest is on."""
+    notifications = config.notifications
+    digest_at = notifications.digest_time if notifications.digest_enabled else None
+    if digest_at is not None:
+        try:
+            unix_schedule.validate_spec(digest_at)
+        except unix_schedule.ScheduleSpecError as e:
+            print_warning(f"Daily digest time ignored: {e}. Run: pfs notify digest enable --time")
+            digest_at = None
+    return SchedulerService(config.schedule, digest_at=digest_at)
 
 
 @app.command("enable")
@@ -62,7 +81,7 @@ def schedule_enable(
     config.schedule.use_windows_task_scheduler = use_task_scheduler
     config.save()
 
-    scheduler = SchedulerService(config.schedule)
+    scheduler = scheduler_for(config)
     success = scheduler.apply_schedule()
 
     if success:
@@ -70,6 +89,8 @@ def schedule_enable(
         print_info(f"  Daily: {daily_time}")
         if not no_weekly:
             print_info(f"  Weekly: {weekly_day} at {weekly_time}")
+        if config.notifications.digest_enabled:
+            print_info(f"  Daily digest: {config.notifications.digest_time}")
         _print_backend_notes(scheduler.backend)
     else:
         if scheduler.backend == "windows-task":
@@ -132,7 +153,7 @@ def schedule_disable() -> None:
     config.schedule.enabled = False
     config.save()
 
-    scheduler = SchedulerService(config.schedule)
+    scheduler = scheduler_for(config)
     scheduler.remove_schedule()
     print_success("Scheduling disabled")
 

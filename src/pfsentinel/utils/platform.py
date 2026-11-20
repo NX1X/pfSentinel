@@ -177,8 +177,11 @@ def create_windows_task(
     schedule_type: str,  # "DAILY", "WEEKLY" or "CHECK" (sign-in + daily)
     start_time: str,
     day_of_week: str = "",
+    extra_times: tuple[str, ...] = (),
 ) -> bool:
     """Create a Windows Task Scheduler task via XML registration.
+
+    ``extra_times`` adds more daily triggers to a CHECK task (the daily digest).
 
     The task runs as the current user with LogonType=InteractiveToken, wakes
     the machine if asleep, and ignores battery state. Returns True on success.
@@ -200,7 +203,9 @@ def create_windows_task(
     elif schedule_type == "CHECK":
         # At every sign-in (5 minutes later, once the network is up) and daily:
         # a PC that was off, or a schedule that stopped running, is noticed.
-        trigger = _logon_trigger_xml() + _daily_trigger_xml(start_time)
+        trigger = _logon_trigger_xml() + "".join(
+            _daily_trigger_xml(t) for t in (start_time, *extra_times)
+        )
     else:
         return False
 

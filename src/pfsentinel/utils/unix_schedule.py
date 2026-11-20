@@ -189,14 +189,23 @@ def render_timer(description: str, on_calendar: str) -> str:
     )
 
 
-def render_check_timer() -> str:
+def check_times(extra_at: str | None) -> list[str]:
+    """Times of day the check runs: noon, plus the daily digest time when it is on."""
+    times = [CHECK_AT]
+    if extra_at is not None and normalize_hhmm(extra_at) != CHECK_AT:
+        times.append(normalize_hhmm(extra_at))
+    return times
+
+
+def render_check_timer(extra_at: str | None = None) -> str:
+    on_calendar = "".join(f"OnCalendar={daily_on_calendar(t)}\n" for t in check_times(extra_at))
     return (
         "[Unit]\n"
         "Description=pfSentinel no-recent-backup check\n"
         "\n"
         "[Timer]\n"
         "OnStartupSec=5min\n"
-        f"OnCalendar={daily_on_calendar(CHECK_AT)}\n"
+        f"{on_calendar}"
         "Persistent=true\n"
         f"Unit={CHECK_SERVICE}\n"
         "\n"
@@ -210,6 +219,7 @@ def install_systemd_timers(
     daily_at: str | None,
     weekly: tuple[str, str] | None,
     check_argv: list[str] | None = None,
+    check_extra_at: str | None = None,
 ) -> bool:
     """Write the service and timer units and enable the requested timers.
 
@@ -232,7 +242,7 @@ def install_systemd_timers(
             (unit_dir / CHECK_SERVICE).write_text(
                 render_service(check_argv, "pfSentinel no-recent-backup check"), encoding="utf-8"
             )
-            wanted[CHECK_TIMER] = render_check_timer()
+            wanted[CHECK_TIMER] = render_check_timer(check_extra_at)
         for name, body in wanted.items():
             (unit_dir / name).write_text(body, encoding="utf-8")
     except OSError as e:
@@ -353,6 +363,7 @@ def cron_lines(
     weekly: tuple[str, str] | None,
     log_path: Path,
     check_argv: list[str] | None = None,
+    check_extra_at: str | None = None,
 ) -> list[str]:
     """Crontab entries for the requested schedule. '%' is escaped (cron treats it as newline)."""
     command = _cron_command(argv, log_path)
@@ -366,9 +377,11 @@ def cron_lines(
         lines.append(f"{minute} {hour} * * {_day(day)[1]} {command} {CRON_MARKER} weekly")
     if check_argv is not None and lines:
         check = _cron_command(check_argv, log_path)
-        hour, minute = _hhmm(CHECK_AT)
         lines.append(f"@reboot sleep 300 && {check} {CRON_MARKER} check-boot")
-        lines.append(f"{minute} {hour} * * * {check} {CRON_MARKER} check")
+        for at in check_times(check_extra_at):
+            hour, minute = _hhmm(at)
+            tag = "check" if at == CHECK_AT else "check-digest"
+            lines.append(f"{minute} {hour} * * * {check} {CRON_MARKER} {tag}")
     return lines
 
 
@@ -390,13 +403,14 @@ def install_cron(
     weekly: tuple[str, str] | None,
     log_path: Path,
     check_argv: list[str] | None = None,
+    check_extra_at: str | None = None,
 ) -> bool:
     """Replace pfSentinel's crontab entries, leaving every other line untouched."""
     current = _read_crontab()
     if current is None:
         logger.error("Cannot read the current crontab; not modifying it")
         return False
-    new = cron_lines(argv, daily_at, weekly, log_path, check_argv)
+    new = cron_lines(argv, daily_at, weekly, log_path, check_argv, check_extra_at)
     if not new:
         return False
     try:

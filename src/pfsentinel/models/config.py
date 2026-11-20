@@ -184,6 +184,29 @@ class NotificationConfig(BaseModel):
     stale_after_days: int = Field(default=3, ge=1, le=365)
     # Alert once when a new pfSentinel release is out (checked by the daily task).
     update_alerts: bool = True
+    # Linux desktop notifications through notify-send (freedesktop). Like the
+    # Windows toast: on by default, and a silent no-op without a desktop session.
+    linux_desktop_enabled: bool = True
+    # Email (SMTP) to any mail server. The password is in the OS keystore
+    # (CredentialService secret "__smtp_password__"), never here.
+    email_enabled: bool = False
+    email_host: str | None = None
+    email_port: int = Field(default=587, ge=1, le=65535)
+    # starttls: plain connection upgraded to TLS (usually port 587).
+    # tls: TLS from the first byte (usually port 465). none: no encryption,
+    # only for a local server such as Mailpit, and never with a login.
+    email_security: Literal["starttls", "tls", "none"] = "starttls"
+    email_username: str | None = None
+    email_from: str | None = None
+    email_to: list[str] = Field(default_factory=list)
+    email_timeout: int = Field(default=20, ge=1, le=300)
+    # Only for a lab server with a self-signed certificate.
+    email_skip_tls_verify: bool = False
+    # One summary a day instead of a message per successful backup. Failures
+    # and risky changes are still sent at once. Sent by the daily check task
+    # on its first run at or after digest_time (HH:MM, local time).
+    digest_enabled: bool = False
+    digest_time: str = "08:00"
 
 
 class SyslogConfig(BaseModel):

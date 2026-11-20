@@ -455,7 +455,8 @@ def backup_check_recent(
     """Alert when a device has had no successful backup for some days.
 
     Scheduled at sign-in and daily by 'pfs schedule enable': a PC that was
-    off, or a schedule that stopped, gives no error on its own.
+    off, or a schedule that stopped, gives no error on its own. With the
+    daily digest on, the first run at or after its time also sends the digest.
     """
     from datetime import datetime, timedelta
 
@@ -484,8 +485,28 @@ def backup_check_recent(
         )
     if config.notifications.update_alerts:
         _alert_new_release(svc)
+    if config.notifications.digest_enabled:
+        _send_digest_if_due(config, svc)
     if stale:
         raise typer.Exit(1)
+
+
+def _send_digest_if_due(config: AppConfig, svc: BackupService) -> None:
+    """Send the daily digest on the first check run of the day at or after its time."""
+    from pfsentinel.services.digest import send_digest_if_due
+
+    try:
+        results = send_digest_if_due(config, svc.list_backups, svc.notifications)
+    except OSError as e:  # the state file could not be written
+        print_warning(f"Daily digest not sent: {e}")
+        return
+    if results is None:
+        return
+    failed = [channel for channel, err in results.items() if err]
+    if results and len(failed) == len(results):
+        print_warning(f"Daily digest failed on every channel ({', '.join(failed)})")
+    else:
+        print_info("Daily digest sent")
 
 
 def _alert_new_release(svc: BackupService) -> None:

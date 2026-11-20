@@ -107,8 +107,10 @@ class SchedulerService:
       explicitly turned off
     """
 
-    def __init__(self, config: ScheduleConfig) -> None:
+    def __init__(self, config: ScheduleConfig, digest_at: str | None = None) -> None:
+        """``digest_at`` (HH:MM) adds a run of the daily check task for the daily digest."""
         self._config = config
+        self._digest_at = digest_at
         self._thread: threading.Thread | None = None
         self._running = False
         self._stop_event = threading.Event()
@@ -159,6 +161,7 @@ class SchedulerService:
                 unix_schedule.validate_spec(self._config.daily_time)
             if self._config.weekly_enabled:
                 unix_schedule.validate_spec(self._config.weekly_time, self._config.weekly_day)
+            extra_check_times = tuple(unix_schedule.check_times(self._digest_at)[1:])
         except unix_schedule.ScheduleSpecError as e:
             logger.error(f"Invalid schedule in config.json: {e}")
             return False
@@ -209,6 +212,7 @@ class SchedulerService:
             args=check_args,
             schedule_type="CHECK",
             start_time=unix_schedule.CHECK_AT,
+            extra_times=extra_check_times,
         ):
             logger.info("No-recent-backup check scheduled at sign-in and daily")
         else:
@@ -256,6 +260,8 @@ class SchedulerService:
             unix_schedule.validate_spec(daily or "00:00")
             if weekly is not None:
                 unix_schedule.validate_spec(weekly[1], weekly[0])
+            if self._digest_at is not None:
+                unix_schedule.validate_spec(self._digest_at)
         except unix_schedule.ScheduleSpecError as e:
             logger.error(str(e))
             return False
@@ -264,7 +270,9 @@ class SchedulerService:
         try:
             if unix_schedule.systemd_user_available():
                 self.backend = "systemd"
-                ok = unix_schedule.install_systemd_timers(argv, daily, weekly, self._check_argv())
+                ok = unix_schedule.install_systemd_timers(
+                    argv, daily, weekly, self._check_argv(), check_extra_at=self._digest_at
+                )
                 if ok:
                     # Do not leave a stale cron copy that would double-run backups.
                     unix_schedule.remove_cron()
@@ -273,7 +281,14 @@ class SchedulerService:
             if unix_schedule.cron_available():
                 self.backend = "cron"
                 log_path = app_config_dir() / "logs" / "scheduled.log"
-                return unix_schedule.install_cron(argv, daily, weekly, log_path, self._check_argv())
+                return unix_schedule.install_cron(
+                    argv,
+                    daily,
+                    weekly,
+                    log_path,
+                    self._check_argv(),
+                    check_extra_at=self._digest_at,
+                )
         except unix_schedule.ScheduleSpecError as e:
             logger.error(f"Cannot install the schedule: {e}")
             return False
