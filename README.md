@@ -22,7 +22,7 @@ If you have a request or an idea, I'd love to hear it, please [open a feature re
 - **Extended backup targets** -- RRD graphs, package configs, DHCP leases, alias files, certificates, system logs
 - **ZFS snapshots** with incremental send (pfSense 2.5+)
 - **Filesystem archives** (tar.gz) as a non-ZFS fallback
-- **Change detection** -- only saves when config sections actually change
+- **Change detection** -- every backup names the config sections that changed (`firewall`, `users`, ...), and risky changes raise an alert
 - **SHA-256 verification** for every backup file
 - **Encryption at rest** (optional) -- AES-256-GCM with a key in the OS keystore and a recovery key, or a passphrase; [details](docs/encryption.md)
 - **Scheduled backups** via Windows Task Scheduler, systemd user timers or cron
