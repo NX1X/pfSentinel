@@ -187,12 +187,13 @@ def test_setup_sftp_declining_the_host_key_changes_nothing(
 def test_setup_sftp_stores_the_key_passphrase(
     cli_runner: CliRunner, encrypted: AppConfig, sftp_target: SftpTarget
 ) -> None:
-    key_pass = secrets.token_urlsafe(12)
+    generated = secrets.token_urlsafe(12)
     cli_runner.invoke(
-        app, ["copy", "setup"], input=sftp_target.answers(passphrase=key_pass, trust="n")
+        app, ["copy", "setup"], input=sftp_target.answers(passphrase=generated, trust="n")
     )
 
-    assert CredentialService().get_secret("__second_copy_keypass__") == key_pass
+    stored = CredentialService().get_secret("__second_copy_keypass__")
+    assert stored == generated
 
 
 def test_setup_sftp_unreachable_host_is_refused(

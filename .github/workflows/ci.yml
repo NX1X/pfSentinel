@@ -527,7 +527,9 @@ jobs:
       packages: write
       id-token: write
       attestations: write
-    uses: ./.github/workflows/docker-publish.yml
+    # $/ is GitHub's self-repository syntax (July 2026): always this repo, at
+    # this run's commit, never a path from the runner's disk.
+    uses: $/.github/workflows/docker-publish.yml
     with:
       tag: ${{ needs.resolve-version.outputs.tag }}
 
