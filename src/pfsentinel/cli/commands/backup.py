@@ -938,7 +938,7 @@ def backup_reindex(
     An unreadable index is moved aside as backup_index.json.broken-<time>,
     never deleted. Backup files are only read, never changed or deleted.
     """
-    from pfsentinel.services.reindex import reindex_device
+    from pfsentinel.services.reindex import ReindexError, reindex_device
     from pfsentinel.services.retention import RetentionService
 
     config = AppConfig.load()
@@ -950,6 +950,10 @@ def backup_reindex(
     for device_id in [device] if device else [d.id for d in config.devices]:
         try:
             result = reindex_device(retention, device_id, dry_run=dry_run)
+        except ReindexError as e:
+            print_error(f"{device_id}: {e}")
+            failed = True
+            continue
         except OSError as e:
             print_error(f"{device_id}: reindex failed, nothing changed: {e}")
             failed = True

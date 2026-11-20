@@ -71,15 +71,31 @@ class ReindexResult:
     skipped_unsafe: list[str] = field(default_factory=list)
     unreadable: list[str] = field(default_factory=list)
     saved: bool = False
+    # Highest run (or old daily sequence) number in a backup file name, also
+    # of files that could not be read, so no new run reuses their number.
+    highest_seen: int = 0
+
+
+class ReindexError(OSError):
+    """Reindex moved the broken index aside, then failed and could not move it back."""
 
 
 def reindex_device(
-    retention: RetentionService, device_id: str, dry_run: bool = False
+    retention: RetentionService, device_id: str, dry_run: bool = False, strict: bool = False
 ) -> ReindexResult:
     """Rebuild ``device_id``'s index from its backup files. See the module docstring.
 
     The broken index is only moved aside after the scan, just before the
-    new index is saved, so a failed scan leaves everything as it was.
+    new index is saved, so a failed scan leaves everything as it was. If the
+    save then fails, the broken index is moved back.
+
+    ``strict`` (the automatic rebuild before a run): when any backup file or
+    folder cannot be read, save nothing, so a partial index is never kept.
+    The caller sees ``result.unreadable``.
+
+    pfSentinel has no cross-process lock. So the index is read again just
+    before the save, and the found records are merged into it: a backup run
+    that finished during the scan keeps its record and its run number.
     """
     result = ReindexResult(device_id=device_id, dry_run=dry_run)
     index_path = retention.index_path(device_id)
@@ -103,25 +119,49 @@ def reindex_device(
 
     result.added.sort(key=lambda r: (r.created_at, r.relative_path))
     old_last = index.last_run_number
-    result.last_run_number = _last_run_number(index, result.added)
+    result.last_run_number = max(_last_run_number(index, result.added), result.highest_seen)
 
     changed = (
         bool(result.added) or result.moved_to is not None or result.last_run_number != old_last
     )
-    if dry_run or not changed:
+    if dry_run or not changed or (strict and result.unreadable):
         return result
 
     if result.moved_to is not None:
         # A rename keeps the file. _broken_name picked a name that is not taken.
         index_path.rename(result.moved_to)
         logger.warning(f"Moved unreadable backup index of {device_id} to {result.moved_to}")
-    for record in result.added:
-        index.add(record)
-    index.last_run_number = result.last_run_number
-    retention.save_index(index)
+    try:
+        _merge_and_save(retention, device_id, result)
+    except BaseException:
+        if result.moved_to is not None:
+            _move_back(result.moved_to, index_path, device_id)
+        raise
     result.saved = True
     logger.info(f"Reindex of {device_id}: {len(result.added)} record(s) added")
     return result
+
+
+def _merge_and_save(retention: RetentionService, device_id: str, result: ReindexResult) -> None:
+    """Read the index again, add the found records it lacks, keep the higher run number."""
+    current = retention.load_index(device_id)
+    known = {_normalize(r.relative_path) for r in current.records}
+    for record in result.added:
+        if _normalize(record.relative_path) not in known:
+            current.add(record)
+    current.last_run_number = max(current.last_run_number, result.last_run_number)
+    result.last_run_number = current.last_run_number
+    retention.save_index(current)
+
+
+def _move_back(moved_to: Path, index_path: Path, device_id: str) -> None:
+    try:
+        moved_to.rename(index_path)
+    except OSError as e:
+        raise ReindexError(
+            f"reindex of {device_id} failed after it moved the unreadable index aside, "
+            f"and could not move it back ({e.strerror or e}). The old index is at {moved_to}"
+        ) from e
 
 
 def _normalize(relative_path: str) -> str:
@@ -214,6 +254,8 @@ def _record_for(device_id: str, path: Path, rel: str, result: ReindexResult) -> 
     sequence = int(match["seq"])
     folder = _RUN_FOLDER_RE.match(path.parent.name)
     run_number = sequence if folder and int(folder["run"]) == sequence else None
+    # Before the checksum: a file that cannot be read still holds its number.
+    result.highest_seen = max(result.highest_seen, sequence)
     try:
         size = path.stat().st_size
         sha256 = checksum.sha256_file(path)

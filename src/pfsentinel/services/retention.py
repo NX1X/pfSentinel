@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import errno
 import json
 import os
 import shutil
@@ -82,6 +83,7 @@ class RetentionService:
             with contextlib.suppress(OSError):
                 os.unlink(tmp)
             raise
+        _sync_folder(path.parent)
 
     def apply(self, device_id: str) -> list[BackupRecord]:
         """Apply retention policy per backup type. Returns list of deleted records."""
@@ -206,7 +208,16 @@ class RetentionService:
         """
         from pfsentinel.services.reindex import reindex_device  # avoids an import cycle
 
-        result = reindex_device(self, device_id)
+        result = reindex_device(self, device_id, strict=True)
+        if result.unreadable:
+            # Saving now would start the run numbers again over files that
+            # exist but cannot be read. Stop; the run alerts as failed.
+            raise BackupIndexError(
+                device_id,
+                self.index_path(device_id),
+                f"the index is missing and {len(result.unreadable)} backup file(s) or "
+                f"folder(s) next to it cannot be read, for example {result.unreadable[0]}",
+            )
         if not result.added:
             return index
         logger.warning(
@@ -245,6 +256,24 @@ def _index_error_reason(error: Exception) -> str:
     if str(error) == _NOT_AN_OBJECT:
         return _NOT_AN_OBJECT
     return f"unexpected structure ({type(error).__name__})"
+
+
+def _sync_folder(folder: Path) -> None:
+    """Flush the folder entry after os.replace, so the swap survives a crash (POSIX).
+
+    Windows has no folder fsync; NTFS logs the rename itself. A file system
+    that cannot sync a folder (EINVAL, ENOTSUP) is skipped; other errors raise.
+    """
+    if sys.platform == "win32":
+        return
+    fd = os.open(folder, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    except OSError as e:
+        if e.errno not in (errno.EINVAL, errno.ENOTSUP, errno.EBADF):
+            raise
+    finally:
+        os.close(fd)
 
 
 def _keep_previous(path: Path) -> None:

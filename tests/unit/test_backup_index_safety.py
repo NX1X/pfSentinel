@@ -387,3 +387,166 @@ class TestReindexNames:
         result = reindex.reindex_device(retention, DEVICE)
         assert result.unreadable == ["2026/locked"]
         assert len(result.added) == 1
+
+
+# ---------------------------------------------------------------------------
+# Review fixes (PR #60): numbers of unreadable files, strict automatic
+# rebuild, merge with a concurrent run, move-back, folder sync
+# ---------------------------------------------------------------------------
+
+
+def _unreadable(monkeypatch: pytest.MonkeyPatch, marker: str) -> None:
+    """checksum.sha256_file fails for files whose name contains ``marker``."""
+    real = reindex.checksum.sha256_file
+
+    def sha(path, *args, **kwargs):
+        if marker in Path(path).name:
+            raise PermissionError(13, "Permission denied", str(path))
+        return real(path, *args, **kwargs)
+
+    monkeypatch.setattr(reindex.checksum, "sha256_file", sha)
+
+
+class TestReviewFixes:
+    def test_an_unreadable_file_still_holds_its_run_number(
+        self, retention: RetentionService, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        d = retention.device_dir(DEVICE)
+        _touch(d, "2026/11/19/020000_#001/fw1_2026-11-19_020000_#001_initial.xml")
+        _touch(d, "2026/11/20/020000_#099/fw1_2026-11-20_020000_#099_initial.xml")
+        _unreadable(monkeypatch, "#099")
+
+        result = reindex.reindex_device(retention, DEVICE)
+
+        assert len(result.added) == 1 and result.unreadable
+        assert result.last_run_number == 99
+        assert retention.load_index(DEVICE).last_run_number == 99
+
+    def test_strict_saves_nothing_when_a_file_cannot_be_read(
+        self, retention: RetentionService, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        d = retention.device_dir(DEVICE)
+        _touch(d, "2026/11/19/020000_#001/fw1_2026-11-19_020000_#001_initial.xml")
+        _touch(d, "2026/11/20/020000_#002/fw1_2026-11-20_020000_#002_initial.xml")
+        _unreadable(monkeypatch, "#002")
+
+        result = reindex.reindex_device(retention, DEVICE, strict=True)
+
+        assert not result.saved
+        assert not retention.index_path(DEVICE).exists()
+
+    def test_start_run_stops_when_the_index_is_missing_and_files_cannot_be_read(
+        self, retention: RetentionService, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        d = retention.device_dir(DEVICE)
+        _touch(d, "2026/11/20/020000_#003/fw1_2026-11-20_020000_#003_initial.xml")
+        _unreadable(monkeypatch, "#003")
+
+        with pytest.raises(BackupIndexError, match="cannot be read"):
+            retention.start_run(DEVICE)
+        assert not retention.index_path(DEVICE).exists(), "no run number reserved"
+
+    def test_start_run_rebuilds_a_missing_index_and_continues_the_numbers(
+        self, retention: RetentionService
+    ) -> None:
+        d = retention.device_dir(DEVICE)
+        _touch(d, "2026/11/20/112219_#003/fw1_2026-11-20_112219_#003_initial.xml")
+
+        run = retention.start_run(DEVICE)
+
+        assert run.number == 4
+        assert [r.run_number for r in retention.load_index(DEVICE).records] == [3]
+
+    def test_a_run_saved_during_the_scan_is_kept(
+        self, retention: RetentionService, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        d = retention.device_dir(DEVICE)
+        _touch(d, "2026/11/19/020000_#001/fw1_2026-11-19_020000_#001_initial.xml")
+        concurrent = _record("2026/11/20/030000_#007/new.xml", run=7)
+        real_scan = reindex._scan
+
+        def scan(device_dir, result):
+            found = real_scan(device_dir, result)
+            # A scheduled backup in another process saves its run meanwhile.
+            retention.save_index(
+                BackupIndex(device_id=DEVICE, last_run_number=7, records=[concurrent])
+            )
+            return found
+
+        monkeypatch.setattr(reindex, "_scan", scan)
+        reindex.reindex_device(retention, DEVICE)
+
+        index = retention.load_index(DEVICE)
+        assert index.last_run_number == 7
+        assert {r.run_number for r in index.records} == {1, 7}
+
+    def test_a_failed_save_moves_the_broken_index_back(
+        self, retention: RetentionService, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _index_path(retention).write_bytes(b"{broken")
+        _touch(retention.device_dir(DEVICE), "2026/11/19/fw1_2026-11-19_020000_#001_initial.xml")
+
+        def fail(index):
+            raise OSError(28, "No space left on device")
+
+        monkeypatch.setattr(retention, "save_index", fail)
+        with pytest.raises(OSError, match="No space"):
+            reindex.reindex_device(retention, DEVICE)
+
+        assert retention.index_path(DEVICE).read_bytes() == b"{broken"
+        assert not list(retention.device_dir(DEVICE).glob(f"{INDEX_FILE}.broken-*"))
+
+    def test_a_failed_move_back_names_where_the_old_index_is(
+        self, retention: RetentionService, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _index_path(retention).write_bytes(b"{broken")
+        _touch(retention.device_dir(DEVICE), "2026/11/19/fw1_2026-11-19_020000_#001_initial.xml")
+
+        def fail(index):
+            raise OSError(28, "No space left on device")
+
+        monkeypatch.setattr(retention, "save_index", fail)
+        real_rename = Path.rename
+
+        def rename(self, target):
+            if self.name.startswith(f"{INDEX_FILE}.broken-"):
+                raise PermissionError(13, "Permission denied")
+            return real_rename(self, target)
+
+        monkeypatch.setattr(Path, "rename", rename)
+        with pytest.raises(reindex.ReindexError, match="broken-"):
+            reindex.reindex_device(retention, DEVICE)
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX folder sync")
+    def test_save_syncs_the_folder(
+        self, retention: RetentionService, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        synced: list[int] = []
+        real_fsync = os.fsync
+
+        def fsync(fd):
+            synced.append(fd)
+            return real_fsync(fd)
+
+        monkeypatch.setattr(retention_module.os, "fsync", fsync)
+        retention.save_index(BackupIndex(device_id=DEVICE))
+        assert len(synced) == 2, "the temp file, then the folder"
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX folder sync")
+    def test_a_folder_sync_that_is_not_supported_is_skipped(
+        self, retention: RetentionService, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import errno
+
+        calls = {"n": 0}
+        real_fsync = os.fsync
+
+        def fsync(fd):
+            calls["n"] += 1
+            if calls["n"] == 2:
+                raise OSError(errno.EINVAL, "Invalid argument")
+            return real_fsync(fd)
+
+        monkeypatch.setattr(retention_module.os, "fsync", fsync)
+        retention.save_index(BackupIndex(device_id=DEVICE))
+        assert retention.index_path(DEVICE).exists()
