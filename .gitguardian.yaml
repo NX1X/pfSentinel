@@ -6,10 +6,14 @@
 # credential and never touches production. These entries stop ggshield from
 # flagging that fixture. Note: the GitGuardian GitHub App check is resolved
 # from the GitGuardian dashboard, not from this file.
+#
+# tests/fixtures/age/ holds the public C2SP age test vectors (CCTV). Their
+# AGE-SECRET-KEY-1... identities are published test keys that protect nothing.
 version: 2
 secret:
   ignored-paths:
     - "tests/e2e/**"
+    - "tests/fixtures/age/**"
   ignored-matches:
     - name: "Fake SSH password for the e2e fake SSH server (not a real secret)"
       match: "hunter2"

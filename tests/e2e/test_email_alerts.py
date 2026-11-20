@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import secrets
 import socket
 from collections.abc import Iterator
 
@@ -25,7 +26,9 @@ from .fake_smtp_server import FakeSMTPServer
 pytestmark = pytest.mark.e2e
 
 USER = "alerts@example.com"
-PASSWORD = "S3cret-Pa55word!"
+# Random per test run (it only logs in to the fake SMTP server); the "!" keeps
+# a non-alphanumeric character in the login.
+PASSWORD = secrets.token_urlsafe(16) + "!"
 
 
 @pytest.fixture
