@@ -248,6 +248,11 @@ class AppConfig(BaseModel):
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(tmp_path, p)
+            # Windows: the folder holds config, pinned host keys and the secret
+            # store; make it owner-only like 0700 on Linux.
+            from pfsentinel.utils.permissions import restrict_to_owner
+
+            restrict_to_owner(p.parent)
         except BaseException:
             # Clean up temp file on failure
             with contextlib.suppress(OSError):

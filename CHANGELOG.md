@@ -27,6 +27,7 @@ From the 0.3.0 field test (2026-11-20, Windows 11, PowerShell 7):
 - Downloads are accepted only over https from GitHub hosts, checked again after every redirect, and capped at 200 MB
 - The new binary is staged next to the installed one (owner-only, same filesystem) instead of in the config folder, and a failed update leaves no staged file
 - `pfs update revert` uses a backup path it derives itself, never one read from the state file
+- On Windows, the config folder (config, pinned host keys, secret store) and each device's backup folder are made owner-only (`icacls`: only you, SYSTEM and Administrators), like 0600/0700 on Linux. Existing files inherit the new access list
 - As root, `pfs update install` and `revert` refuse a binary in a folder that is not root-owned or that others can write
 
 ### Removed
