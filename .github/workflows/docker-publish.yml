@@ -1,0 +1,161 @@
+name: Publish container image (experimental)
+
+# Builds the image for linux/amd64 and linux/arm64 on native runners, pushes
+# it to the GitHub Container Registry as ghcr.io/nx1x/pfsentinel:<version>
+# (one multi-arch tag; no "latest", so users pin a version and a digest), and
+# signs a build attestation for the image digest.
+#
+# Called by the release pipeline (ci.yml) after a release, or run by hand for
+# an existing release tag. No third-party actions: plain docker on the runner.
+#
+# The image is built from this run's own commit, so the attestation names the
+# commit the image really came from. Before the build, the job checks that the
+# package source at this commit is identical to the release tag; if it is not,
+# the job stops and nothing is pushed.
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: 'Release tag, for example v1.0.0-rc.1'
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to publish, for example v1.0.0-rc.1'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/nx1x/pfsentinel
+
+jobs:
+  build:
+    name: Build and push (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Check the tag
+        id: version
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -eu
+          if ! printf '%s' "$TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
+            echo "::error::Not a release tag: $TAG"
+            exit 1
+          fi
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout this run's commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check that the package source matches the release tag
+        env:
+          TAG: ${{ inputs.tag }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          set -eu
+          git fetch --no-tags --depth=1 "$REPO_URL" "refs/tags/$TAG:refs/tags/$TAG"
+          if ! git diff --quiet "refs/tags/$TAG" HEAD -- \
+              src pyproject.toml requirements.lock README.md LICENSE; then
+            echo "::error::The package source at $GITHUB_SHA differs from $TAG. Run this workflow from the tag's commit."
+            git diff --stat "refs/tags/$TAG" HEAD -- \
+              src pyproject.toml requirements.lock README.md LICENSE
+            exit 1
+          fi
+
+      - name: Patch version
+        # Same as the other release builders in ci.yml.
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          sed -i "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" \
+            src/pfsentinel/__init__.py
+
+      - name: Build image
+        run: docker build --tag pfsentinel:release .
+
+      - name: Smoke test
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -eu
+          docker run --rm pfsentinel:release --version | grep -F "$VERSION"
+          docker run --rm --read-only --tmpfs /tmp --cap-drop ALL \
+            --security-opt no-new-privileges pfsentinel:release config path
+
+      - name: Push the architecture image
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker tag pfsentinel:release "$IMAGE:$VERSION-$ARCH"
+          docker push "$IMAGE:$VERSION-$ARCH"
+
+      - name: Log out of ghcr.io
+        if: always()
+        run: docker logout ghcr.io
+
+  manifest:
+    name: Multi-arch tag and attestation
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Create the multi-arch tag
+        id: index
+        env:
+          TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          VERSION="${TAG#v}"
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker buildx imagetools create --tag "$IMAGE:$VERSION" \
+            "$IMAGE:$VERSION-amd64" "$IMAGE:$VERSION-arm64"
+          DIGEST=$(docker buildx imagetools inspect "$IMAGE:$VERSION" \
+            --format '{{json .Manifest}}' | jq -r .digest)
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Published"
+            echo
+            echo "\`$IMAGE:$VERSION@$DIGEST\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Attest the image
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.index.outputs.digest }}
+          push-to-registry: true
+
+      - name: Log out of ghcr.io
+        # After the attestation: push-to-registry needs the login.
+        if: always()
+        run: docker logout ghcr.io

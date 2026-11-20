@@ -70,19 +70,6 @@ jobs:
         run: docker image ls pfsentinel:ci
 
   # ---------------------------------------------------------------------------
-  # PUBLISHING IS NOT ENABLED. The operator decides first.
-  #
-  # To publish to GHCR (ghcr.io/nx1x/pfsentinel) with attestation, a separate
-  # job on release tags would need:
-  #   - a trigger on tag push (v*) or on the release workflow, never on PRs
-  #   - job permissions: contents: read, packages: write, id-token: write,
-  #     attestations: write (set on the job, not at workflow level)
-  #   - docker/login-action (SHA-pinned) with GITHUB_TOKEN
-  #   - docker/build-push-action (SHA-pinned), tags = version, pushed by digest
-  #   - actions/attest-build-provenance (already used in ci.yml) with
-  #     push-to-registry: true, on the digest that build-push-action returns
-  #   - the image reference in deploy/ files updated to the published digest
-  #   - a decision on multi-arch (linux/amd64 only, or also linux/arm64)
-  #   - a decision on whether the tag may be "latest" (the project rule is to
-  #     pin by digest, so it should not)
+  # Publishing to ghcr.io (amd64 and arm64, with an attestation) is in
+  # docker-publish.yml. This workflow only checks that the image builds.
   # ---------------------------------------------------------------------------

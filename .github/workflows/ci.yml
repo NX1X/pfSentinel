@@ -505,12 +505,31 @@ jobs:
           if [[ "$RELEASE_TAG" == *-* ]]; then
             PRE=(--prerelease)
           fi
+          # --target: the tag points at the commit this run built and tested,
+          # even if main moved on during the run.
           gh release create "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
             --title "pfSentinel $RELEASE_TAG" \
             --notes-file artifacts/release-notes/release_notes.md \
             "${PRE[@]}" \
             ./release_files/*
+
+  # ---------------------------------------------------------------------------
+  # 8b. Publish the container image (EXPERIMENTAL) to ghcr.io, with attestation
+  # ---------------------------------------------------------------------------
+  publish-image:
+    name: Publish container image
+    needs: [resolve-version, release]
+    if: needs.resolve-version.outputs.should_release == 'true'
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/docker-publish.yml
+    with:
+      tag: ${{ needs.resolve-version.outputs.tag }}
 
   # ---------------------------------------------------------------------------
   # 9. Publish to TestPyPI (trusted publishing / OIDC)

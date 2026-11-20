@@ -15,8 +15,24 @@ WORKDIR /src
 
 # 1. Build tools from the hash-locked dev lock file. They stay in this stage.
 COPY requirements-dev.lock ./
-RUN python -m pip install --only-binary :all: --require-hashes --no-deps \
-        -r requirements-dev.lock
+# Only the wheel builder (hatchling) and its dependencies, taken from the dev
+# lockfile with their hashes unchanged. The other dev tools are not needed
+# here and may lack wheels for every architecture (amd64 and arm64 are built).
+RUN python - <<'PY' > build-tools.txt
+import re, sys
+wanted = {"hatchling", "packaging", "pathspec", "pluggy", "trove-classifiers"}
+blocks = re.split(r"\n(?=[A-Za-z0-9])", open("requirements-dev.lock").read())
+found = set()
+for block in blocks:
+    name = re.match(r"([A-Za-z0-9_.-]+)==", block)
+    if name and name.group(1).lower() in wanted:
+        found.add(name.group(1).lower())
+        sys.stdout.write(block.rstrip() + "\n")
+missing = wanted - found
+if missing:
+    sys.exit(f"not in requirements-dev.lock: {sorted(missing)}")
+PY
+RUN python -m pip install --only-binary :all: --require-hashes --no-deps -r build-tools.txt
 
 # 2. Runtime dependencies from the hash-locked file, into a virtualenv.
 COPY requirements.lock ./
