@@ -114,6 +114,22 @@ chmod 600 ~/.local/share/python_keyring/keyring_pass.cfg
 
 ---
 
+### Self-Update
+
+**Behavior (since 0.4.0):** `pfs update install` installs a binary only when all of these hold:
+
+1. The download comes over https from GitHub (also after every redirect) and is at most 200 MB.
+2. Its SHA-256 matches the release's `checksums-sha256.txt`.
+3. Its signed build attestation verifies: a SLSA provenance statement for exactly this SHA-256, signed through Sigstore by this repository's `ci.yml` on `main`, with a certificate that chains to the pinned Sigstore CA and a valid transparency-log promise. The check uses `cryptography` only; it does not check the log's Merkle inclusion proof.
+
+The new binary is staged in the same folder as the installed one, with owner-only access. As root, pfSentinel refuses to update a binary in a folder that is not root-owned or that others can write. `pfs update revert` restores only a backup path it derives itself. If Sigstore ever rotates its CA, updates fail closed until a new pfSentinel ships the new keys; installing by hand still works (manual: "Standalone binary").
+
+### File Permissions on Windows
+
+**Behavior (since 0.4.0):** the config folder (`%USERPROFILE%\.pfsentinel`: config, pinned host keys, encrypted secret store) and each device's backup folder get an explicit access list: full control for you, SYSTEM and Administrators, nothing for other users. Files inside inherit it. On Linux the same files are 0600 and the folders 0700.
+
+---
+
 ### Logging
 
 pfSentinel does **not** log passwords, tokens, or credential values. Log files contain only hostnames, operation status, and error messages. Verify with `--debug` if you are unsure what is being recorded.
