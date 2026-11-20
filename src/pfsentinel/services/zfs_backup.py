@@ -7,12 +7,13 @@ from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
-from pfsentinel.models.backup import BackupRecord, BackupType
+from pfsentinel.models.backup import BackupRecord, BackupRun, BackupType
 from pfsentinel.models.config import AppConfig
 from pfsentinel.models.device import DeviceConfig
 from pfsentinel.models.zfs import ZfsSnapshot, ZfsSnapshotIndex
 from pfsentinel.services.connection import SSHConnector
 from pfsentinel.services.credentials import CredentialService
+from pfsentinel.services.retention import RetentionService
 from pfsentinel.utils import checksum, naming
 from pfsentinel.utils.logging import get_logger
 
@@ -90,7 +91,7 @@ class ZfsBackupService:
             label="zfs-full",
             extension=".zfs",
         )
-        rel_path = naming.generate_typed_relative_path("zfs", filename, timestamp)
+        rel_path = naming.run_relative_path(filename, timestamp, sequence)
         dest = self._backup_root / device.id / rel_path
 
         cmd = f"zfs send {shlex.quote(snapshot.name)} | gzip"
@@ -111,6 +112,7 @@ class ZfsBackupService:
             compressed=True,
             sequence=sequence,
             verified=True,
+            run_number=sequence,
             zfs_snapshot_name=snapshot.name,
             zfs_incremental=False,
         )
@@ -134,7 +136,7 @@ class ZfsBackupService:
             label="zfs-incr",
             extension=".zfs",
         )
-        rel_path = naming.generate_typed_relative_path("zfs", filename, timestamp)
+        rel_path = naming.run_relative_path(filename, timestamp, sequence)
         dest = self._backup_root / device.id / rel_path
 
         cmd = (
@@ -158,6 +160,7 @@ class ZfsBackupService:
             compressed=True,
             sequence=sequence,
             verified=True,
+            run_number=sequence,
             zfs_snapshot_name=current_snapshot.name,
             zfs_incremental=True,
             zfs_base_snapshot=base_snapshot.name,
@@ -181,6 +184,7 @@ class ZfsBackupService:
         device_id: str,
         progress: ProgressCallback | None = None,
         force_full: bool = False,
+        run: BackupRun | None = None,
     ) -> BackupRecord:
         """Full ZFS snapshot backup workflow.
 
@@ -196,7 +200,11 @@ class ZfsBackupService:
             raise ZfsError(f"Device '{device_id}' not found")
 
         connector = self._get_ssh_connector(device)
-        timestamp = datetime.now()
+        if run is None:
+            run = RetentionService(self._backup_root, self._config.backup_policy).start_run(
+                device.id
+            )
+        timestamp = run.started_at
         tag = f"pfsentinel-{timestamp.strftime('%Y%m%d-%H%M%S')}"
         snap_index = self.load_snapshot_index(device_id)
 
@@ -221,12 +229,14 @@ class ZfsBackupService:
                 if progress:
                     progress("Streaming incremental ZFS snapshot...", 30)
                 record = self.transfer_incremental(
-                    connector, base, snapshot, device, timestamp, sequence=1
+                    connector, base, snapshot, device, timestamp, sequence=run.number
                 )
             else:
                 if progress:
                     progress("Streaming full ZFS snapshot...", 30)
-                record = self.transfer_full(connector, snapshot, device, timestamp, sequence=1)
+                record = self.transfer_full(
+                    connector, snapshot, device, timestamp, sequence=run.number
+                )
 
             # Update snapshot index
             snapshot.transferred = True

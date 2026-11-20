@@ -31,7 +31,7 @@ set_before_console_line(end_progress_line)
 
 def print_backup_table(records: list[BackupRecord], title: str = "Backups") -> None:
     table = Table(title=title, show_header=True, header_style="bold cyan")
-    table.add_column("#", style="dim", width=4)
+    table.add_column("Run", style="dim", justify="right")
     table.add_column("Type", style="magenta", width=8)
     table.add_column("Device", style="cyan")
     table.add_column("Filename")
@@ -40,7 +40,7 @@ def print_backup_table(records: list[BackupRecord], title: str = "Backups") -> N
     table.add_column("Changes", style="yellow")
     table.add_column("Status")
 
-    for i, r in enumerate(records, 1):
+    for r in records:
         date_str = r.created_at.strftime("%Y-%m-%d %H:%M")
         if r.size_bytes < 1048576:
             size_str = f"{r.size_bytes / 1024:.1f} KB"
@@ -48,7 +48,7 @@ def print_backup_table(records: list[BackupRecord], title: str = "Backups") -> N
             size_str = f"{r.size_bytes / 1048576:.1f} MB"
         status = "[green]OK[/]" if r.verified else "[yellow]?[/]"
         table.add_row(
-            str(i),
+            f"#{r.run_number}" if r.run_number is not None else "-",
             r.type_label,
             r.device_id,
             r.filename,

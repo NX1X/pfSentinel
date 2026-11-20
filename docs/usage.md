@@ -407,40 +407,44 @@ This checks GitHub Releases for a newer version and downloads it if available.
 
 ### Directory Layout
 
+Since 0.3.0, each backup run has one folder. The config and every extra of that run are in it:
+
 ```
 ~/Documents/pfSentinel/
 └── home-fw/
     ├── backup_index.json
     ├── zfs_snapshots.json
-    ├── 2026/04/30/                    # config backups
-    │   └── home-fw_..._initial.xml.gz
-    ├── rrd/2026/04/30/                # RRD data
-    ├── pkg/2026/04/30/                # package configs
-    ├── dhcp/2026/04/30/               # DHCP leases
-    ├── certs/2026/04/30/              # certificates
-    ├── logs/2026/04/30/               # system logs
-    ├── zfs/2026/04/30/                # ZFS snapshots
-    └── archive/2026/04/30/            # filesystem archives
+    └── 2026/11/20/
+        ├── 020000_#141/                         # run 141
+        │   ├── home-fw_2026-11-20_020000_#141_minor.xml.gz
+        │   ├── home-fw_2026-11-20_020000_#141_rrd.tar.gz
+        │   └── home-fw_2026-11-20_020000_#141_dhcp.txt.gz
+        └── 085016_#142/                         # run 142
+            └── home-fw_2026-11-20_085016_#142_firewall.xml.gz
 ```
+
+The folder name is `<HHMMSS>_#<run number>`. The run number counts the device's runs and never resets, so "run #142" names one run.
+
+Backups made before 0.3.0 keep their old paths: config files in `<device>/YYYY/MM/DD/`, and each extra in `<device>/<type>/YYYY/MM/DD/`. `backup list`, `verify`, `diff`, `restore` and retention still work on them. New run numbers continue after the old runs.
 
 ### Filename Format
 
 ```
-{device-id}_{YYYY-MM-DD}_{HHMMSS}_#{SEQ}_{changes}.{ext}
+{device-id}_{YYYY-MM-DD}_{HHMMSS}_#{RUN}_{changes}.{ext}
 ```
 
 Example:
 
 ```
-home-fw_2026-04-30_143022_#001_interfaces+system.xml.gz
+home-fw_2026-11-20_085016_#142_interfaces+system.xml.gz
 ```
 
 | Component | Meaning |
 |-----------|---------|
 | `home-fw` | Device ID |
-| `2026-04-30` | Backup date |
-| `143022` | Backup time (24h) |
-| `#001` | Daily sequence number |
+| `2026-11-20` | Backup date |
+| `085016` | Backup time (24h) |
+| `#142` | Run number (before 0.3.0: daily sequence number) |
 | `interfaces+system` | Changed config sections |
 | `.xml.gz` | Compressed XML config |
 

@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **One folder per backup run:** `<device>/YYYY/MM/DD/<HHMMSS>_#NNN/` holds the config and every extra of that run. Before, the config went to `<device>/YYYY/MM/DD/` and each extra to `<device>/<type>/YYYY/MM/DD/`. `NNN` is now a run number that counts the device's runs and never resets, instead of a daily sequence. `backup list` shows it in a "Run" column, which replaces the row number. Backups made before 0.3.0 stay where they are and keep working with list, verify, diff, restore and retention, and new run numbers continue after them. Retention removes run folders that it empties. The backup index moves to schema 3 on first use
+
 ### Fixed
 
 Found in the homelab field test of 2026-11-20 (v0.2.6, Windows 11, pfSense CE 2.8.1, non-root backup user):

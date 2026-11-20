@@ -6,10 +6,9 @@ import os
 import shutil
 import sys
 from collections.abc import Callable
-from datetime import datetime
 from pathlib import Path
 
-from pfsentinel.models.backup import BackupRecord
+from pfsentinel.models.backup import BackupRecord, BackupRun
 from pfsentinel.models.config import AppConfig
 from pfsentinel.models.device import DeviceConfig
 from pfsentinel.services.connection import ConnectionManager
@@ -71,10 +70,13 @@ class BackupService:
         progress: ProgressCallback | None = None,
         area: str = "",
         no_packages: bool = False,
+        run: BackupRun | None = None,
     ) -> BackupRecord:
         """Run a full (or selective) backup for one device.
 
         Args:
+            run: The run this backup belongs to (the orchestrator passes it,
+                so config and extras share one folder). None starts a new run.
             area: Specific config section (HTTPS only; empty = full backup).
             no_packages: Exclude package config from backup (HTTPS only).
         """
@@ -115,8 +117,11 @@ class BackupService:
             changes = self._diff.detect(device_id, xml_content, index)
 
             # --- Generate filename ---
-            sequence = retention.next_sequence(device_id)
-            timestamp = datetime.now()
+            if run is None:
+                run = retention.start_run(device_id)
+                index = retention.load_index(device_id)
+            sequence = run.number
+            timestamp = run.started_at
             filename = naming.generate_filename(
                 device_id=device_id,
                 changes=changes,
@@ -124,7 +129,7 @@ class BackupService:
                 compressed=self._config.backup_policy.compress,
                 timestamp=timestamp,
             )
-            relative_path = naming.generate_relative_path(filename, timestamp)
+            relative_path = run.relative_path(filename)
             dest_path = self._backup_root / device_id / relative_path
             dest_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -176,6 +181,7 @@ class BackupService:
                 sequence=sequence,
                 verified=verified,
                 description=description,
+                run_number=run.number,
             )
 
             # --- Update index ---

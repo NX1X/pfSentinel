@@ -138,7 +138,7 @@ class TestTypedRetention:
         index_path.write_text(json.dumps(v1_data), encoding="utf-8")
 
         loaded = retention.load_index(device_id)
-        assert loaded.schema_version == 2
+        assert loaded.schema_version == 3
         assert loaded.records[0].backup_type == BackupType.CONFIG
 
     def test_no_deletion_when_under_limits(self, tmp_path: Path):
