@@ -474,7 +474,8 @@ class TestNotifyTest:
         result = cli_runner.invoke(app, ["notify", "test"])
 
         assert result.exit_code == 0
-        assert "Nothing was sent" in _out(result)
+        # Linux lists the desktop channel as skipped; Windows has none to skip.
+        assert "Nothing was sent" in _out(result) or "No notification channels" in _out(result)
         assert http.posts == []
 
     def test_all_channels_succeed(

@@ -38,6 +38,7 @@ S3, Azure, WebDAV and the container image are EXPERIMENTAL in this release.
 
 ### Fixed
 
+- **Windows: piped or redirected output crashed** with `UnicodeEncodeError` on the first symbol (for example `pfs backup list | Select-String ...` or output to a log file): Windows uses the legacy code page for a pipe. pfs now writes UTF-8 when its output is not a terminal. Found by the new binary smoke test
 - **A corrupt `config.json` was treated as empty**, so `pfs config validate` called it valid and the next command that saved the config wrote empty defaults over your devices. pfSentinel now stops with one clear message (what is wrong and where), exit code 1, and leaves the file as it is. Found by the new CLI tests
 
 From the 0.3.0 field test (2026-11-20, Windows 11, PowerShell 7):

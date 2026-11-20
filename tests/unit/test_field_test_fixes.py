@@ -271,3 +271,19 @@ def test_passphrase_stdin_sets_up_and_decrypts(tmp_path, monkeypatch) -> None:
         input="y\nshort\n",
     )
     assert short.exit_code != 0
+
+
+def test_redirected_output_on_windows_never_crashes_on_symbols(monkeypatch) -> None:
+    """Seen in the Windows binary smoke test: cp1252 pipes crashed on the check mark."""
+    import io
+    import sys
+
+    from pfsentinel.cli import app as app_module
+
+    raw = io.BytesIO()
+    legacy = io.TextIOWrapper(raw, encoding="cp1252")
+    monkeypatch.setattr(sys, "stdout", legacy)
+    app_module._utf8_when_redirected()
+    sys.stdout.write("\u2713 done \u2139 info")
+    sys.stdout.flush()
+    assert raw.getvalue().decode("utf-8") == "\u2713 done \u2139 info"
