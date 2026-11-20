@@ -276,7 +276,7 @@ def backup_run(
                 print_success(f"[{record.type_label}] {record.filename}")
                 print_info(f"  Saved to: {backup_root / device / record.relative_path}")
                 if not record.verified:
-                    print_warning("  Post-backup validation failed — file may be corrupt.")
+                    print_warning("  Post-backup validation failed: the file may be corrupt.")
                     print_warning(f"  Run: pfs backup verify {record.filename}")
             print_success(f"Backup complete: {len(records)} file(s)")
         except (BackupError, BackupIndexError) as e:
@@ -343,23 +343,57 @@ def backup_list(
 
 @app.command("verify")
 def backup_verify(
-    filename: str = typer.Argument(..., help="Backup filename to verify"),
+    filename: str | None = typer.Argument(
+        None, help="Backup filename to verify (default: every backup not verified yet)"
+    ),
+    device: str | None = typer.Option(
+        None, "--device", "-d", help="Without a filename: only this device"
+    ),
 ) -> None:
-    """Verify backup file integrity."""
-    _, svc = _get_service()
-    records = svc.list_backups()
-    record = next((r for r in records if r.filename == filename), None)
+    """Verify backup file integrity and save the result.
 
-    if not record:
-        print_error(f"Backup not found: {filename}")
-        raise typer.Exit(1)
+    Checks the checksum, then decrypts and reads the file (config XML or tar
+    archive). The result shows in the Status column of `pfs backup list`:
+    OK after a passed check, ? after a failed one. Without a filename, every
+    backup with Status ? is checked, for example after `pfs backup reindex`.
+    """
+    config, svc = _get_service()
+    if filename:
+        record = next((r for r in svc.list_backups() if r.filename == filename), None)
+        if not record:
+            print_error(f"Backup not found: {filename}")
+            raise typer.Exit(1)
+        records = [record]
+    else:
+        if device and not config.get_device(device):
+            print_error(f"Device '{device}' not found. Run: pfs device list")
+            raise typer.Exit(1)
+        records = [r for r in svc.list_backups(device) if not r.verified]
+        if not records:
+            print_success("Every backup is verified, nothing to check")
+            return
 
-    print_info(f"Verifying {filename}...")
-    try:
-        svc.verify_backup(record)
-        print_success("Backup integrity verified OK")
-    except BackupError as e:
-        print_error(f"Backup integrity check FAILED: {e}")
+    failed = 0
+    for record in records:
+        print_info(f"Verifying {record.filename}...")
+        try:
+            svc.verify_backup(record)
+        except BackupError as e:
+            print_error(f"Backup integrity check FAILED: {e}")
+            failed += 1
+            ok = False
+        else:
+            print_success("Backup integrity verified OK")
+            ok = True
+        try:
+            svc.save_verified(record, ok)
+        except OSError as e:
+            print_warning(f"  Could not save the result in the backup index: {e}")
+
+    if len(records) > 1:
+        summary = f"{len(records) - failed} of {len(records)} backups verified OK"
+        (print_error if failed else print_success)(summary)
+    if failed:
         raise typer.Exit(1)
 
 

@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `pfs backup verify` now saves its result in the backup index. Before, a passed check did not change the `?` status in `pfs backup list`, so files added by `pfs backup reindex` kept `?` forever. A failed check now sets `?`.
+
+### Added
+
+- `pfs backup verify` without a filename checks every backup with status `?`. Add `-d DEVICE` for one device.
+
 ## [1.0.0-rc.2] - 2026-11-20
 
 The second release candidate. It fixes a data-safety bug found in the rc.1 field test: after `backup_index.json` was deleted by hand, the next run started again at #001 and the existing backups vanished from `pfs backup list`. It is a GitHub pre-release; the 14-day stability gate for 1.0.0 starts again with it.
