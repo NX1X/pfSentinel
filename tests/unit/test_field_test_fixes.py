@@ -124,6 +124,19 @@ class TestNonRootUser:
         line = "tar: usr/local/etc/sasldb2.db: Couldn't open file: Permission denied"
         assert connection._denied_name(line) == "usr/local/etc/sasldb2.db"
 
+    def test_pfsense_bsdtar_output_is_one_info_line(self, caplog) -> None:
+        """Seen on pfSense 2.8.1 in the 0.3.0 field test (2026-11-20)."""
+        caplog.set_level(logging.INFO, logger="pfsentinel")
+        connection._log_partial_read(
+            1,
+            "tar: Removing leading '/' from member names\n"
+            "tar: Can't open `sasldb2.db': Permission denied\n"
+            "tar: Error exit delayed from previous errors.\n",
+        )
+        records = [r for r in caplog.records if r.name.startswith("pfsentinel")]
+        assert [r.levelno for r in records] == [logging.INFO]
+        assert records[0].getMessage().endswith("(root only): sasldb2.db")
+
     def test_other_tar_errors_stay_warnings(self, caplog) -> None:
         caplog.set_level(logging.INFO, logger="pfsentinel")
         connection._log_partial_read(1, "tar: file changed as we read it\n")
@@ -133,6 +146,23 @@ class TestNonRootUser:
 
 
 class TestProgressLine:
+    @pytest.fixture(autouse=True)
+    def _terminal(self, monkeypatch):
+        from pfsentinel.cli import formatters
+
+        monkeypatch.setattr(formatters, "_progress_enabled", lambda: True)
+        monkeypatch.setattr(formatters, "_progress_line_open", False)
+
+    def test_the_bar_returns_to_the_line_start(self, capsys) -> None:
+        """Rich's print() strips "\\r"; the bar must keep it (0.3.0 field test)."""
+        from pfsentinel.cli import formatters
+
+        formatters.print_progress("Connecting to pfSense...", 10)
+        formatters.print_progress("Connecting via SSH...", 10)
+        out = capsys.readouterr().out
+        assert out.count("\r") == 2
+        assert "\n" not in out
+
     def test_a_log_line_never_starts_inside_the_progress_bar(self, capsys) -> None:
         import io
 
@@ -156,6 +186,13 @@ class TestProgressLine:
         out = capsys.readouterr().out
         assert "downloaded\n" in out
 
+    def test_no_bar_in_a_log_file(self, capsys, monkeypatch) -> None:
+        from pfsentinel.cli import formatters
+
+        monkeypatch.setattr(formatters, "_progress_enabled", lambda: False)
+        formatters.print_progress("Saving backup...", 65)
+        assert capsys.readouterr().out == ""
+
 
 @pytest.mark.parametrize(
     ("key_name", "file_type"),
@@ -163,3 +200,90 @@ class TestProgressLine:
 )
 def test_trust_key_hint_names_the_matching_host_key_file(key_name: str, file_type: str) -> None:
     assert device_cmd._host_key_file_type(key_name) == file_type
+
+
+class TestJsonOutput:
+    """`--json` for scripts (0.6.0 plan): valid JSON, also when empty, no secrets."""
+
+    def test_device_list_json_has_no_password(self, tmp_path, monkeypatch) -> None:
+        import json
+
+        from typer.testing import CliRunner
+
+        from pfsentinel.cli.app import app
+        from pfsentinel.services.credentials import CredentialService
+
+        monkeypatch.setattr(AppConfig, "config_path", staticmethod(lambda: tmp_path / "c.json"))
+        config = AppConfig(devices=[DeviceConfig(id="fw", label="fw", host="192.0.2.1")])
+        config.save()
+        CredentialService().store("fw", "s3cret-pass")
+        out = CliRunner().invoke(app, ["device", "list", "--json"]).stdout
+        data = json.loads(out)
+        assert data[0]["id"] == "fw" and data[0]["host"] == "192.0.2.1"
+        assert "s3cret-pass" not in out
+
+    def test_backup_list_json_is_an_empty_list_not_text(self, tmp_path, monkeypatch) -> None:
+        import json
+
+        from typer.testing import CliRunner
+
+        from pfsentinel.cli.app import app
+
+        monkeypatch.setattr(AppConfig, "config_path", staticmethod(lambda: tmp_path / "c.json"))
+        cfg = AppConfig()
+        cfg.backup_policy.backup_root = tmp_path / "b"
+        cfg.save()
+        assert json.loads(CliRunner().invoke(app, ["backup", "list", "--json"]).stdout) == []
+
+    def test_schedule_status_json(self, tmp_path, monkeypatch) -> None:
+        import json
+
+        from typer.testing import CliRunner
+
+        from pfsentinel.cli.app import app
+
+        monkeypatch.setattr(AppConfig, "config_path", staticmethod(lambda: tmp_path / "c.json"))
+        AppConfig().save()
+        data = json.loads(CliRunner().invoke(app, ["schedule", "status", "--json"]).stdout)
+        assert data["enabled"] is False and "daily_time" in data
+
+
+def test_passphrase_stdin_sets_up_and_decrypts(tmp_path, monkeypatch) -> None:
+    """Scriptable on every OS: Windows hidden prompts ignore piped input."""
+    from typer.testing import CliRunner
+
+    from pfsentinel.cli.app import app
+
+    monkeypatch.setattr(AppConfig, "config_path", staticmethod(lambda: tmp_path / "c.json"))
+    AppConfig().save()
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["encryption", "setup", "--mode", "passphrase", "--passphrase-stdin"],
+        input="correct horse battery staple\n",
+    )
+    assert result.exit_code == 0, result.stdout
+    assert AppConfig.load().backup_policy.encryption.mode == "passphrase"
+
+    short = runner.invoke(
+        app,
+        ["encryption", "setup", "--mode", "passphrase", "--passphrase-stdin"],
+        input="y\nshort\n",
+    )
+    assert short.exit_code != 0
+
+
+def test_redirected_output_on_windows_never_crashes_on_symbols(monkeypatch) -> None:
+    """Seen in the Windows binary smoke test: cp1252 pipes crashed on the check mark."""
+    import io
+    import sys
+
+    from pfsentinel.cli import app as app_module
+
+    raw = io.BytesIO()
+    legacy = io.TextIOWrapper(raw, encoding="cp1252")
+    monkeypatch.setattr(sys, "stdout", legacy)
+    app_module._utf8_when_redirected()
+    sys.stdout.write("\u2713 done \u2139 info")
+    sys.stdout.flush()
+    assert raw.getvalue().decode("utf-8") == "\u2713 done \u2139 info"

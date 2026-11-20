@@ -1,0 +1,64 @@
+# EXPERIMENTAL. See docs/docker.md.
+#
+# One-time setup pod. It sleeps for one hour so you can open a shell in it
+# and run the interactive setup commands. Then you delete it.
+#
+#   kubectl apply -f deploy/kubernetes/cronjob.yaml      # creates the PVCs
+#   kubectl patch cronjob pfsentinel-backup -p '{"spec":{"suspend":true}}'
+#   kubectl apply -f deploy/kubernetes/setup-pod.yaml
+#   kubectl exec -it pfsentinel-setup -- pfs config set backup-dir /data
+#   kubectl exec -it pfsentinel-setup -- pfs device add
+#   kubectl exec -it pfsentinel-setup -- pfs device trust-key <device-id>
+#   kubectl exec -it pfsentinel-setup -- pfs encryption setup
+#   kubectl delete pod pfsentinel-setup
+#   kubectl patch cronjob pfsentinel-backup -p '{"spec":{"suspend":false}}'
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pfsentinel-setup
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: pfsentinel
+      # REPLACE the digest below with the real one. Keep the tag.
+      image: ghcr.io/nx1x/pfsentinel:1.0.0-rc.1@sha256:REPLACE_WITH_REAL_DIGEST
+      command: ["sleep", "3600"]
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+          ephemeral-storage: 64Mi
+        limits:
+          cpu: 500m
+          memory: 256Mi
+          ephemeral-storage: 256Mi
+      volumeMounts:
+        - name: data
+          mountPath: /data
+        - name: config
+          mountPath: /home/pfs/.pfsentinel
+        - name: tmp
+          mountPath: /tmp
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: pfsentinel-data
+    - name: config
+      persistentVolumeClaim:
+        claimName: pfsentinel-config
+    - name: tmp
+      emptyDir:
+        sizeLimit: 64Mi

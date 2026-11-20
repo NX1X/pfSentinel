@@ -10,6 +10,7 @@ from pathlib import Path
 from pfsentinel.models.backup import BackupIndex, BackupRecord, BackupRun
 from pfsentinel.models.config import BackupPolicy
 from pfsentinel.utils.logging import get_logger
+from pfsentinel.utils.permissions import restrict_to_owner
 
 logger = get_logger(__name__)
 
@@ -146,6 +147,8 @@ class RetentionService:
         index = self.load_index(device_id)
         index.last_run_number += 1
         self.save_index(index)
+        # Windows: the device folder holds the backups; owner-only like Linux.
+        restrict_to_owner(self._backup_root / device_id)
         return BackupRun(
             device_id=device_id, number=index.last_run_number, started_at=datetime.now()
         )

@@ -106,10 +106,10 @@ These features exist and are unit tested, but have never been observed working f
 
 ### Clean-up
 
-- [ ] **TUI: remove it, or ship it.** `src/pfsentinel/tui/` is not reachable from `pfs`, and it imports
+- [x] **TUI: remove it, or ship it.** Removed in 0.4.0. `src/pfsentinel/tui/` is not reachable from `pfs`, and it imports
       `textual`, which is not a declared dependency. Recommendation: remove it
-- [ ] **mypy clean and gated in CI** (40 errors today, most in the TUI)
-- [ ] **Test coverage 67% -> 80%**, focused on `services/` (backup, connection, orchestrator)
+- [x] **mypy clean and gated in CI** (0.4.0: no errors; part of the required lint job)
+- [x] **Test coverage 67% -> 80%**: 92% with the CLI tests added before 1.0; CI fails below 80%
 - [ ] **Document restore.** A written "how to restore this file to pfSense" page
 - [ ] **Move the Linux CI jobs onto the Dagger pipeline** once it has run green for a while
 

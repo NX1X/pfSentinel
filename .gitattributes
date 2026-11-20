@@ -25,6 +25,10 @@
 *.zip binary
 *.zfs binary
 
+# age test vectors: byte-exact (one has CRLF line ends on purpose)
+tests/fixtures/age/** binary
+tests/fixtures/age/README.md text diff=markdown
+
 # GitHub linguist overrides
 tests/ linguist-detectable=false
 docs/ linguist-documentation

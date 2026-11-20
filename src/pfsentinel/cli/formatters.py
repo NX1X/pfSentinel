@@ -23,7 +23,8 @@ def end_progress_line() -> None:
     global _progress_line_open
     if _progress_line_open:
         _progress_line_open = False
-        console.print()
+        console.file.write("\n")
+        console.file.flush()
 
 
 set_before_console_line(end_progress_line)
@@ -78,7 +79,8 @@ def print_device_table(
         if statuses and d.id in statuses:
             st = statuses[d.id]
             if st.any_reachable:
-                status_str = f"[green]Reachable ({st.best_method.value})[/]"
+                method = st.best_method.value if st.best_method else "?"
+                status_str = f"[green]Reachable ({method})[/]"
             else:
                 status_str = "[red]Unreachable[/]"
                 if st.error:
@@ -143,18 +145,28 @@ def print_info(msg: str) -> None:
     console.print(f"[blue]ℹ[/] {msg}")
 
 
+def _progress_enabled() -> bool:
+    """Draw the bar only on a terminal: in a log file it is just noise."""
+    return console.is_terminal
+
+
 def print_progress(message: str, percent: int) -> None:
-    global _progress_line_open
+    global _progress_line_open, _progress_width
+    if not _progress_enabled():
+        return
     bar_width = 30
-    filled = int(bar_width * percent / 100)
+    filled = int(bar_width * max(0, min(percent, 100)) / 100)
     bar = "=" * filled + "-" * (bar_width - filled)
-    global _progress_width
-    line = f"[{bar}] {percent:3d}% {message}"
+    width = max(20, console.width - 1)
+    line = f"[{bar}] {percent:3d}% {message}"[:width]
     # Pad to the previous width, so a shorter message leaves no tail of the
-    # previous one. (No ANSI "erase line": it shows as junk in a log file.)
+    # previous one. Written to the stream directly: Rich's print() strips the
+    # "\r" that returns to the start of the line, so the bars ran together
+    # (seen in PowerShell 7 in the 0.3.0 field test).
     padded = line.ljust(_progress_width) if _progress_line_open else line
     _progress_width = len(line)
-    console.print("\r" + padded, end="", highlight=False, markup=False)
+    console.file.write("\r" + padded)
+    console.file.flush()
     _progress_line_open = True
     if percent == 100:
         end_progress_line()

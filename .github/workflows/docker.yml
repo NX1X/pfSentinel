@@ -1,0 +1,88 @@
+name: Docker (experimental)
+
+# Builds the experimental container image and runs a smoke test.
+# It does NOT publish anything. See the commented section at the bottom.
+
+on:
+  pull_request:
+    paths:
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'src/**'
+      - 'pyproject.toml'
+      - 'requirements.lock'
+      - 'requirements-dev.lock'
+      - 'deploy/**'
+      - '.github/workflows/docker.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Every FROM line must carry a digest (project rule: pin by digest).
+      - name: Check that every base image is pinned by digest
+        run: |
+          set -eu
+          bad=$(grep -E '^FROM ' Dockerfile | grep -v '@sha256:[0-9a-f]\{64\}' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::FROM line without a sha256 digest:"
+            echo "$bad"
+            exit 1
+          fi
+
+      # No third-party action: plain docker on the runner.
+      - name: Build image
+        run: docker build --tag pfsentinel:ci .
+
+      - name: Smoke test (version and help)
+        run: |
+          set -eu
+          docker run --rm pfsentinel:ci --version
+          docker run --rm pfsentinel:ci --help > /dev/null
+
+      - name: Smoke test (hardened run, as the user would deploy it)
+        run: |
+          set -eu
+          docker run --rm --read-only --tmpfs /tmp --cap-drop ALL \
+            --security-opt no-new-privileges \
+            --entrypoint id pfsentinel:ci -u | grep -qx 10001
+          docker run --rm --read-only --tmpfs /tmp --cap-drop ALL \
+            --security-opt no-new-privileges \
+            pfsentinel:ci config path
+
+      - name: Report image size
+        run: docker image ls pfsentinel:ci
+
+  # ---------------------------------------------------------------------------
+  # PUBLISHING IS NOT ENABLED. The operator decides first.
+  #
+  # To publish to GHCR (ghcr.io/nx1x/pfsentinel) with attestation, a separate
+  # job on release tags would need:
+  #   - a trigger on tag push (v*) or on the release workflow, never on PRs
+  #   - job permissions: contents: read, packages: write, id-token: write,
+  #     attestations: write (set on the job, not at workflow level)
+  #   - docker/login-action (SHA-pinned) with GITHUB_TOKEN
+  #   - docker/build-push-action (SHA-pinned), tags = version, pushed by digest
+  #   - actions/attest-build-provenance (already used in ci.yml) with
+  #     push-to-registry: true, on the digest that build-push-action returns
+  #   - the image reference in deploy/ files updated to the published digest
+  #   - a decision on multi-arch (linux/amd64 only, or also linux/arm64)
+  #   - a decision on whether the tag may be "latest" (the project rule is to
+  #     pin by digest, so it should not)
+  # ---------------------------------------------------------------------------

@@ -28,19 +28,18 @@ def is_macos() -> bool:
 
 
 def is_elevated() -> bool:
-    """Return True if the process can register Windows scheduled tasks.
+    """Return True if the process runs with administrator rights (always True off Windows).
 
-    On Windows, registering tasks under the \\pfSentinel folder requires
-    Administrator rights - without them schtasks fails with "Access is denied"
-    and the (possibly stale, broken) task is left in place. On non-Windows there is no Task Scheduler path, so
-    this is not a gate.
+    On Windows, tasks in the \\pfSentinel Task Scheduler folder and the Event Log
+    source need administrator rights. Without them, pfSentinel registers its
+    tasks for the current user in the Task Scheduler root instead.
     """
     if not is_windows():
         return True
     try:
         import ctypes
 
-        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())  # type: ignore[attr-defined]
     except Exception:
         return False
 
@@ -178,8 +177,11 @@ def create_windows_task(
     schedule_type: str,  # "DAILY", "WEEKLY" or "CHECK" (sign-in + daily)
     start_time: str,
     day_of_week: str = "",
+    extra_times: tuple[str, ...] = (),
 ) -> bool:
     """Create a Windows Task Scheduler task via XML registration.
+
+    ``extra_times`` adds more daily triggers to a CHECK task (the daily digest).
 
     The task runs as the current user with LogonType=InteractiveToken, wakes
     the machine if asleep, and ignores battery state. Returns True on success.
@@ -201,7 +203,9 @@ def create_windows_task(
     elif schedule_type == "CHECK":
         # At every sign-in (5 minutes later, once the network is up) and daily:
         # a PC that was off, or a schedule that stopped running, is noticed.
-        trigger = _logon_trigger_xml() + _daily_trigger_xml(start_time)
+        trigger = _logon_trigger_xml() + "".join(
+            _daily_trigger_xml(t) for t in (start_time, *extra_times)
+        )
     else:
         return False
 

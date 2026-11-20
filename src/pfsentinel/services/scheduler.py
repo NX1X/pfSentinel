@@ -13,6 +13,7 @@ from pfsentinel.utils.platform import (
     create_windows_task,
     delete_windows_task,
     get_executable_path,
+    is_elevated,
     is_windows,
     query_windows_task,
 )
@@ -72,6 +73,26 @@ def next_weekly_run(now: datetime, day: str, at: str) -> datetime | None:
 _DAILY_TASK_NAME = "pfSentinel\\DailyBackup"
 _WEEKLY_TASK_NAME = "pfSentinel\\WeeklyBackup"
 _CHECK_TASK_NAME = "pfSentinel\\BackupCheck"
+# Without admin rights, tasks cannot go into the \\pfSentinel folder, but a
+# user may create tasks for their own account in the Task Scheduler root.
+_USER_TASK_NAMES = {
+    _DAILY_TASK_NAME: "pfSentinel-DailyBackup",
+    _WEEKLY_TASK_NAME: "pfSentinel-WeeklyBackup",
+    _CHECK_TASK_NAME: "pfSentinel-BackupCheck",
+}
+
+
+def _query_either(name: str) -> dict:
+    """Status of the folder task, or of the no-admin root task if that one exists."""
+    folder = query_windows_task(name)
+    if folder.get("exists"):
+        return folder
+    root = query_windows_task(_USER_TASK_NAMES[name])
+    return root if root.get("exists") else folder
+
+
+def _task_name(name: str, elevated: bool) -> str:
+    return name if elevated else _USER_TASK_NAMES[name]
 
 
 class SchedulerService:
@@ -86,8 +107,10 @@ class SchedulerService:
       explicitly turned off
     """
 
-    def __init__(self, config: ScheduleConfig) -> None:
+    def __init__(self, config: ScheduleConfig, digest_at: str | None = None) -> None:
+        """``digest_at`` (HH:MM) adds a run of the daily check task for the daily digest."""
         self._config = config
+        self._digest_at = digest_at
         self._thread: threading.Thread | None = None
         self._running = False
         self._stop_event = threading.Event()
@@ -114,11 +137,12 @@ class SchedulerService:
         """Remove all scheduled tasks."""
         success = True
         if is_windows():
-            if not delete_windows_task(_DAILY_TASK_NAME):
-                success = False
-            if not delete_windows_task(_WEEKLY_TASK_NAME):
-                success = False
-            delete_windows_task(_CHECK_TASK_NAME)  # absent before 0.3.0
+            # Remove both the folder tasks (admin) and the root tasks (no admin);
+            # a missing task is fine, a task we cannot delete is a failure.
+            for folder_name, root_name in _USER_TASK_NAMES.items():
+                for name in (folder_name, root_name):
+                    if query_windows_task(name).get("exists") and not delete_windows_task(name):
+                        success = False
         else:
             # Remove from both backends: the schedule may have been applied
             # with systemd on one run and cron on another.
@@ -137,6 +161,7 @@ class SchedulerService:
                 unix_schedule.validate_spec(self._config.daily_time)
             if self._config.weekly_enabled:
                 unix_schedule.validate_spec(self._config.weekly_time, self._config.weekly_day)
+            extra_check_times = tuple(unix_schedule.check_times(self._digest_at)[1:])
         except unix_schedule.ScheduleSpecError as e:
             logger.error(f"Invalid schedule in config.json: {e}")
             return False
@@ -144,10 +169,11 @@ class SchedulerService:
         executable, prefix_args = get_executable_path()
         args = f"{prefix_args} backup run --non-interactive".strip()
         success = True
+        elevated = is_elevated()
 
         if self._config.daily_enabled:
             ok = create_windows_task(
-                task_name=_DAILY_TASK_NAME,
+                task_name=_task_name(_DAILY_TASK_NAME, elevated),
                 executable=executable,
                 args=args,
                 schedule_type="DAILY",
@@ -163,7 +189,7 @@ class SchedulerService:
 
         if self._config.weekly_enabled:
             ok = create_windows_task(
-                task_name=_WEEKLY_TASK_NAME,
+                task_name=_task_name(_WEEKLY_TASK_NAME, elevated),
                 executable=executable,
                 args=args,
                 schedule_type="WEEKLY",
@@ -181,19 +207,24 @@ class SchedulerService:
 
         check_args = f"{prefix_args} backup check-recent --non-interactive".strip()
         if create_windows_task(
-            task_name=_CHECK_TASK_NAME,
+            task_name=_task_name(_CHECK_TASK_NAME, elevated),
             executable=executable,
             args=check_args,
             schedule_type="CHECK",
             start_time=unix_schedule.CHECK_AT,
+            extra_times=extra_check_times,
         ):
             logger.info("No-recent-backup check scheduled at sign-in and daily")
         else:
             logger.error("Failed to create the no-recent-backup check task")
             success = False
 
-        # `schedule enable` runs as administrator, the one moment the Event Log
-        # source can be registered.
+        # As administrator, this is the one moment the Event Log source can be
+        # registered. Without admin it is skipped: `pfs notify eventlog enable`
+        # in an administrator shell does it later.
+        if not elevated:
+            logger.info("Not elevated: Event Log source not registered")
+            return success
         try:
             from pfsentinel.services.notifications import register_event_source
 
@@ -229,6 +260,8 @@ class SchedulerService:
             unix_schedule.validate_spec(daily or "00:00")
             if weekly is not None:
                 unix_schedule.validate_spec(weekly[1], weekly[0])
+            if self._digest_at is not None:
+                unix_schedule.validate_spec(self._digest_at)
         except unix_schedule.ScheduleSpecError as e:
             logger.error(str(e))
             return False
@@ -237,7 +270,9 @@ class SchedulerService:
         try:
             if unix_schedule.systemd_user_available():
                 self.backend = "systemd"
-                ok = unix_schedule.install_systemd_timers(argv, daily, weekly, self._check_argv())
+                ok = unix_schedule.install_systemd_timers(
+                    argv, daily, weekly, self._check_argv(), check_extra_at=self._digest_at
+                )
                 if ok:
                     # Do not leave a stale cron copy that would double-run backups.
                     unix_schedule.remove_cron()
@@ -246,7 +281,14 @@ class SchedulerService:
             if unix_schedule.cron_available():
                 self.backend = "cron"
                 log_path = app_config_dir() / "logs" / "scheduled.log"
-                return unix_schedule.install_cron(argv, daily, weekly, log_path, self._check_argv())
+                return unix_schedule.install_cron(
+                    argv,
+                    daily,
+                    weekly,
+                    log_path,
+                    self._check_argv(),
+                    check_extra_at=self._digest_at,
+                )
         except unix_schedule.ScheduleSpecError as e:
             logger.error(f"Cannot install the schedule: {e}")
             return False
@@ -351,11 +393,11 @@ class SchedulerService:
         }
 
         if is_windows() and self._config.use_windows_task_scheduler:
-            daily = query_windows_task(_DAILY_TASK_NAME)
-            weekly = query_windows_task(_WEEKLY_TASK_NAME)
+            daily = _query_either(_DAILY_TASK_NAME)
+            weekly = _query_either(_WEEKLY_TASK_NAME)
             status["windows_daily"] = daily
             status["windows_weekly"] = weekly
-            status["windows_check"] = query_windows_task(_CHECK_TASK_NAME)
+            status["windows_check"] = _query_either(_CHECK_TASK_NAME)
         elif not is_windows():
             status["systemd_daily"] = unix_schedule.query_systemd_timer(unix_schedule.DAILY_TIMER)
             status["systemd_weekly"] = unix_schedule.query_systemd_timer(unix_schedule.WEEKLY_TIMER)

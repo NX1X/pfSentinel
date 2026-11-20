@@ -13,6 +13,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-rc.1] - 2026-11-20
+
+The release candidate for 1.0: everything planned for 0.4.0, 0.5.0 and 0.6.0 in one pre-release. It is published as a GitHub pre-release, so `pfs update install` keeps users on 0.3.0 unless they ask for it. 1.0.0 follows after it runs 14 days in a row without a failed backup.
+
+**To try it:**
+
+1. Run `pfs update install --pre` (or `pip install --pre --upgrade pfsentinel`).
+2. Run `pfs --version`. Expected: `pfSentinel v1.0.0-rc.1`.
+3. Optional: `pfs notify email setup`, `pfs notify digest enable --time 08:00`, `pfs copy setup`.
+
+S3, Azure, WebDAV and the container image are EXPERIMENTAL in this release.
+
+### Added
+
+- **Email alerts through any SMTP server:** STARTTLS (587), implicit TLS (465), or no encryption for a local server such as Mailpit. The login is optional, and the password is kept in the OS keystore, never in config.json; a login over an unencrypted connection is refused. TLS certificates and host names are always checked; for a lab server with its own CA, `--ca-cert FILE` adds that CA. Set up with `pfs notify email setup`
+- **Daily digest:** one message a day for every enabled device, with the last successful backup, the number of backups and the problems of the last 24 hours. While it is on, successful backups send no message of their own; failures and risky changes are still sent at once. `pfs notify digest enable --time 08:00`. New event ID 1007
+- **Linux desktop notifications** through `notify-send`, on by default like the Windows toast; nothing is shown without a desktop session. `pfs notify desktop enable|disable|status`
+- **`age` encryption mode:** `pfs encryption setup --mode age` writes backups as standard age v1 files (X25519), encrypted to pfSentinel's own age identity (kept in the OS keystore, shown once) and to your own `age1...` keys (`--recipient`, repeatable). The `age` tool opens them without pfSentinel. Built with `cryptography` only and tested against the 68 applicable C2SP CCTV age test vectors; checked by hand against the `age` 1.3.2 tool. `pfs backup decrypt --identity` and `--identity-file` open them on another PC
+- **Second copy to S3-compatible storage** (`kind: s3`, EXPERIMENTAL): AWS S3, Backblaze B2, Linode/Akamai, Cloudflare R2, Wasabi, DigitalOcean Spaces, Hetzner, Scaleway, MinIO and Google Cloud Storage (XML API, HMAC keys). Signature Version 4 without an SDK, checked against AWS's published test values; the secret key stays in the credential store
+- **Second copy to Azure Blob Storage** (`kind: azure`, EXPERIMENTAL), with a container SAS token (recommended) or the account key
+- **Second copy to a WebDAV folder** (`kind: webdav`, EXPERIMENTAL), for example Nextcloud, ownCloud or Synology: each file is uploaded under a temporary name and then renamed; https only unless you allow http for a LAN server. Only encrypted files are copied, for every target. Guide: `docs/second-copy.md`
+- **Container image (EXPERIMENTAL):** a `Dockerfile` (Python 3.13 slim, pinned by digest, hash-verified dependencies, non-root UID 10001, read-only root filesystem), a Kubernetes CronJob and a Compose example in `deploy/`, and `docs/docker.md`. Not published to a registry yet. A CI workflow builds and smoke-tests the image
+
+### Fixed
+
+- **Windows: piped or redirected output crashed** with `UnicodeEncodeError` on the first symbol (for example `pfs backup list | Select-String ...` or output to a log file): Windows uses the legacy code page for a pipe. pfs now writes UTF-8 when its output is not a terminal. Found by the new binary smoke test
+- **A corrupt `config.json` was treated as empty**, so `pfs config validate` called it valid and the next command that saved the config wrote empty defaults over your devices. pfSentinel now stops with one clear message (what is wrong and where), exit code 1, and leaves the file as it is. Found by the new CLI tests
+
+From the 0.3.0 field test (2026-11-20, Windows 11, PowerShell 7):
+
+- The progress bar no longer runs into one long line: Rich's `print()` removed the carriage return that brings the bar back to the line start. The bar is now written straight to the terminal, and not drawn at all when the output is not a terminal
+- The `pkg` target on a non-root user gives one info line again. pfSense's bsdtar adds two harmless lines and quotes the file name with a backtick, so the 0.3.0 check fell back to a raw warning
+- "logs need root" is shown once, not twice
+
+### Security
+
+- **`pfs update install` checks the signed build attestation** before it installs a binary: the SLSA provenance that the release workflow signs through Sigstore must name the downloaded file's SHA-256, chain to the pinned Sigstore CA, name this repository's `ci.yml` on main as the signer, and carry a valid transparency-log promise. Done with `cryptography`, no new dependency. A failed check installs nothing
+- Downloads are accepted only over https from GitHub hosts, checked again after every redirect, and capped at 200 MB
+- The new binary is staged next to the installed one (owner-only, same filesystem) instead of in the config folder, and a failed update leaves no staged file
+- `pfs update revert` uses a backup path it derives itself, never one read from the state file
+- On Windows, the config folder (config, pinned host keys, secret store) and each device's backup folder are made owner-only (`icacls`: only you, SYSTEM and Administrators), like 0600/0700 on Linux. Existing files inherit the new access list
+- As root, `pfs update install` and `revert` refuse a binary in a folder that is not root-owned or that others can write
+
+### Removed
+
+- The unfinished terminal UI (`src/pfsentinel/tui`). It could not start (its library was never a dependency) and nothing used it. Also removed the unused `cli/list.py`, which imported a module that does not exist
+
+### Changed
+
+- Test coverage is 92% (was 71% in 0.3.0), mostly new CLI tests; CI fails below 80%
+- CI builds the PyInstaller binary on Linux and Windows for every PR that touches the code, and runs it against a fake SSH server (`scripts/binary_smoke.py`: host key pinning, encryption, two runs, second copy, verify, restore check, decrypt). The release jobs run the same test before they upload a binary, and both systems now use one build definition (`scripts/build_exe.py`)
+- mypy finds no errors, and CI now runs it in the required lint job, so a type error blocks a merge
+
+### Added
+
+- `pfs schedule enable` works without administrator rights on Windows: the tasks are then created for your user in the Task Scheduler root (`pfSentinel-DailyBackup`, `pfSentinel-WeeklyBackup`, `pfSentinel-BackupCheck`). From an Administrator PowerShell they still go into the `\pfSentinel` folder and the Event Log source is registered. `schedule status` and `disable` handle both. Not yet tested on a standard (non-admin) Windows account
+- `--passphrase-stdin` for `pfs encryption setup --mode passphrase` and `pfs backup decrypt`: reads the passphrase from piped input, for scripts and containers (a hidden prompt on Windows reads the console directly and cannot be piped)
+- `--json` output for `pfs device list` and `pfs schedule status` (for scripts). `pfs backup list --json` now prints `[]` instead of a text line when there are no backups
+- **Count-drop alert** (a risky change, event 1002): firewall rules, port forwards, users, certificates, CAs or interfaces fell by 20% or more (and at least two), or to zero, since the previous config
+- **Update-available alert** (event 1006, Information): the daily check task tells you once per new release. Turn it off with `notifications.update_alerts`
+- `pfs update check --pre` and `pfs update install --pre` include pre-releases (release candidates). A version with a suffix (for example `1.0.0-rc.1`) is published as a GitHub pre-release, so the normal update path stays on the last stable release
+
 ### Documentation
 
 - `CODE_OF_CONDUCT.md`: the Contributor Covenant 2.1. Reports go through the contact form at nx1xlab.dev/contact

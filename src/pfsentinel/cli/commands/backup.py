@@ -18,6 +18,7 @@ from pfsentinel.cli.formatters import (
     print_success,
     print_warning,
 )
+from pfsentinel.models.backup import BackupRecord
 from pfsentinel.models.config import AppConfig
 from pfsentinel.services.backup import BackupError, BackupService
 from pfsentinel.services.credentials import CredentialService
@@ -328,7 +329,7 @@ def backup_list(
     _, svc = _get_service()
     records = svc.list_backups(device)
 
-    if not records:
+    if not records and not output_json:
         print_info("No backups found.")
         return
 
@@ -454,7 +455,8 @@ def backup_check_recent(
     """Alert when a device has had no successful backup for some days.
 
     Scheduled at sign-in and daily by 'pfs schedule enable': a PC that was
-    off, or a schedule that stopped, gives no error on its own.
+    off, or a schedule that stopped, gives no error on its own. With the
+    daily digest on, the first run at or after its time also sends the digest.
     """
     from datetime import datetime, timedelta
 
@@ -481,8 +483,69 @@ def backup_check_recent(
             f"Device: {device.id}\nLast successful backup: {when}\n"
             f"Limit: {limit} day(s). Check that the PC was on and run: pfs schedule status",
         )
+    if config.notifications.update_alerts:
+        _alert_new_release(svc)
+    if config.notifications.digest_enabled:
+        _send_digest_if_due(config, svc)
     if stale:
         raise typer.Exit(1)
+
+
+def _send_digest_if_due(config: AppConfig, svc: BackupService) -> None:
+    """Send the daily digest on the first check run of the day at or after its time."""
+    from pfsentinel.services.digest import send_digest_if_due
+
+    try:
+        results = send_digest_if_due(config, svc.list_backups, svc.notifications)
+    except OSError as e:  # the state file could not be written
+        print_warning(f"Daily digest not sent: {e}")
+        return
+    if results is None:
+        return
+    failed = [channel for channel, err in results.items() if err]
+    if results and len(failed) == len(results):
+        print_warning(f"Daily digest failed on every channel ({', '.join(failed)})")
+    else:
+        print_info("Daily digest sent")
+
+
+def _alert_new_release(svc: BackupService) -> None:
+    """Alert once per new release. Any error here is ignored: it is a courtesy."""
+    from pfsentinel.services.notifications import AlertKind
+    from pfsentinel.services.updater import UpdateService
+
+    try:
+        updater = UpdateService()
+        result = updater.check(force=True)
+        if result is None or updater.state.get("alerted_version") == result["latest"]:
+            return
+        print_info(f"Update available: v{result['latest']} (current: v{result['current']})")
+        svc.notifications.alert(
+            AlertKind.UPDATE_AVAILABLE,
+            f"pfSentinel - Update available: v{result['latest']}",
+            f"Installed: v{result['current']}\nRelease notes: {result['release_url']}\n"
+            "Update with: pfs update install",
+        )
+        updater.state["alerted_version"] = result["latest"]
+        updater.save_state()
+    except Exception as e:  # no network, rate limit, ...
+        from pfsentinel.utils.logging import get_logger
+
+        get_logger(__name__).debug(f"Update check skipped: {e}")
+
+
+def _read_identity_file(path: Path) -> list[str]:
+    """age identities (AGE-SECRET-KEY-1...) from an age-keygen file."""
+    from pfsentinel.services import age_format
+    from pfsentinel.services.backup_crypto import BackupCryptoError
+
+    try:
+        text = path.read_text(encoding="utf-8")
+        return [str(i) for i in age_format.parse_identity_file(text)]
+    except (OSError, UnicodeDecodeError) as e:
+        raise BackupCryptoError(f"Cannot read the identity file: {e}") from e
+    except age_format.AgeError as e:
+        raise BackupCryptoError(str(e)) from e
 
 
 @app.command("decrypt")
@@ -497,7 +560,16 @@ def backup_decrypt(
     passphrase: bool = typer.Option(
         False, "--passphrase", help="Ask for the passphrase (passphrase mode, other PC)"
     ),
+    identity: bool = typer.Option(
+        False, "--identity", help="Ask for an age identity, AGE-SECRET-KEY-1... (age mode)"
+    ),
+    identity_file: Path | None = typer.Option(
+        None, "--identity-file", help="Read age identities from a file, as made by age-keygen"
+    ),
     decompress: bool = typer.Option(False, "--decompress", help="Also un-gzip the result"),
+    passphrase_stdin: bool = typer.Option(
+        False, "--passphrase-stdin", help="Read the passphrase from the first line of stdin"
+    ),
 ) -> None:
     """Decrypt one backup file. Works without the backup index, for example on a new PC."""
     from pfsentinel.services import backup_crypto
@@ -509,15 +581,24 @@ def backup_decrypt(
         print_error(f"Not an encrypted backup file (.enc): {file}")
         raise typer.Exit(1)
     key_text = typer.prompt("Recovery key", hide_input=True) if recovery_key else None
-    phrase = typer.prompt("Passphrase", hide_input=True) if passphrase else None
+    if passphrase_stdin:
+        from pfsentinel.utils.stdin import read_secret_line
+
+        phrase: str | None = read_secret_line()
+    else:
+        phrase = typer.prompt("Passphrase", hide_input=True) if passphrase else None
+    identities = [typer.prompt("age identity", hide_input=True)] if identity else []
 
     config = AppConfig.load()
     try:
+        if identity_file is not None:
+            identities += _read_identity_file(identity_file.expanduser())
         crypto = BackupCrypto(
             config.backup_policy.encryption,
             CredentialService(),
             recovery_key=key_text,
             passphrase=phrase,
+            identities=identities,
         )
         data = crypto.read_bytes(file)
     except BackupCryptoError as e:
@@ -547,7 +628,7 @@ def backup_diff(
     diff_svc = svc.diff_service
     records = svc.list_backups()
 
-    def find_record(name: str):
+    def find_record(name: str) -> BackupRecord:
         r = next((r for r in records if r.filename == name), None)
         if not r:
             print_error(f"Backup not found: {name}")

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import typer
@@ -268,10 +269,39 @@ def _configure_logging_from_config() -> None:
     configure_logging(level)
 
 
+def _utf8_when_redirected() -> None:
+    """Write UTF-8 when output goes to a pipe or a file.
+
+    On Windows a redirected stream uses the legacy code page (cp1252), and the
+    first symbol such as a check mark crashed the command with
+    UnicodeEncodeError (`pfs backup list | Select-String ...`, output to a
+    log file). A console window is not affected.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        encoding = (getattr(stream, "encoding", "") or "").lower().replace("-", "")
+        if stream is None or encoding == "utf8" or not hasattr(stream, "reconfigure"):
+            continue
+        try:
+            if not stream.isatty():
+                stream.reconfigure(encoding="utf-8", errors="replace")
+        except (OSError, ValueError):
+            continue
+
+
 def main_entry() -> None:
     """Entry point for the CLI."""
+    from pfsentinel.models.config import ConfigError
+
+    _utf8_when_redirected()
     _configure_logging_from_config()
-    app()
+    try:
+        app()
+    except ConfigError as e:
+        # One clear line instead of a traceback; nothing was written.
+        from pfsentinel.cli.formatters import print_error
+
+        print_error(str(e))
+        raise SystemExit(1) from None
 
 
 if __name__ == "__main__":

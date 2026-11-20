@@ -8,6 +8,7 @@ from pfsentinel.cli.formatters import console, print_error, print_info, print_su
 from pfsentinel.models.config import AppConfig
 from pfsentinel.services.backup_crypto import MIN_PASSPHRASE, BackupCrypto, BackupCryptoError
 from pfsentinel.services.credentials import CredentialService
+from pfsentinel.utils.stdin import read_secret_line
 
 app = typer.Typer(help="Encrypt backups at rest", no_args_is_help=True)
 
@@ -18,10 +19,55 @@ def _load() -> tuple[AppConfig, CredentialService, BackupCrypto]:
     return config, creds, BackupCrypto(config.backup_policy.encryption, creds)
 
 
+def _split_recipients(values: list[str] | None) -> list[str]:
+    return [r for v in values or [] for r in v.replace(",", " ").split()]
+
+
+def _setup_age(crypto: BackupCrypto, recipients: list[str]) -> None:
+    identity = crypto.setup_age(recipients)
+    policy = crypto.policy
+    console.print()
+    console.print("[bold]pfSentinel's age identity[/] (shown once; it opens every backup):")
+    console.print()
+    console.print(f"    [bold yellow]{identity}[/]")
+    console.print()
+    console.print(f"  Its public key: {policy.age_recipient}")
+    for r in policy.age_recipients:
+        console.print(f"  Also encrypted to your key: {r}")
+    console.print()
+    console.print("To open a backup with the age tool, save the identity to a file, then run:")
+    console.print("    age -d -i identity.txt -o FILE.xml.gz FILE.xml.gz.enc")
+    if policy.age_recipients:
+        print_info("Your own age identity also opens every backup; saving this one is optional.")
+        return
+    print_warning("Without this identity, a dead PC or a lost keystore means lost backups.")
+    last = identity[-4:]
+    while (
+        typer.prompt("Type the last 4 characters of the identity to confirm you saved it")
+        .strip()
+        .upper()
+        != last
+    ):
+        print_warning("That does not match. Check the identity you saved.")
+
+
 @app.command("setup")
 def encryption_setup(
     mode: str = typer.Option(
-        None, "--mode", help="keystore (random key + recovery key) or passphrase"
+        None,
+        "--mode",
+        help="keystore (random key + recovery key), passphrase, or age (age v1 files)",
+    ),
+    recipient: list[str] | None = typer.Option(
+        None,
+        "--recipient",
+        "-r",
+        help="age mode: your own age public key (age1...). Repeatable.",
+    ),
+    passphrase_stdin: bool = typer.Option(
+        False,
+        "--passphrase-stdin",
+        help="passphrase mode: read the passphrase from the first line of stdin (scripts, containers)",
     ),
 ) -> None:
     """Turn on encryption for new backups, or change the key."""
@@ -40,6 +86,8 @@ def encryption_setup(
         if not typer.confirm("Set up a new key?", default=False):
             raise typer.Exit(0)
 
+    if not mode and recipient:
+        mode = "age"
     if not mode:
         console.print()
         console.print(
@@ -50,12 +98,27 @@ def encryption_setup(
         console.print(
             "           It is also kept in the keystore, so scheduled runs need no input."
         )
+        console.print("[bold]age[/]        Standard age v1 files: the age tool opens them with")
+        console.print("           your own age key, or with the identity shown ONCE at setup.")
         console.print()
         mode = typer.prompt("Mode", default="keystore")
     mode = mode.strip().lower()
+    recipients = _split_recipients(recipient)
+    if recipients and mode != "age":
+        print_error("--recipient applies to age mode only")
+        raise typer.Exit(1)
 
     try:
-        if mode == "keystore":
+        if mode == "age":
+            if not recipients:
+                answer = typer.prompt(
+                    "Your own age public keys (age1..., space-separated; Enter for none)",
+                    default="",
+                    show_default=False,
+                )
+                recipients = _split_recipients([answer])
+            _setup_age(crypto, recipients)
+        elif mode == "keystore":
             recovery = crypto.setup_keystore()
             console.print()
             console.print(
@@ -73,6 +136,11 @@ def encryption_setup(
                 != last
             ):
                 print_warning("That does not match. Check the key you saved.")
+        elif mode == "passphrase" and passphrase_stdin:
+            # Piped input works on every OS; the hidden prompt reads the Windows
+            # console directly and cannot be scripted.
+            crypto.setup_passphrase(read_secret_line())
+            print_warning("Store the passphrase in your password manager too.")
         elif mode == "passphrase":
             while True:
                 passphrase = typer.prompt(
@@ -86,7 +154,7 @@ def encryption_setup(
             crypto.setup_passphrase(passphrase)
             print_warning("Store the passphrase in your password manager too.")
         else:
-            print_error("Mode must be keystore or passphrase")
+            print_error("Mode must be keystore, passphrase or age")
             raise typer.Exit(1)
     except BackupCryptoError as e:
         print_error(str(e))
@@ -108,6 +176,10 @@ def encryption_status() -> None:
         )
     else:
         print_success(f"Encryption is ON ({policy.mode}), key ID {policy.key_id}")
+    if policy.mode == "age":
+        console.print(f"  pfSentinel's age public key: {policy.age_recipient}")
+        for r in policy.age_recipients:
+            console.print(f"  Your age public key: {r}")
     console.print(f"  Keystore: {creds.backend_name()}")
 
     from pfsentinel.services.backup import BackupService
@@ -120,7 +192,7 @@ def encryption_status() -> None:
 
 @app.command("recovery-key")
 def encryption_recovery_key() -> None:
-    """Show the recovery key of the current keystore key again."""
+    """Show the recovery key (keystore mode) or the age identity (age mode) again."""
     _, _, crypto = _load()
     if not typer.confirm("Show the recovery key on screen?", default=False):
         raise typer.Exit(0)

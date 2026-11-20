@@ -22,10 +22,13 @@ def test_event_ids_are_fixed() -> None:
         "NO_RECENT_BACKUP": 1003,
         "RESTORE_CHECK_FAILED": 1004,
         "SECOND_COPY_FAILED": 1005,
+        "UPDATE_AVAILABLE": 1006,
+        "DAILY_DIGEST": 1007,
     }
     assert AlertKind.BACKUP_OK.entry_type == "Information"
     assert AlertKind.RISKY_CHANGE.entry_type == "Warning"
     assert AlertKind.NO_RECENT_BACKUP.entry_type == "Error"
+    assert AlertKind.DAILY_DIGEST.entry_type == "Information"
 
 
 def test_windows_event_text_travels_in_environment_variables() -> None:

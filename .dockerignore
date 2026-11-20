@@ -1,0 +1,24 @@
+# Keep the build context small and free of local state.
+.git
+.github
+.dagger
+.venv
+venv
+dist
+build
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+docs
+docs-internal
+tests
+assets
+scripts
+ci
+deploy
+*.md
+!README.md

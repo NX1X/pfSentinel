@@ -1,0 +1,93 @@
+# EXPERIMENTAL. See docs/docker.md.
+#
+# Daily pfSentinel backup as a Kubernetes CronJob.
+# No Secret object is used: device credentials live in the encrypted store
+# on the config PVC (see "One-time setup" in docs/docker.md).
+#
+# Before you apply this file:
+#   1. Replace the image digest. The image is not published yet. Build and
+#      push it yourself, then copy the digest from the registry:
+#        docker buildx imagetools inspect <your-registry>/pfsentinel:<tag>
+#   2. Run the one-time setup (deploy/kubernetes/setup-pod.yaml).
+#   3. Adjust storageClassName and sizes if your cluster needs it.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pfsentinel-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pfsentinel-config
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 100Mi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pfsentinel-backup
+spec:
+  schedule: "0 2 * * *"          # every day at 02:00 (cluster time zone)
+  concurrencyPolicy: Forbid      # two runs must never share the volumes
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 3600
+      template:
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            fsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: pfsentinel
+              # REPLACE the digest below with the real one. Keep the tag.
+              image: ghcr.io/nx1x/pfsentinel:1.0.0-rc.1@sha256:REPLACE_WITH_REAL_DIGEST
+              args: ["backup", "run", "--non-interactive"]
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                  ephemeral-storage: 64Mi
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
+                  ephemeral-storage: 256Mi
+              volumeMounts:
+                - name: data
+                  mountPath: /data
+                - name: config
+                  mountPath: /home/pfs/.pfsentinel
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: pfsentinel-data
+            - name: config
+              persistentVolumeClaim:
+                claimName: pfsentinel-config
+            - name: tmp
+              emptyDir:
+                sizeLimit: 64Mi

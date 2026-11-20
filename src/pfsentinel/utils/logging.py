@@ -23,11 +23,29 @@ _SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
         re.compile(r"(https?://(?:[\w-]+\.)*hooks\.slack\.com/services/)[^\s'\"<>]+"),
         r"\1<redacted>",
     ),
+    # Signatures in a query string: an Azure SAS token (sig=) or a presigned
+    # S3 URL (X-Amz-Signature=, X-Amz-Credential=, X-Amz-Security-Token=).
+    (
+        re.compile(
+            r"([?&](?:sig|x-amz-signature|x-amz-credential|x-amz-security-token)=)[^&\s'\"<>]+",
+            re.IGNORECASE,
+        ),
+        r"\1<redacted>",
+    ),
+    # user:password@ in a URL, for example a WebDAV URL typed with credentials.
+    (
+        re.compile(r"(\b[a-z][a-z0-9+.-]*://)[^/\s:@'\"<>]+:[^/\s@'\"<>]+@", re.IGNORECASE),
+        r"\1<redacted>@",
+    ),
 )
 
 
 def redact_secrets(text: str) -> str:
-    """Replace Telegram bot tokens and Slack webhook paths in ``text``."""
+    """Replace known secret shapes in ``text``.
+
+    Telegram bot tokens, Slack webhook paths, SAS and presigned-URL
+    signatures, and ``user:password@`` in URLs.
+    """
     for pattern, replacement in _SECRET_PATTERNS:
         text = pattern.sub(replacement, text)
     return text

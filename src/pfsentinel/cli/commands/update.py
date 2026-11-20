@@ -10,14 +10,19 @@ from pfsentinel.services.updater import UpdateError, UpdateService
 app = typer.Typer(help="Check for updates and manage versions", no_args_is_help=True)
 
 
+_PRE_HELP = "Include pre-releases (release candidates such as 1.0.0rc1)"
+
+
 @app.command("check")
-def update_check() -> None:
+def update_check(
+    pre: bool = typer.Option(False, "--pre", help=_PRE_HELP),
+) -> None:
     """Check if a newer version of pfSentinel is available."""
     svc = UpdateService()
 
     print_info("Checking for updates...")
     try:
-        result = svc.check(force=True)
+        result = svc.check(force=True, prerelease=pre)
     except Exception as e:
         print_error(f"Update check failed: {e}")
         raise typer.Exit(1)
@@ -40,13 +45,18 @@ def update_check() -> None:
 @app.command("install")
 def update_install(
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    pre: bool = typer.Option(False, "--pre", help=_PRE_HELP),
 ) -> None:
-    """Download and install the latest version of pfSentinel."""
+    """Download and install the latest version of pfSentinel.
+
+    A binary is installed only after its SHA-256 matches the release checksums
+    and its signed build attestation verifies.
+    """
     svc = UpdateService()
 
     print_info("Checking for updates...")
     try:
-        result = svc.check(force=True)
+        result = svc.check(force=True, prerelease=pre)
     except Exception as e:
         print_error(f"Update check failed: {e}")
         raise typer.Exit(1)
@@ -69,7 +79,7 @@ def update_install(
             return
 
     try:
-        msg = svc.install()
+        msg = svc.install(prerelease=pre)
         print_success(msg)
         print_info("Restart pfSentinel to use the new version.")
     except UpdateError as e:

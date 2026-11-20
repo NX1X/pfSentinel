@@ -118,6 +118,8 @@ cd ci
 UV_EXCLUDE_NEWER="14 days" uv pip compile --universal --generate-hashes security-tools.in --output-file=security-tools.lock
 ```
 
+Test coverage must stay at 80% or more: `pytest --cov` fails below it (`fail_under` in `pyproject.toml`).
+
 ## CI Pipeline
 
 Lint, test, security-audit and package-build run as a single [Dagger](https://dagger.io)

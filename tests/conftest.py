@@ -149,3 +149,29 @@ def mock_ssh_client() -> MagicMock:
     stderr.read.return_value = b""
     client.exec_command.return_value = (MagicMock(), stdout, stderr)
     return client
+
+
+@pytest.fixture(autouse=True)
+def _no_desktop_session(monkeypatch):
+    """Run every test as on a headless machine, so no real desktop popup appears.
+
+    Desktop notifications are on by default; tests that cover them set these
+    variables and fake notify-send themselves.
+    """
+    for name in ("DISPLAY", "WAYLAND_DISPLAY", "DBUS_SESSION_BUS_ADDRESS"):
+        monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_alert_state(tmp_path_factory, monkeypatch):
+    """Keep the digest's alert history and state file out of the real ~/.pfsentinel."""
+    state = tmp_path_factory.mktemp("alert-state")
+    monkeypatch.setattr("pfsentinel.services.alert_history.state_dir", lambda: state)
+    yield state
+
+
+@pytest.fixture(autouse=True)
+def _no_release_check(request, monkeypatch):
+    """`backup check-recent` asks GitHub for a new release; never in tests."""
+    if "release_check" not in request.keywords:
+        monkeypatch.setattr("pfsentinel.cli.commands.backup._alert_new_release", lambda svc: None)

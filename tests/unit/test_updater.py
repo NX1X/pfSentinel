@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import responses
+from packaging.version import Version
 
 from pfsentinel import __version__
 from pfsentinel.services.updater import UpdateError, UpdateService, child_env
@@ -60,6 +61,13 @@ FAKE_RELEASE_INVALID_VERSION = {
     "html_url": "https://github.com/nx1x/pfSentinel/releases/tag/not-a-version",
     "assets": [],
 }
+
+
+@pytest.fixture(autouse=True)
+def _no_attestation_network(request, monkeypatch):
+    """Install tests stub the attestation check; test_attestation.py covers it."""
+    if "real_attestation" not in request.keywords:
+        monkeypatch.setattr(UpdateService, "_verify_attestation", lambda self, path, name: None)
 
 
 def _make_service(tmp_path: Path, state: dict | None = None) -> UpdateService:
@@ -197,7 +205,7 @@ class TestCurrentVersion:
     def test_returns_version_object(self, tmp_path):
         svc = _make_service(tmp_path)
         v = svc.current_version()
-        assert str(v) == CURRENT_VERSION
+        assert v == Version(CURRENT_VERSION)  # 1.0.0-rc.1 normalizes to 1.0.0rc1
 
 
 # ── should_auto_check ──────────────────────────────────────────────────
@@ -594,7 +602,7 @@ class TestChildEnv:
     def test_install_binary_verifies_with_a_clean_env(self, tmp_path, monkeypatch):
         """The post-install `--version` check must not inherit the markers."""
         monkeypatch.setenv("_MEIPASS2", "/tmp/_MEI999")
-        download_url = "https://example.com/pfs"
+        download_url = "https://github.com/nx1x/pfSentinel/releases/download/v99.0.0/pfs"
         content = b"new-binary-content"
         responses.add(responses.GET, download_url, body=content, status=200)
         responses.add(
@@ -674,7 +682,7 @@ class TestInstallBinary:
 
     @responses.activate
     def test_linux_happy_path(self, tmp_path):
-        download_url = "https://example.com/pfs"
+        download_url = "https://github.com/nx1x/pfSentinel/releases/download/v99.0.0/pfs"
         binary_content = b"new-binary-content"
         responses.add(responses.GET, download_url, body=binary_content, status=200)
         responses.add(
@@ -706,7 +714,7 @@ class TestInstallBinary:
 
     @responses.activate
     def test_windows_rename_dance(self, tmp_path):
-        download_url = "https://example.com/pfs.exe"
+        download_url = "https://github.com/nx1x/pfSentinel/releases/download/v99.0.0/pfs.exe"
         binary_content = b"new-binary-content"
         responses.add(responses.GET, download_url, body=binary_content, status=200)
         responses.add(
@@ -740,7 +748,7 @@ class TestInstallBinary:
 
     @responses.activate
     def test_windows_removes_existing_old(self, tmp_path):
-        download_url = "https://example.com/pfs.exe"
+        download_url = "https://github.com/nx1x/pfSentinel/releases/download/v99.0.0/pfs.exe"
         binary_content = b"new-binary-content"
         responses.add(responses.GET, download_url, body=binary_content, status=200)
         responses.add(
@@ -774,7 +782,7 @@ class TestInstallBinary:
 
     @responses.activate
     def test_empty_download_raises(self, tmp_path):
-        download_url = "https://example.com/pfs"
+        download_url = "https://github.com/nx1x/pfSentinel/releases/download/v99.0.0/pfs"
         responses.add(responses.GET, download_url, body=b"", status=200)
 
         svc = _make_service(tmp_path)
@@ -790,7 +798,7 @@ class TestInstallBinary:
 
     @responses.activate
     def test_verification_failure_reverts(self, tmp_path):
-        download_url = "https://example.com/pfs"
+        download_url = "https://github.com/nx1x/pfSentinel/releases/download/v99.0.0/pfs"
         binary_content = b"bad-binary"
         responses.add(responses.GET, download_url, body=binary_content, status=200)
         responses.add(
@@ -826,7 +834,7 @@ class TestInstallBinary:
 
     @responses.activate
     def test_verification_exception_reverts(self, tmp_path):
-        download_url = "https://example.com/pfs"
+        download_url = "https://github.com/nx1x/pfSentinel/releases/download/v99.0.0/pfs"
         binary_content = b"bad-binary"
         responses.add(responses.GET, download_url, body=binary_content, status=200)
         responses.add(
@@ -853,7 +861,7 @@ class TestInstallBinary:
 
     @responses.activate
     def test_windows_rename_fails_restores(self, tmp_path):
-        download_url = "https://example.com/pfs.exe"
+        download_url = "https://github.com/nx1x/pfSentinel/releases/download/v99.0.0/pfs.exe"
         binary_content = b"new-binary"
         responses.add(responses.GET, download_url, body=binary_content, status=200)
         responses.add(

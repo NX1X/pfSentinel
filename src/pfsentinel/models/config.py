@@ -90,30 +90,60 @@ class LongTermRetention(BaseModel):
 class SecondCopyPolicy(BaseModel):
     """Second copy of the encrypted backups on a self-hosted target.
 
-    See services/second_copy.py. Only encrypted files are copied.
+    See services/second_copy.py and services/cloud_targets.py. Only encrypted
+    files are copied. The s3, azure and webdav kinds are EXPERIMENTAL. Their
+    secrets (S3 secret key, Azure SAS token or account key, WebDAV password)
+    live in the credential store, never here.
     """
 
     enabled: bool = False
-    kind: Literal["folder", "sftp"] = "folder"
+    kind: Literal["folder", "sftp", "s3", "azure", "webdav"] = "folder"
     # folder: local path. sftp: remote directory.
     path: str | None = None
     host: str | None = None
     port: int = Field(default=22, ge=1, le=65535)
+    # sftp and webdav login name.
     username: str | None = None
     key_path: str | None = None
     keep_days: int = Field(default=90, ge=1, le=3650)
+    # s3: https://host[:port] of any S3-compatible service.
+    endpoint: str | None = None
+    region: str | None = None
+    bucket: str | None = None
+    path_style: bool = False
+    access_key_id: str | None = None
+    # azure: storage account, container, and "sas" or "key" (Shared Key).
+    account: str | None = None
+    container: str | None = None
+    azure_auth: Literal["sas", "key"] = "sas"
+    # Default https://<account>.blob.core.windows.net
+    azure_endpoint: str | None = None
+    # s3 and azure: folder inside the bucket or container.
+    prefix: str | None = None
+    # webdav: base URL of the target folder.
+    url: str | None = None
+    # webdav only: plain http for a server on the LAN.
+    allow_http: bool = False
+    # s3, azure, webdav: CA file for a server with a private certificate.
+    ca_cert_path: str | None = None
 
 
 class EncryptionPolicy(BaseModel):
     """Encryption at rest for backup files. See services/backup_crypto.py.
 
-    Only the key ID and the scrypt salt live here; the key or passphrase is
-    in the OS keystore.
+    Only key IDs, the scrypt salt and age public keys live here; the key,
+    passphrase or age identity is in the OS keystore.
     """
 
-    mode: Literal["off", "keystore", "passphrase"] = "off"
+    mode: Literal["off", "keystore", "passphrase", "age"] = "off"
     key_id: str | None = None  # hex, identifies the current key
     salt: str | None = None  # hex, passphrase mode only
+    # age mode: the public key (age1...) of pfSentinel's own age identity.
+    age_recipient: str | None = None
+    # age mode: the user's own age public keys; every file is also encrypted to them.
+    age_recipients: list[str] = Field(default_factory=list)
+    # Key IDs of every age identity created here, so older files stay readable.
+    age_key_ids: list[str] = Field(default_factory=list)
 
 
 class BackupPolicy(BaseModel):
@@ -182,6 +212,33 @@ class NotificationConfig(BaseModel):
     notify_on_failure: bool = True
     # Alert when a device has had no successful backup for this many days.
     stale_after_days: int = Field(default=3, ge=1, le=365)
+    # Alert once when a new pfSentinel release is out (checked by the daily task).
+    update_alerts: bool = True
+    # Linux desktop notifications through notify-send (freedesktop). Like the
+    # Windows toast: on by default, and a silent no-op without a desktop session.
+    linux_desktop_enabled: bool = True
+    # Email (SMTP) to any mail server. The password is in the OS keystore
+    # (CredentialService secret "__smtp_password__"), never here.
+    email_enabled: bool = False
+    email_host: str | None = None
+    email_port: int = Field(default=587, ge=1, le=65535)
+    # starttls: plain connection upgraded to TLS (usually port 587).
+    # tls: TLS from the first byte (usually port 465). none: no encryption,
+    # only for a local server such as Mailpit, and never with a login.
+    email_security: Literal["starttls", "tls", "none"] = "starttls"
+    email_username: str | None = None
+    email_from: str | None = None
+    email_to: list[str] = Field(default_factory=list)
+    email_timeout: int = Field(default=20, ge=1, le=300)
+    # Only for a lab server with a self-signed certificate.
+    # PEM file of a CA to trust for a mail server with a private certificate
+    # (lab CA). Certificates are always checked; this only adds a trust anchor.
+    email_ca_cert: str | None = None
+    # One summary a day instead of a message per successful backup. Failures
+    # and risky changes are still sent at once. Sent by the daily check task
+    # on its first run at or after digest_time (HH:MM, local time).
+    digest_enabled: bool = False
+    digest_time: str = "08:00"
 
 
 class SyslogConfig(BaseModel):
@@ -192,6 +249,20 @@ class SyslogConfig(BaseModel):
     port: int = Field(default=514, ge=1, le=65535)
     # syslog facility: 1=user, 16=local0 … 23=local7
     facility: int = Field(default=1, ge=0, le=23)
+
+
+class ConfigError(Exception):
+    """config.json exists but cannot be used."""
+
+
+def _config_error_reason(error: ValueError) -> str:
+    """The first problem and where it is, without echoing the file content."""
+    errors = getattr(error, "errors", None)
+    if callable(errors):
+        first = errors()[0] if errors() else {}
+        where = ".".join(str(part) for part in first.get("loc", ())) or "file"
+        return f"{first.get('msg', 'invalid')} at {where}"
+    return type(error).__name__
 
 
 class AppConfig(BaseModel):
@@ -214,13 +285,27 @@ class AppConfig(BaseModel):
 
     @classmethod
     def load(cls) -> AppConfig:
+        """Load config.json; defaults when it does not exist yet.
+
+        A file that exists but cannot be read raises ConfigError. Returning
+        defaults instead used to hide the problem, and the next save wrote
+        those defaults over the user's devices.
+        """
         p = cls.config_path()
         try:
-            return cls.model_validate_json(p.read_text(encoding="utf-8"))
+            text = p.read_text(encoding="utf-8")
         except FileNotFoundError:
             return cls()
-        except Exception:
-            return cls()
+        except OSError as e:
+            raise ConfigError(f"Cannot read {p}: {e.strerror or e}") from e
+        try:
+            return cls.model_validate_json(text)
+        except ValueError as e:  # JSON syntax and pydantic validation errors
+            reason = _config_error_reason(e)
+            raise ConfigError(
+                f"{p} is not a valid pfSentinel config ({reason}). pfSentinel did not "
+                "change it. Fix the file, or move it away and run: pfs config init"
+            ) from e
 
     def save(self) -> None:
         p = self.config_path()
@@ -246,6 +331,11 @@ class AppConfig(BaseModel):
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(tmp_path, p)
+            # Windows: the folder holds config, pinned host keys and the secret
+            # store; make it owner-only like 0700 on Linux.
+            from pfsentinel.utils.permissions import restrict_to_owner
+
+            restrict_to_owner(p.parent)
         except BaseException:
             # Clean up temp file on failure
             with contextlib.suppress(OSError):

@@ -9,11 +9,14 @@ import re
 import warnings
 from collections.abc import Callable
 from pathlib import Path
-from typing import IO
+from typing import IO, TYPE_CHECKING, Any
 
 from pfsentinel.models.device import ConnectionMethod, DeviceConfig, DeviceStatus
 from pfsentinel.services.credentials import CredentialService
 from pfsentinel.utils.logging import get_logger
+
+if TYPE_CHECKING:
+    import requests
 
 logger = get_logger(__name__)
 
@@ -100,7 +103,7 @@ class SSHConnector:
                 f"Allowed prefixes: {', '.join(p.strip() for p in self.ALLOWED_COMMAND_PREFIXES)}"
             )
 
-    def _get_client(self):
+    def _get_client(self) -> Any:
         import paramiko
 
         return paramiko.SSHClient()
@@ -428,8 +431,14 @@ class SSHConnector:
         self.connect()
         return self
 
-    def __exit__(self, *_) -> None:
+    def __exit__(self, *_: object) -> None:
         self.disconnect()
+
+
+_BENIGN_TAR_LINES = (
+    "Removing leading '/' from member names",
+    "Error exit delayed from previous errors",
+)
 
 
 def _log_partial_read(exit_code: int, stderr_text: str) -> None:
@@ -440,6 +449,8 @@ def _log_partial_read(exit_code: int, stderr_text: str) -> None:
     instead of a raw warning.
     """
     lines = [ln.strip() for ln in stderr_text.splitlines() if ln.strip()]
+    # bsdtar on pfSense adds these lines around the real ones; they are not problems.
+    lines = [ln for ln in lines if not any(b in ln for b in _BENIGN_TAR_LINES)]
     denied = [ln for ln in lines if "Permission denied" in ln]
     if denied and len(denied) == len(lines):
         names = [_denied_name(ln) for ln in denied]
@@ -459,7 +470,8 @@ def _denied_name(line: str) -> str:
     "tar: usr/local/etc/sasldb2.db: Couldn't open file: Permission denied"
     -> "usr/local/etc/sasldb2.db"
     """
-    match = re.search(r"'([^']+)':\s*Permission denied", line)
+    # Quoted as 'name' (GNU tar) or `name' (bsdtar on pfSense 2.8.1).
+    match = re.search(r"[`']([^`']+)':\s*Permission denied", line)
     if match:
         return match.group(1)
     head = line.split(": Permission denied")[0].removeprefix("tar: ")
@@ -480,7 +492,7 @@ class HTTPSConnector:
             return f"https://{self.device.host}:{self.device.https_port}"
         return f"http://{self.device.host}:{self.device.http_port}"
 
-    def _make_session(self):
+    def _make_session(self) -> requests.Session:
         import warnings
 
         import requests
@@ -523,7 +535,7 @@ class HTTPSConnector:
             parser = etree.HTMLParser()
             tree = etree.fromstring(html.encode(), parser)  # noqa: S320
             for el in tree.xpath('//input[@name="__csrf_magic"]'):
-                return el.get("value")
+                return str(el.get("value"))
         except Exception:
             pass
 
@@ -538,7 +550,7 @@ class HTTPSConnector:
         logger.debug("CSRF extraction failed. Page snippet: %s", html[:500])
         return None
 
-    def _login(self, session) -> None:
+    def _login(self, session: requests.Session) -> None:
         login_url = f"{self._base_url}/index.php"
         try:
             resp = session.get(login_url, timeout=self.device.timeout)
@@ -623,7 +635,7 @@ class HTTPSConnector:
                 "The download may have failed or redirected to an error page."
             )
 
-        return resp.text
+        return str(resp.text)
 
 
 class ConnectionManager:
@@ -647,7 +659,9 @@ class ConnectionManager:
             )
         return pw  # may be None when key auth is configured
 
-    def _make_connector(self, method: ConnectionMethod, password: str | None):
+    def _make_connector(
+        self, method: ConnectionMethod, password: str | None
+    ) -> SSHConnector | HTTPSConnector:
         if method == ConnectionMethod.SSH:
             passphrase = self._creds.get_ssh_key_passphrase(self.device.id)
             return SSHConnector(self.device, password, ssh_key_passphrase=passphrase)

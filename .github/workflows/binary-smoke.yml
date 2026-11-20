@@ -1,0 +1,59 @@
+# Builds the PyInstaller binary on Linux and Windows and runs it against a
+# fake SSH server (scripts/binary_smoke.py). The unit and e2e tests run the
+# code from source; this catches problems only the frozen build has (missing
+# hidden imports, data files, the bundled environment) before a release.
+name: Binary smoke test
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'scripts/build_exe.py'
+      - 'scripts/binary_smoke.py'
+      - 'requirements*.lock'
+      - 'pyproject.toml'
+      - '.github/workflows/binary-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Binary smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: '3.14'
+          cache: 'pip'
+
+      - name: Install dev dependencies (hash-verified) + pfSentinel
+        shell: bash
+        run: |
+          python -m pip install --only-binary :all: --require-hashes --no-deps -r requirements-dev.lock
+          python -m pip install --no-deps --no-build-isolation -e .
+
+      - name: Build the binary
+        shell: bash
+        run: python scripts/build_exe.py
+
+      - name: Smoke test the binary
+        shell: bash
+        run: python scripts/binary_smoke.py

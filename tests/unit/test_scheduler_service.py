@@ -220,6 +220,11 @@ class TestRemoveSchedule:
         svc = SchedulerService(cfg)
         with (
             patch.object(scheduler_mod, "is_windows", return_value=True),
+            patch.object(
+                scheduler_mod,
+                "query_windows_task",
+                side_effect=lambda name: {"exists": name.startswith("pfSentinel\\")},
+            ),
             patch.object(scheduler_mod, "delete_windows_task", return_value=True) as mock_delete,
         ):
             result = svc.remove_schedule()
@@ -235,10 +240,58 @@ class TestRemoveSchedule:
         svc = SchedulerService(cfg)
         with (
             patch.object(scheduler_mod, "is_windows", return_value=True),
+            patch.object(scheduler_mod, "query_windows_task", return_value={"exists": True}),
             patch.object(scheduler_mod, "delete_windows_task", return_value=False),
         ):
             result = svc.remove_schedule()
         assert result is False
+
+    def test_windows_removes_the_no_admin_root_tasks_too(self):
+        svc = SchedulerService(ScheduleConfig(enabled=True))
+        with (
+            patch.object(scheduler_mod, "is_windows", return_value=True),
+            patch.object(
+                scheduler_mod,
+                "query_windows_task",
+                side_effect=lambda name: {"exists": name.startswith("pfSentinel-")},
+            ),
+            patch.object(scheduler_mod, "delete_windows_task", return_value=True) as delete,
+        ):
+            assert svc.remove_schedule() is True
+        assert sorted(c.args[0] for c in delete.call_args_list) == [
+            "pfSentinel-BackupCheck",
+            "pfSentinel-DailyBackup",
+            "pfSentinel-WeeklyBackup",
+        ]
+
+    def test_without_admin_tasks_go_to_the_root_and_no_event_source(self):
+        svc = SchedulerService(ScheduleConfig(enabled=True, weekly_enabled=False))
+        with (
+            patch.object(scheduler_mod, "is_windows", return_value=True),
+            patch.object(scheduler_mod, "is_elevated", return_value=False),
+            patch.object(scheduler_mod, "get_executable_path", return_value=("pfs.exe", "")),
+            patch.object(scheduler_mod, "create_windows_task", return_value=True) as create,
+            patch("pfsentinel.services.notifications.register_event_source") as register,
+        ):
+            assert svc.apply_schedule() is True
+        assert [c.kwargs["task_name"] for c in create.call_args_list] == [
+            "pfSentinel-DailyBackup",
+            "pfSentinel-BackupCheck",
+        ]
+        register.assert_not_called()
+
+    def test_status_reports_the_root_task_when_only_that_exists(self):
+        svc = SchedulerService(ScheduleConfig(enabled=True))
+        with (
+            patch.object(scheduler_mod, "is_windows", return_value=True),
+            patch.object(
+                scheduler_mod,
+                "query_windows_task",
+                side_effect=lambda name: {"exists": name == "pfSentinel-DailyBackup", "name": name},
+            ),
+        ):
+            status = svc.get_status()
+        assert status["windows_daily"]["name"] == "pfSentinel-DailyBackup"
 
     def test_non_windows_removes_systemd_and_cron_and_stops_in_process(self):
         cfg = ScheduleConfig(enabled=True)

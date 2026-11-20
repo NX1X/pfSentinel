@@ -110,7 +110,25 @@ chmod 600 ~/.local/share/python_keyring/keyring_pass.cfg
 
 **Behavior (since 0.3.0):** encryption at rest is optional and off by default. With `pfs encryption setup`, every backup file is written as AES-256-GCM `<name>.enc`, with the key in the OS keystore (plus a one-time recovery key) or derived from a passphrase. Without it, backups are plain `.xml.gz` files that hold password hashes and private keys, so protect the folder or the disk.
 
+**age mode (since 0.5.0):** `pfs encryption setup --mode age` writes standard age v1 files (X25519, ChaCha20-Poly1305). They are encrypted to an identity that pfSentinel keeps in the OS keystore, and to the user's own age public keys. pfSentinel implements the format with the `cryptography` package only, and tests it against the C2SP CCTV age test vectors. The parser rejects non-canonical base64, low-order X25519 shares, a wrong header MAC, and truncated or extended payloads.
+
 **Limit:** scheduled backups use the key without a person present, so the key protects a copied or stolen backup folder, not a machine where malware runs as your user. See [docs/encryption.md](docs/encryption.md).
+
+---
+
+### Self-Update
+
+**Behavior (since 0.4.0):** `pfs update install` installs a binary only when all of these hold:
+
+1. The download comes over https from GitHub (also after every redirect) and is at most 200 MB.
+2. Its SHA-256 matches the release's `checksums-sha256.txt`.
+3. Its signed build attestation verifies: a SLSA provenance statement for exactly this SHA-256, signed through Sigstore by this repository's `ci.yml` on `main`, with a certificate that chains to the pinned Sigstore CA and a valid transparency-log promise. The check uses `cryptography` only; it does not check the log's Merkle inclusion proof.
+
+The new binary is staged in the same folder as the installed one, with owner-only access. As root, pfSentinel refuses to update a binary in a folder that is not root-owned or that others can write. `pfs update revert` restores only a backup path it derives itself. If Sigstore ever rotates its CA, updates fail closed until a new pfSentinel ships the new keys; installing by hand still works (manual: "Standalone binary").
+
+### File Permissions on Windows
+
+**Behavior (since 0.4.0):** the config folder (`%USERPROFILE%\.pfsentinel`: config, pinned host keys, encrypted secret store) and each device's backup folder get an explicit access list: full control for you, SYSTEM and Administrators, nothing for other users. Files inside inherit it. On Linux the same files are 0600 and the folders 0700.
 
 ---
 

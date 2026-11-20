@@ -8,6 +8,8 @@ Targets:
 - ``folder``: a local path, for example a share or a Nextcloud-synced folder.
 - ``sftp``: an SSH server, with key login and a pinned host key (the same
   strict checking as for pfSense devices).
+- ``s3``, ``azure``, ``webdav`` (EXPERIMENTAL): S3-compatible object storage,
+  Azure Blob Storage, or a WebDAV folder. See services/cloud_targets.py.
 
 The target keeps its own retention: run folders whose day is older than
 ``keep_days`` are removed. Only the layout pfSentinel writes there
@@ -28,7 +30,7 @@ from pfsentinel.models.backup import BackupRecord
 from pfsentinel.models.config import AppConfig, SecondCopyPolicy
 from pfsentinel.services.credentials import CredentialService
 from pfsentinel.services.retention import RetentionService
-from pfsentinel.utils.logging import get_logger
+from pfsentinel.utils.logging import get_logger, redact_secrets
 
 logger = get_logger(__name__)
 
@@ -53,7 +55,7 @@ class CopyTarget(Protocol):
     def close(self) -> None: ...
 
 
-def _parts_ok(rel: str) -> bool:
+def is_safe_rel(rel: str) -> bool:
     parts = rel.split("/")
     return bool(rel) and not rel.startswith("/") and ".." not in parts and "." not in parts
 
@@ -65,7 +67,7 @@ class FolderTarget:
             raise SecondCopyError(f"Second copy folder does not exist: {self._root}")
 
     def _path(self, rel: str) -> Path:
-        if not _parts_ok(rel):
+        if not is_safe_rel(rel):
             raise SecondCopyError(f"Unsafe path: {rel}")
         return self._root / rel
 
@@ -135,7 +137,7 @@ class SftpTarget:
         self._root = policy.path.rstrip("/") or "/"
 
     def _path(self, rel: str) -> str:
-        if not _parts_ok(rel):
+        if not is_safe_rel(rel):
             raise SecondCopyError(f"Unsafe path: {rel}")
         return posixpath.join(self._root, rel)
 
@@ -204,6 +206,10 @@ class SftpTarget:
 def open_target(policy: SecondCopyPolicy, creds: CredentialService) -> CopyTarget:
     if policy.kind == "sftp":
         return SftpTarget(policy, creds)
+    if policy.kind in ("s3", "azure", "webdav"):
+        from pfsentinel.services.cloud_targets import open_cloud_target
+
+        return open_cloud_target(policy, creds)
     if not policy.path:
         raise SecondCopyError("No second copy folder set. Run: pfs copy setup")
     return FolderTarget(Path(policy.path))
@@ -242,10 +248,10 @@ class SecondCopyService:
         try:
             for record in wanted:
                 rel = f"{device_id}/{record.relative_path}".replace("\\", "/")
-                if not record.encrypted:
+                local = self._root / device_id / record.relative_path
+                if not record.encrypted or not local.name.endswith(".enc"):
                     result.skipped_plain.append(record.filename)
                     continue
-                local = self._root / device_id / record.relative_path
                 if not local.is_file():
                     continue
                 try:
@@ -256,15 +262,20 @@ class SecondCopyService:
                         raise SecondCopyError("size differs after the copy")
                     result.copied.append(rel)
                 except Exception as e:
-                    result.errors.append(f"{record.filename}: {e}")
-            for folder in target.day_folders(device_id):
+                    result.errors.append(redact_secrets(f"{record.filename}: {e}"))
+            try:
+                folders = target.day_folders(device_id)
+            except Exception as e:
+                result.errors.append(redact_secrets(f"cleanup: cannot list the target: {e}"))
+                folders = []
+            for folder in folders:
                 day = _day_of(folder)
                 if day is not None and day < cutoff.date():
                     try:
                         target.remove_tree(folder)
                         result.removed_days.append(folder)
                     except Exception as e:
-                        result.errors.append(f"cleanup {folder}: {e}")
+                        result.errors.append(redact_secrets(f"cleanup {folder}: {e}"))
         finally:
             target.close()
         return result

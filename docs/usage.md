@@ -407,12 +407,15 @@ Writes every alert to the Application log with source `pfSentinel` (Linux: syslo
 | 1003 | Error | No recent backup |
 | 1004 | Error | Restore check failed |
 | 1005 | Error | Second copy failed |
+| 1006 | Information | A new pfSentinel release is out (once per release; `notifications.update_alerts`) |
 
 ### Alerts
 
 Every alert goes to every enabled channel (Slack, Telegram, Windows toast, Event Log). `notify_on_failure` turns all of them on or off; `notify_on_success` controls only the "backup OK" message.
 
 **Risky change.** After each config backup, pfSentinel compares the config with the previous one and sends one alert per security-relevant change:
+
+- a sharp drop in firewall rules, port forwards, users, certificates, CAs or interfaces: 20% or more and at least two items, or down to zero
 
 - a new admin user, a user or group that gained admin rights, or a changed admin user (for example a new password)
 - a changed GUI authentication server (for example a switch to RADIUS)
