@@ -78,7 +78,8 @@ def print_device_table(
         if statuses and d.id in statuses:
             st = statuses[d.id]
             if st.any_reachable:
-                status_str = f"[green]Reachable ({st.best_method.value})[/]"
+                method = st.best_method.value if st.best_method else "?"
+                status_str = f"[green]Reachable ({method})[/]"
             else:
                 status_str = "[red]Unreachable[/]"
                 if st.error:

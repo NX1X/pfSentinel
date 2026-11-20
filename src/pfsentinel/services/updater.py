@@ -123,7 +123,8 @@ class UpdateService:
 
     def _load_state(self) -> dict:
         try:
-            return json.loads(self._state_path.read_text(encoding="utf-8"))
+            state: dict = json.loads(self._state_path.read_text(encoding="utf-8"))
+            return state
         except Exception:
             return {}
 

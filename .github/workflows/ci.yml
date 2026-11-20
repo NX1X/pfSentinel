@@ -53,6 +53,11 @@ jobs:
       - name: Run ruff format check
         run: ruff format --check src/ tests/
 
+      # In this job on purpose: "Lint (ruff)" is a required check, so a type
+      # error now blocks a merge like a lint error does.
+      - name: Type check (mypy)
+        run: mypy src
+
   # ---------------------------------------------------------------------------
   # 2. Security audit — dependency vulnerability scan + hash verification
   # ---------------------------------------------------------------------------

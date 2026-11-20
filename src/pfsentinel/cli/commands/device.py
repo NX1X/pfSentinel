@@ -392,7 +392,7 @@ def _test_device(device: DeviceConfig, creds: CredentialService) -> None:
         console.print(f"    pfs device trust-key {device.id}")
 
     console.print()
-    if status.any_reachable:
+    if status.any_reachable and status.best_method is not None:
         print_success(f"  Best method: {status.best_method.value}")
     else:
         print_error(f"  Cannot reach {device.host} via any method")

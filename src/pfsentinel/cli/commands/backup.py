@@ -18,6 +18,7 @@ from pfsentinel.cli.formatters import (
     print_success,
     print_warning,
 )
+from pfsentinel.models.backup import BackupRecord
 from pfsentinel.models.config import AppConfig
 from pfsentinel.services.backup import BackupError, BackupService
 from pfsentinel.services.credentials import CredentialService
@@ -547,7 +548,7 @@ def backup_diff(
     diff_svc = svc.diff_service
     records = svc.list_backups()
 
-    def find_record(name: str):
+    def find_record(name: str) -> BackupRecord:
         r = next((r for r in records if r.filename == name), None)
         if not r:
             print_error(f"Backup not found: {name}")

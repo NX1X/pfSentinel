@@ -21,6 +21,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `pfs update revert` uses a backup path it derives itself, never one read from the state file
 - As root, `pfs update install` and `revert` refuse a binary in a folder that is not root-owned or that others can write
 
+### Removed
+
+- The unfinished terminal UI (`src/pfsentinel/tui`). It could not start (its library was never a dependency) and nothing used it. Also removed the unused `cli/list.py`, which imported a module that does not exist
+
+### Changed
+
+- mypy finds no errors, and CI now runs it in the required lint job, so a type error blocks a merge
+
 ### Added
 
 - `pfs update check --pre` and `pfs update install --pre` include pre-releases (release candidates)
