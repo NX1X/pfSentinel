@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import re
 import sys
+from collections.abc import Callable
 from typing import TextIO
 
 ROOT_LOGGER_NAME = "pfsentinel"
@@ -32,6 +33,24 @@ def redact_secrets(text: str) -> str:
     return text
 
 
+# Called before each console log line. The CLI draws its progress bar with
+# "\r" and no newline; it registers a hook here that ends that line first, so
+# a log line never starts in the middle of the bar.
+_before_console_line: Callable[[], None] | None = None
+
+
+def set_before_console_line(hook: Callable[[], None] | None) -> None:
+    global _before_console_line
+    _before_console_line = hook
+
+
+class _ConsoleHandler(logging.StreamHandler):  # type: ignore[type-arg]
+    def emit(self, record: logging.LogRecord) -> None:
+        if _before_console_line is not None and record.levelno >= self.level:
+            _before_console_line()
+        super().emit(record)
+
+
 class RedactingFormatter(logging.Formatter):
     """Formatter that redacts secrets from the whole record, traceback included."""
 
@@ -53,7 +72,7 @@ def configure_logging(level: str = "INFO", *, stream: TextIO | None = None) -> N
     target = stream if stream is not None else sys.stderr
     handler = _find_console_handler(logger)
     if handler is None:
-        handler = logging.StreamHandler(target)
+        handler = _ConsoleHandler(target)
         setattr(handler, _HANDLER_TAG, True)
         handler.setFormatter(RedactingFormatter(LOG_FORMAT, datefmt=DATE_FORMAT))
         logger.addHandler(handler)

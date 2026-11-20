@@ -39,6 +39,53 @@ def _host_to_id(host: str) -> str:
     return slug[:62] if slug else "pfsense"
 
 
+def _resolves(host: str) -> bool:
+    """True if ``host`` is an IP address or a name this PC can resolve."""
+    import socket
+
+    try:
+        socket.getaddrinfo(host, None)
+    except (OSError, UnicodeError):
+        return False
+    return True
+
+
+def _prompt_host(host: str | None) -> str:
+    """Ask for the host until it resolves, or the user keeps it on purpose.
+
+    A device saved with a host that does not resolve fails every method with
+    a getaddrinfo error, so the check runs before anything is saved.
+    """
+    while True:
+        if not host:
+            host = typer.prompt(
+                "pfSense host (IP address or DNS name, e.g. 192.168.1.1 or fw.home.lan)"
+            ).strip()
+        if _resolves(host):
+            return host
+        print_warning(f"'{host}' does not resolve from this PC.")
+        if typer.confirm("Keep it anyway (for example, a VPN that is not up yet)?", default=False):
+            return host
+        host = None
+
+
+def _key_needs_passphrase(key_path: Path) -> bool | None:
+    """True if the private key is encrypted, False if not, None if unreadable."""
+    import paramiko
+
+    try:
+        paramiko.PKey.from_path(key_path)
+    except paramiko.PasswordRequiredException:
+        return True
+    except TypeError as e:
+        # OpenSSH-format keys load through cryptography, which raises
+        # "Key is password-protected, but password was not provided."
+        return True if "password" in str(e).lower() else None
+    except Exception:
+        return None
+    return False
+
+
 @app.command("add")
 def device_add(
     device_id: str | None = typer.Option(None, "--id", help="Device ID slug (e.g. home-fw)"),
@@ -59,8 +106,7 @@ def device_add(
     console.print("[dim]─────────────────────────────────────────────[/]")
 
     # --- Host first so we can suggest an ID ---
-    if not host:
-        host = typer.prompt("pfSense IP address or hostname (e.g. 192.168.1.1)")
+    host = _prompt_host(host)
 
     suggested_id = _host_to_id(host)
 
@@ -166,14 +212,20 @@ def device_add(
                 "  Install a system keyring (gnome-keyring / kwallet) for OS-backed storage."
             )
 
-    # Handle SSH key passphrase
-    if ssh_key_path_str:
+    # Handle SSH key passphrase: ask only when the key is encrypted
+    needs_passphrase = (
+        _key_needs_passphrase(Path(ssh_key_path_str).expanduser()) if ssh_key_path_str else False
+    )
+    if needs_passphrase is False and ssh_key_path_str:
+        print_info("  SSH key is not encrypted: no passphrase needed.")
+    if ssh_key_path_str and needs_passphrase is not False:
+        prompt_text = (
+            "SSH key passphrase (the key is encrypted)"
+            if needs_passphrase
+            else "SSH key passphrase (leave blank if key is unencrypted)"
+        )
         try:
-            passphrase = typer.prompt(
-                "SSH key passphrase (leave blank if key is unencrypted)",
-                hide_input=True,
-                default="",
-            )
+            passphrase = typer.prompt(prompt_text, hide_input=True, default="")
             if passphrase:
                 creds.store_ssh_key_passphrase(device_id, passphrase)
         except (typer.Abort, KeyboardInterrupt):
@@ -206,6 +258,15 @@ def device_add(
         _test_device(device, creds)
 
 
+def _host_key_file_type(key_name: str) -> str:
+    """'ssh-ed25519' -> 'ed25519', for /etc/ssh/ssh_host_<type>_key.pub on pfSense."""
+    if "ed25519" in key_name:
+        return "ed25519"
+    if key_name.startswith("ecdsa"):
+        return "ecdsa"
+    return "rsa"
+
+
 def _trust_host_key(config: AppConfig, device: DeviceConfig, assume_yes: bool) -> bool:
     """Fetch, show and (after confirmation) pin the device's SSH host key."""
     from pfsentinel.services import host_keys
@@ -231,8 +292,8 @@ def _trust_host_key(config: AppConfig, device: DeviceConfig, assume_yes: bool) -
             f"  This REPLACES the previously trusted key {host_keys.fingerprint(current)}."
         )
     console.print(
-        "[dim]  Compare with the pfSense console: option 8 (Shell), then run[/]\n"
-        "[dim]  ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub (or the matching key type).[/]"
+        "[dim]  Compare it on the firewall, not this PC: pfSense console, option 8 (Shell):[/]\n"
+        f"[dim]  ssh-keygen -lf /etc/ssh/ssh_host_{_host_key_file_type(key.get_name())}_key.pub[/]"
     )
     if not assume_yes and not typer.confirm("Trust this host key?", default=False):
         print_info("Host key not trusted.")
@@ -313,8 +374,22 @@ def _test_device(device: DeviceConfig, creds: CredentialService) -> None:
                 console.print(f"         [dim]{err}[/]")
 
     _fmt_method(status.ssh_reachable, status.ssh_error, "SSH  ")
-    _fmt_method(status.https_reachable, status.https_error, "HTTPS")
-    _fmt_method(status.http_reachable, status.http_error, "HTTP ")
+    for method, ok, err, label in (
+        ("https", status.https_reachable, status.https_error, "HTTPS"),
+        ("http", status.http_reachable, status.http_error, "HTTP "),
+    ):
+        if method in status.skipped_methods:
+            console.print(f"  {label}: [dim]- Skipped (no password: SSH key only)[/]")
+        else:
+            _fmt_method(ok, err, label)
+
+    if device.primary_method == ConnectionMethod.SSH and not device.strict_host_keys:
+        console.print()
+        print_warning(
+            "  Host key NOT pinned: any SSH server can pose as this firewall "
+            "(man-in-the-middle). Fix it once:"
+        )
+        console.print(f"    pfs device trust-key {device.id}")
 
     console.print()
     if status.any_reachable:

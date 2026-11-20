@@ -5,6 +5,7 @@ from __future__ import annotations
 import fnmatch
 import io
 import re
+import warnings
 from collections.abc import Callable
 from pathlib import Path
 
@@ -82,6 +83,8 @@ class SSHConnector:
         self._password = password
         self._ssh_key_passphrase = ssh_key_passphrase
         self._client: object | None = None
+        # Remote files the last download_files() call could not read.
+        self.permission_denied: list[str] = []
 
     def _validate_command(self, command: str) -> None:
         """Validate that a command is in the allowlist.
@@ -161,7 +164,11 @@ class SSHConnector:
             )
 
         try:
-            client.connect(**connect_kwargs)
+            with warnings.catch_warnings():
+                # WarningPolicy also emits a raw Python warning with the key
+                # bytes; the logger.warning above already says what to do.
+                warnings.simplefilter("ignore", UserWarning)
+                client.connect(**connect_kwargs)
             self._client = client
             auth_mode = "key" if self.device.ssh_key_path else "password"
             logger.debug(
@@ -265,6 +272,7 @@ class SSHConnector:
 
         local_dir.mkdir(parents=True, exist_ok=True)
         downloaded: list[Path] = []
+        self.permission_denied = []
 
         try:
             sftp = self._client.open_sftp()  # type: ignore[union-attr]
@@ -276,6 +284,10 @@ class SSHConnector:
                     downloaded.append(local)
                 except FileNotFoundError:
                     logger.warning(f"Remote file not found: {rpath}")
+                except PermissionError:
+                    # Root-only files (for example /var/log/*.log) on a
+                    # non-root backup user. The caller reports them.
+                    self.permission_denied.append(rpath)
                 except Exception as e:
                     logger.warning(f"Failed to download {rpath}: {e}")
             sftp.close()
@@ -284,8 +296,14 @@ class SSHConnector:
 
         return downloaded
 
-    def list_remote_files(self, remote_dir: str, pattern: str = "*") -> list[str]:
-        """List files in a remote directory matching a glob pattern."""
+    def list_remote_files(
+        self, remote_dir: str, pattern: str = "*", missing_ok: bool = False
+    ) -> list[str]:
+        """List files in a remote directory matching a glob pattern.
+
+        missing_ok: the directory is optional (it differs between pfSense
+        versions), so a missing one is logged at debug level only.
+        """
         if not self._client:
             self.connect()
 
@@ -295,7 +313,8 @@ class SSHConnector:
             sftp.close()
             return [f"{remote_dir}/{e}" for e in entries if fnmatch.fnmatch(e, pattern)]
         except FileNotFoundError:
-            logger.warning(f"Remote directory not found: {remote_dir}")
+            log = logger.debug if missing_ok else logger.warning
+            log(f"Remote directory not found: {remote_dir}")
             return []
         except Exception as e:
             raise ConnectionError(f"Failed to list {remote_dir}: {e}") from e
@@ -344,9 +363,7 @@ class SSHConnector:
             if exit_code != 0:
                 err = stderr.read().decode("utf-8", errors="replace")
                 if warn_exit_codes and exit_code in warn_exit_codes:
-                    logger.warning(
-                        f"Command exited with code {exit_code} (non-fatal): {err.strip()}"
-                    )
+                    _log_partial_read(exit_code, err)
                 else:
                     raise ConnectionError(f"Remote command exited with code {exit_code}: {err}")
             return bytes_written
@@ -361,6 +378,40 @@ class SSHConnector:
 
     def __exit__(self, *_) -> None:
         self.disconnect()
+
+
+def _log_partial_read(exit_code: int, stderr_text: str) -> None:
+    """Report a non-fatal remote tar exit.
+
+    On a non-root backup user, tar skips root-only files with "Permission
+    denied" and exits 1; the archive holds everything else. Say that plainly
+    instead of a raw warning.
+    """
+    lines = [ln.strip() for ln in stderr_text.splitlines() if ln.strip()]
+    denied = [ln for ln in lines if "Permission denied" in ln]
+    if denied and len(denied) == len(lines):
+        names = [_denied_name(ln) for ln in denied]
+        logger.info(
+            f"Skipped {len(names)} file(s) this SSH user cannot read (root only): "
+            + ", ".join(names[:5])
+            + (" ..." if len(names) > 5 else "")
+        )
+        return
+    logger.warning(f"Command exited with code {exit_code} (non-fatal): {stderr_text.strip()}")
+
+
+def _denied_name(line: str) -> str:
+    """The file name in a tar "Permission denied" line.
+
+    "tar: Can't open 'sasldb2.db': Permission denied" -> "sasldb2.db"
+    "tar: usr/local/etc/sasldb2.db: Couldn't open file: Permission denied"
+    -> "usr/local/etc/sasldb2.db"
+    """
+    match = re.search(r"'([^']+)':\s*Permission denied", line)
+    if match:
+        return match.group(1)
+    head = line.split(": Permission denied")[0].removeprefix("tar: ")
+    return head.split(": ")[0]
 
 
 class HTTPSConnector:
@@ -551,15 +602,13 @@ class ConnectionManager:
         elif method == ConnectionMethod.HTTPS:
             if password is None:
                 raise ConnectionError(
-                    f"No password stored for '{self.device.id}' — required for HTTPS. "
-                    "SSH key auth only works for SSH method."
+                    f"No password stored for '{self.device.id}'. HTTPS needs one; "
+                    "an SSH key works only for the SSH method."
                 )
             return HTTPSConnector(self.device, password, use_https=True)
         else:
             if password is None:
-                raise ConnectionError(
-                    f"No password stored for '{self.device.id}' — required for HTTP."
-                )
+                raise ConnectionError(f"No password stored for '{self.device.id}'. HTTP needs one.")
             return HTTPSConnector(self.device, password, use_https=False)
 
     def download_config(
@@ -625,6 +674,11 @@ class ConnectionManager:
             return status
 
         for method in [ConnectionMethod.SSH, ConnectionMethod.HTTPS, ConnectionMethod.HTTP]:
+            if method != ConnectionMethod.SSH and password is None:
+                # SSH key only, no password on purpose: the web GUI methods
+                # cannot log in, which is expected, not a failure.
+                status.skipped_methods.append(method.value)
+                continue
             try:
                 connector = self._make_connector(method, password)
                 if isinstance(connector, SSHConnector):

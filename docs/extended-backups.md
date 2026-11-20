@@ -81,6 +81,26 @@ Log files from the pfSense device.
 - Customizable via `extras.log_files` in config
 - Downloaded via SFTP and bundled into tar archive
 
+## Non-root SSH user
+
+A dedicated backup user without admin rights is safer than `admin` or `root`. In pfSense, give it a group with only "User - System: Shell account access", and log in with an SSH key.
+
+Some files on pfSense are readable only by root. pfSentinel skips them with one "needs root" line, not an error. The rest of the backup still runs.
+
+Observed on pfSense CE 2.8.1 with a non-root user (field test, 2026-11-20):
+
+| Target | Non-root user |
+|--------|---------------|
+| `config` | Works. `/cf/conf/config.xml` is `-rw-r--r-- root wheel`. |
+| `rrd` | Works. |
+| `pkg` | Works, except root-only files such as `sasldb2.db`, which are skipped. |
+| `dhcp` | Works. |
+| `aliases` | Works. On 2.8.1 the files are in `/var/db/aliastables`. |
+| `certs` | Works. |
+| `logs` | Needs root. `/var/log/filter.log` and `/var/log/system.log` are root-only, so the target is skipped. |
+
+ZFS snapshots and filesystem archives were not tested with a non-root user. `zfs snapshot` and `zfs send` usually need root, or rights given with `zfs allow`.
+
 ## ZFS Snapshot Backups
 
 pfSense 2.5+ (CE) and pfSense Plus use ZFS by default. pfSentinel can create ZFS snapshots on the device and stream them to local storage.

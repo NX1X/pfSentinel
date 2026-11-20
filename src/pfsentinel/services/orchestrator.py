@@ -9,7 +9,7 @@ from pfsentinel.models.backup import BackupRecord
 from pfsentinel.models.config import AppConfig
 from pfsentinel.services.backup import BackupService
 from pfsentinel.services.credentials import CredentialService
-from pfsentinel.services.extra_backup import ExtraBackupService
+from pfsentinel.services.extra_backup import ExtraBackupService, NeedsRootError
 from pfsentinel.services.retention import RetentionService
 from pfsentinel.utils.logging import get_logger
 
@@ -87,6 +87,11 @@ class BackupOrchestrator:
                 self._retention.save_index(index)
                 records.append(record)
                 logger.info(f"Extra backup '{target}' complete: {record.filename}")
+            except NeedsRootError as e:
+                # Expected with a non-root backup user: one clear line, no ERROR.
+                logger.info(str(e))
+                if on_warning:
+                    on_warning(str(e))
             except Exception as e:
                 msg = f"Extra backup '{target}' failed: {e}"
                 logger.error(f"{msg} (device: {device_id})")

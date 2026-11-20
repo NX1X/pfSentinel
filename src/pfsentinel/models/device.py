@@ -88,6 +88,9 @@ class DeviceStatus(BaseModel):
     ssh_error: str | None = None
     https_error: str | None = None
     http_error: str | None = None
+    # Methods not tried on purpose, for example HTTPS on a device with an SSH
+    # key and no password. Shown as skipped, not as failed.
+    skipped_methods: list[str] = Field(default_factory=list)
     last_backup_at: str | None = None
     last_backup_file: str | None = None
     pfsense_version: str | None = None
