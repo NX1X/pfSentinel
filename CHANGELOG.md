@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- Bandit and zizmor in `security.yml` are installed with `--require-hashes` from a new lockfile, `ci/security-tools.lock`, instead of a version range. A changed or compromised release can no longer run in CI. This fixes the two open OpenSSF Scorecard "Pinned-Dependencies" findings. OSV-Scanner and Renovate cover the new lockfile
+- Bandit and zizmor in `security.yml` are installed with `--require-hashes --only-binary :all:` from a new lockfile, `ci/security-tools.lock`, instead of a version range. Wheels only means no package's setup code runs at install time. A changed or compromised release can no longer run in CI. This fixes the two open OpenSSF Scorecard "Pinned-Dependencies" findings. OSV-Scanner and Renovate cover the new lockfile
 - soupsieve 4.0.1 (dev only, GHSA-mmhr-3c5m-f64f, high) and OpenTelemetry 1.45.2 in the Dagger CI module (GHSA-mf5v-w3w3-f6cg, medium)
 
 ### Changed
