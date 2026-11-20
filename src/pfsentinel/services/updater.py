@@ -12,9 +12,10 @@ import sys
 import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlparse
 
 import requests
-from packaging.version import Version
+from packaging.version import InvalidVersion, Version
 
 from pfsentinel import __version__
 from pfsentinel.utils.logging import get_logger
@@ -72,6 +73,21 @@ def child_env() -> dict[str, str]:
     return env
 
 
+def _newest_release(releases: list[dict]) -> dict:
+    """The highest-versioned non-draft release, pre-releases included."""
+    best: tuple[Version, dict] | None = None
+    for release in releases:
+        if release.get("draft"):
+            continue
+        try:
+            version = Version(str(release.get("tag_name", "")).lstrip("v"))
+        except InvalidVersion:
+            continue
+        if best is None or version > best[0]:
+            best = (version, release)
+    return best[1] if best else {}
+
+
 class UpdateError(Exception):
     """Raised when an update operation fails."""
 
@@ -80,6 +96,14 @@ class UpdateService:
     """Check for updates, install new versions, and revert to previous."""
 
     GITHUB_API_URL = "https://api.github.com/repos/NX1X/pfSentinel/releases/latest"
+    GITHUB_RELEASES_URL = "https://api.github.com/repos/NX1X/pfSentinel/releases?per_page=20"
+    # Downloads are accepted only over https from these hosts (GitHub release
+    # assets redirect to the last two). Checked again after every redirect.
+    ALLOWED_HOSTS = frozenset(
+        {"github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com"}
+    )
+    # The binary is about 40 MB; anything far larger is not a pfSentinel release.
+    MAX_DOWNLOAD_BYTES = 200 * 1024 * 1024
     CHECK_INTERVAL = timedelta(hours=24)
     # Generous: a one-file binary unpacks and may be antivirus-scanned on
     # first run, which is slow on Windows.
@@ -162,25 +186,28 @@ class UpdateService:
         except (ValueError, TypeError):
             return True
 
-    def check(self, force: bool = False) -> dict | None:
+    def check(self, force: bool = False, prerelease: bool = False) -> dict | None:
         """Check GitHub for the latest release.
 
         Returns info dict if a newer version is available, None if up-to-date.
         If force=False, uses cached result when last check was <24h ago.
+        prerelease: also consider pre-releases (for example 1.0.0-rc1), which
+        GitHub never marks as the latest release.
         """
-        if not force and not self.should_auto_check():
+        if not force and not prerelease and not self.should_auto_check():
             return self._cached_result()
 
-        resp = requests.get(
-            self.GITHUB_API_URL,
-            headers={
-                "Accept": "application/vnd.github+json",
-                "User-Agent": "pfSentinel-updater",
-            },
-            timeout=self.REQUEST_TIMEOUT,
-        )
-        resp.raise_for_status()
-        data = resp.json()
+        headers = {"Accept": "application/vnd.github+json", "User-Agent": "pfSentinel-updater"}
+        if prerelease:
+            resp = requests.get(
+                self.GITHUB_RELEASES_URL, headers=headers, timeout=self.REQUEST_TIMEOUT
+            )
+            resp.raise_for_status()
+            data = _newest_release(resp.json())
+        else:
+            resp = requests.get(self.GITHUB_API_URL, headers=headers, timeout=self.REQUEST_TIMEOUT)
+            resp.raise_for_status()
+            data = resp.json()
 
         tag = data.get("tag_name", "")
         version_str = tag.lstrip("v")
@@ -270,12 +297,12 @@ class UpdateService:
 
     # ── Install ────────────────────────────────────────────────────────
 
-    def install(self) -> str:
+    def install(self, prerelease: bool = False) -> str:
         """Install the latest version. Returns a status message.
 
         Raises UpdateError on failure.
         """
-        result = self.check(force=True)
+        result = self.check(force=True, prerelease=prerelease)
         if result is None:
             return f"Already up to date (v{__version__})"
 
@@ -293,55 +320,57 @@ class UpdateService:
                 )
             return self._install_binary(download_url, result["tag"])
         elif method == "pipx":
-            return self._install_pipx()
+            return self._install_pipx(prerelease)
         else:
-            return self._install_pip()
+            return self._install_pip(prerelease)
 
     def _install_binary(self, download_url: str, tag: str) -> str:
         current_exe = Path(sys.executable).resolve()
+        install_dir = current_exe.parent
+        self._refuse_unsafe_root_update(install_dir)
         self._backup_dir.mkdir(parents=True, exist_ok=True)
+        asset_name = "pfs.exe" if is_windows() else "pfs"
 
-        suffix = ".exe" if is_windows() else ""
-        temp_path = self._backup_dir / f"pfs_new{suffix}"
+        # Stage next to the binary: same folder, same filesystem, so the final
+        # rename is atomic, and owner-only from the first byte.
+        fd, temp_name = tempfile.mkstemp(dir=install_dir, prefix=".pfs-update-")
+        temp_path = Path(temp_name)
+        try:
+            with os.fdopen(fd, "wb") as f:
+                self._download(download_url, f)
+            if temp_path.stat().st_size == 0:
+                raise UpdateError("Downloaded file is empty")
 
-        # Download new binary
-        resp = requests.get(download_url, timeout=self.DOWNLOAD_TIMEOUT, stream=True)
-        resp.raise_for_status()
+            # Integrity (release checksums), then origin (signed build attestation).
+            self._verify_checksum(temp_path, asset_name=asset_name)
+            self._verify_attestation(temp_path, asset_name)
 
-        with open(temp_path, "wb") as f:
-            for chunk in resp.iter_content(chunk_size=65536):
-                f.write(chunk)
+            # Back up the current binary to a fixed path the updater derives
+            # itself; revert never trusts a path from the state file.
+            backup_path = self._binary_backup_path(current_exe)
+            shutil.copy2(current_exe, backup_path)
+            self._state["previous_binary_backup"] = str(backup_path)
+            self._save_state()
 
-        if temp_path.stat().st_size == 0:
-            temp_path.unlink()
-            raise UpdateError("Downloaded file is empty")
-
-        # Verify SHA-256 checksum against release checksums
-        self._verify_checksum(temp_path, asset_name="pfs.exe" if is_windows() else "pfs")
-
-        # Back up current binary
-        backup_path = self._backup_dir / f"{current_exe.name}.bak"
-        shutil.copy2(current_exe, backup_path)
-        self._state["previous_binary_backup"] = str(backup_path)
-        self._save_state()
-
-        # Replace current binary
-        if is_windows():
-            old_path = current_exe.with_suffix(".old")
-            try:
-                if old_path.exists():
-                    old_path.unlink()
-                os.rename(current_exe, old_path)
-                shutil.copy2(temp_path, current_exe)
-            except OSError as e:
-                if old_path.exists() and not current_exe.exists():
-                    os.rename(old_path, current_exe)
-                raise UpdateError(f"Failed to replace binary: {e}") from e
-        else:
-            # Owner-only rwx (rwx------); no group or world access. The binary's
-            # SHA-256 was verified by _verify_checksum() above.
-            os.chmod(temp_path, 0o700)
-            os.replace(temp_path, current_exe)
+            if is_windows():
+                # A running .exe cannot be overwritten, only renamed.
+                old_path = current_exe.with_suffix(".old")
+                try:
+                    if old_path.exists():
+                        old_path.unlink()
+                    os.rename(current_exe, old_path)
+                    os.replace(temp_path, current_exe)
+                except OSError as e:
+                    if old_path.exists() and not current_exe.exists():
+                        os.rename(old_path, current_exe)
+                    raise UpdateError(f"Failed to replace binary: {e}") from e
+            else:
+                # Owner-only rwx (rwx------); no group or world access.
+                os.chmod(temp_path, 0o700)
+                os.replace(temp_path, current_exe)
+        finally:
+            with contextlib.suppress(OSError):
+                temp_path.unlink()
 
         # Verify the new binary actually starts. A PyInstaller one-file build
         # unpacks itself into %TEMP% on first run and an antivirus scan of a
@@ -370,15 +399,73 @@ class UpdateService:
             shutil.copy2(backup_path, current_exe)
             raise UpdateError(f"Update verification failed, reverted: {e}") from e
 
-        # Cleanup temp download
-        with contextlib.suppress(OSError):
-            temp_path.unlink()
-
         return f"Updated to {tag}"
 
-    def _install_pip(self) -> str:
+    # ── Download safety ──────────────────────────────────────────────
+
+    def _check_url(self, url: str) -> None:
+        parsed = urlparse(url)
+        if parsed.scheme != "https" or parsed.hostname not in self.ALLOWED_HOSTS:
+            raise UpdateError(f"Refusing to download from {parsed.scheme}://{parsed.hostname}")
+
+    def _download(self, url: str, sink) -> None:  # type: ignore[no-untyped-def]
+        """Stream ``url`` into ``sink``: https GitHub hosts only, size-capped."""
+        self._check_url(url)
+        resp = requests.get(url, timeout=self.DOWNLOAD_TIMEOUT, stream=True)
+        try:
+            for hop in [*resp.history, resp]:
+                self._check_url(hop.url)
+            resp.raise_for_status()
+            declared = int(resp.headers.get("Content-Length") or 0)
+            if declared > self.MAX_DOWNLOAD_BYTES:
+                raise UpdateError(f"Download is {declared} bytes, more than the allowed maximum")
+            received = 0
+            for chunk in resp.iter_content(chunk_size=65536):
+                received += len(chunk)
+                if received > self.MAX_DOWNLOAD_BYTES:
+                    raise UpdateError("Download is larger than the allowed maximum; aborted")
+                sink.write(chunk)
+        finally:
+            resp.close()
+
+    def _verify_attestation(self, file_path: Path, asset_name: str) -> None:
+        """Refuse a binary that this repository's release workflow did not build."""
+        from pfsentinel.services import attestation
+
+        try:
+            attestation.verify_file(file_path, asset_name, timeout=self.REQUEST_TIMEOUT * 3)
+        except attestation.AttestationError as e:
+            raise UpdateError(
+                f"Build attestation check failed: {e}. The download was not installed. "
+                "To update by hand, follow 'Standalone binary' in the manual and run "
+                "'gh attestation verify'."
+            ) from e
+        logger.info("Build attestation verified (release workflow on main)")
+
+    @staticmethod
+    def _refuse_unsafe_root_update(install_dir: Path) -> None:
+        """As root, update only a binary in a root-owned folder others cannot write.
+
+        Otherwise any local user who can write that folder could plant a file
+        that root then runs (the version check executes the new binary).
+        """
+        if is_windows() or not hasattr(os, "geteuid") or os.geteuid() != 0:
+            return
+        st = install_dir.stat()
+        if st.st_uid != 0 or st.st_mode & 0o022:
+            raise UpdateError(
+                f"Refusing to update as root: {install_dir} is not a root-owned folder that "
+                "only root can write. Install pfs in a folder you own and update as that user."
+            )
+
+    def _binary_backup_path(self, current_exe: Path) -> Path:
+        return self._backup_dir / f"{current_exe.name}.bak"
+
+    def _install_pip(self, prerelease: bool = False) -> str:
         result = subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--upgrade", "pfsentinel"],
+            [sys.executable, "-m", "pip", "install", "--upgrade"]
+            + (["--pre"] if prerelease else [])
+            + ["pfsentinel"],
             capture_output=True,
             text=True,
             timeout=self.DOWNLOAD_TIMEOUT,
@@ -388,9 +475,9 @@ class UpdateService:
             raise UpdateError(f"pip upgrade failed:\n{result.stderr}")
         return "Updated via pip to latest version"
 
-    def _install_pipx(self) -> str:
+    def _install_pipx(self, prerelease: bool = False) -> str:
         result = subprocess.run(
-            ["pipx", "upgrade", "pfsentinel"],
+            ["pipx", "upgrade"] + (["--pip-args=--pre"] if prerelease else []) + ["pfsentinel"],
             capture_output=True,
             text=True,
             timeout=self.DOWNLOAD_TIMEOUT,
@@ -414,18 +501,23 @@ class UpdateService:
                 "Cannot verify download integrity — aborting for safety."
             )
 
+        import io
+
+        buffer = io.BytesIO()
         try:
-            resp = requests.get(checksums_url, timeout=self.REQUEST_TIMEOUT)
-            resp.raise_for_status()
+            self._download(checksums_url, buffer)
+        except UpdateError:
+            raise
         except Exception as e:
             raise UpdateError(f"Failed to download checksums file: {e}") from e
+        checksums_text = buffer.getvalue().decode("utf-8", "replace")
 
         # Parse checksums file (format: "hash  filename" per line).
         # Names are normalised because the generator's spelling has varied:
         # `sha256sum ./*` writes "./pfs.exe", binary mode writes "*pfs.exe",
         # and either separator can appear. Compare on the bare filename.
         expected_hash: str | None = None
-        for line in resp.text.strip().splitlines():
+        for line in checksums_text.strip().splitlines():
             parts = line.split(None, 1)
             if len(parts) != 2:
                 continue
@@ -488,12 +580,13 @@ class UpdateService:
         return msg
 
     def _revert_binary(self) -> str:
-        backup = self._state.get("previous_binary_backup")
-        if not backup or not Path(backup).exists():
-            raise UpdateError("No binary backup found to revert to")
-
         current_exe = Path(sys.executable).resolve()
-        backup_path = Path(backup)
+        # Derived, never read from the state file: a changed state file must
+        # not be able to make revert copy an arbitrary file over pfs.
+        backup_path = self._binary_backup_path(current_exe)
+        if not backup_path.is_file():
+            raise UpdateError("No binary backup found to revert to")
+        self._refuse_unsafe_root_update(current_exe.parent)
 
         if is_windows():
             old_path = current_exe.with_suffix(".old")

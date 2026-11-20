@@ -13,6 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **`pfs update install` checks the signed build attestation** before it installs a binary: the SLSA provenance that the release workflow signs through Sigstore must name the downloaded file's SHA-256, chain to the pinned Sigstore CA, name this repository's `ci.yml` on main as the signer, and carry a valid transparency-log promise. Done with `cryptography`, no new dependency. A failed check installs nothing
+- Downloads are accepted only over https from GitHub hosts, checked again after every redirect, and capped at 200 MB
+- The new binary is staged next to the installed one (owner-only, same filesystem) instead of in the config folder, and a failed update leaves no staged file
+- `pfs update revert` uses a backup path it derives itself, never one read from the state file
+- As root, `pfs update install` and `revert` refuse a binary in a folder that is not root-owned or that others can write
+
+### Added
+
+- `pfs update check --pre` and `pfs update install --pre` include pre-releases (release candidates)
+
 ### Documentation
 
 - `CODE_OF_CONDUCT.md`: the Contributor Covenant 2.1. Reports go through the contact form at nx1xlab.dev/contact
