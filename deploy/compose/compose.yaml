@@ -11,8 +11,8 @@
 #   docker compose run --rm pfsentinel encryption setup
 services:
   pfsentinel:
-    # REPLACE the digest below with the real one. Keep the tag.
-    image: ghcr.io/nx1x/pfsentinel:1.0.0-rc.1@sha256:REPLACE_WITH_REAL_DIGEST
+    # Published 1.0.0-rc.1, pinned by digest. Change tag and digest together.
+    image: ghcr.io/nx1x/pfsentinel:1.0.0-rc.1@sha256:504f6889bb7f95eaeab12dfc0a3d7a1cf173ec20dd93d38e5221c36f782d48ac
     command: ["backup", "run", "--non-interactive"]
     read_only: true
     user: "10001:10001"
