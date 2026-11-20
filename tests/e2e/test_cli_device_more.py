@@ -382,12 +382,13 @@ def test_edit_sets_a_key_and_its_passphrase(
     key_file = tmp_path / "id_new"
     # defaults x4, change pw: n, change key: y, key path, set passphrase: y,
     # passphrase x2, toggle ssl: n
-    answers = f"\n\n\n\nn\ny\n{key_file}\ny\npp\npp\nn\n"
+    key_pass = secrets.token_urlsafe(12)
+    answers = f"\n\n\n\nn\ny\n{key_file}\ny\n{key_pass}\n{key_pass}\nn\n"
     result = cli_runner.invoke(app, ["device", "edit", "home-fw"], input=answers)
 
     assert result.exit_code == 0, _out(result)
     assert AppConfig.load().get_device("home-fw").ssh_key_path == key_file
-    assert CredentialService().get_ssh_key_passphrase("home-fw") == "pp"
+    assert CredentialService().get_ssh_key_passphrase("home-fw") == key_pass
 
 
 def test_edit_can_clear_the_key(

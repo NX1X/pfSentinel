@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import secrets
 import sys
 from collections.abc import Iterator
 from pathlib import Path
@@ -18,7 +19,8 @@ from .fake_smtp_server import FakeSMTPServer
 
 pytestmark = pytest.mark.e2e
 
-PASSWORD = "Mail-Pa55word-xyz"
+# Random per test run: it only logs in to the fake SMTP server.
+PASSWORD = secrets.token_urlsafe(16)
 
 
 def _output(result) -> str:

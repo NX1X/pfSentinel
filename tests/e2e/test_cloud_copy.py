@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import re
+import secrets
 import socket
 from collections.abc import Iterator
 from datetime import datetime
@@ -47,13 +48,15 @@ pytestmark = pytest.mark.e2e
 RUN = ["backup", "run", "-d", "home-fw", "--include", "dhcp", "--no-notify"]
 
 S3_KEY_ID = "AKIDPFSTEST"
-S3_SECRET = "s3-Secret-Zq9vX7wP2kL5mN8"
-AZURE_KEY = base64.b64encode(b"azure-account-key-for-tests-0123").decode()
-AZURE_SIG = "Sx9+Fake/SAS=sig"
+# Random per test run: these only unlock the fake servers below.
+S3_SECRET = secrets.token_urlsafe(24)
+AZURE_KEY = base64.b64encode(secrets.token_bytes(32)).decode()
+# Keeps "+", "/" and "=", so the tests still cover URL-quoting of the signature.
+AZURE_SIG = f"{secrets.token_urlsafe(12)}+{secrets.token_urlsafe(8)}/{secrets.token_urlsafe(4)}="
 AZURE_SAS = "?sv=2025-01-05&sr=c&sp=racwdl&se=2030-01-01T00%3A00%3A00Z&sig=" + quote(
     AZURE_SIG, safe=""
 )
-DAV_PASSWORD = "dav-App-Pass-4Rt7"
+DAV_PASSWORD = secrets.token_urlsafe(16)
 DAV_BASE = "/remote.php/dav/files/alice/pfs backups"
 
 
@@ -237,7 +240,7 @@ def test_s3_never_uploads_plain_files(
 def test_s3_wrong_secret_fails_without_showing_it(
     cli_runner: CliRunner, seeded_config: AppConfig, with_leases, s3: FakeS3, alerts
 ) -> None:
-    wrong = "Wrong-Secret-Value-9911"
+    wrong = secrets.token_urlsafe(24)
     CredentialService().store_secret(S3_SECRET_NAME, wrong)
     _enable("s3", **_s3_settings(s3))
 
@@ -492,7 +495,7 @@ def test_webdav_wrong_password_and_missing_folder(
     seeded_config: AppConfig, dav: FakeWebDav
 ) -> None:
     creds = CredentialService()
-    wrong = "Wrong-Dav-Pass-77"
+    wrong = secrets.token_urlsafe(16)
     creds.store_secret(WEBDAV_PASSWORD_NAME, wrong)
     policy = SecondCopyPolicy(kind="webdav", **_dav_settings(dav))
     with pytest.raises(SecondCopyError, match="HTTP 401") as info:
