@@ -531,7 +531,7 @@ After each backup run, pfSentinel copies every encrypted backup that the target 
 
 ## 9. Change Detection
 
-Each backup is compared to the previous one. pfSentinel parses the XML and diffs each major section. A backup is only saved if something changed (or it's the first backup for a device).
+Each backup is compared to the previous one. pfSentinel parses the XML and diffs each major section, and puts the changed sections in the file name. Every run saves a config backup, also when nothing changed (then the label is `minor`). Only `pfs backup watch` waits for a change before it backs up.
 
 | Category | Triggered When |
 |----------|---------------|
@@ -544,7 +544,7 @@ Each backup is compared to the previous one. pfSentinel parses the XML and diffs
 | `dhcp` | DHCP configuration changed |
 | `vpn` | OpenVPN / IPsec configuration |
 | `routes` | Static routes changed |
-| `minor` | Small change not matching a major category |
+| `minor` | No change in the tracked sections (or a change outside them) |
 
 Multiple categories are joined with `+` in the filename. All categories are stored in `backup_index.json`.
 
@@ -581,14 +581,6 @@ pfs device add
 ```
 
 Secure the file: `chmod 600 ~/.local/share/python_keyring/keyring_pass.cfg`
-
-### No changes detected (backup skipped)
-
-This is expected behavior -- pfSentinel only saves when the config changes. To force:
-
-```bash
-pfs backup run --force
-```
 
 ### Enable debug logging
 

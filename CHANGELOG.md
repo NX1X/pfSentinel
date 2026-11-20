@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Documentation
 
 - `CODE_OF_CONDUCT.md`: the Contributor Covenant 2.1. Reports go through the contact form at nx1xlab.dev/contact
+- The docs said a backup is saved only when the config changed, and suggested `pfs backup run --force`, which does not exist. Every run saves a config backup (labelled `minor` when nothing changed); only `pfs backup watch` waits for a change
 
 ## [0.3.0] - 2026-11-20
 
