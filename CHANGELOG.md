@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Second copy** (`pfs copy setup`): after each run, every encrypted backup the target does not have yet is copied to a folder (a share, or a Nextcloud-synced folder) or an SFTP server (key login, pinned host key). Plain files are never copied, so setup requires encryption. A failed copy does not fail the backup: it is an alert (event 1005), and the next run catches up. The target keeps its own retention (`keep_days`, default 90). `pfs copy now`, `status`, `disable`
 - **Long-term retention** (`backup_policy.long_term`): besides the last 30, the newest config backup of each week is kept for 12 weeks and of each month for 12 months. These do not count toward the per-type limit and do not expire with `keep_days`. With daily backups this keeps about 48 configs. On by default, for `config` only
 - **Alerts** on every enabled channel, each kind with a fixed Windows Event Log ID:
   - **Risky change** (1002): after each config backup, one alert per security-relevant change since the previous config: admin users and groups, the GUI authentication server, WAN pass rules and port forwards, SSH password login, the anti-lockout rule, and the web GUI protocol, port and certificate. Alerts name settings only, never secrets. The changes are stored with the backup

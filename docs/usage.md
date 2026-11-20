@@ -511,6 +511,22 @@ Retention is enforced automatically after each backup. Configurable per backup t
 
 With daily backups and the defaults (30 per type, `keep_days` 30), this keeps about 48 config backups: the last 30 days, 8 weekly and 10 monthly ones. Only `config` is listed by default; the extras of an old run are removed by their own limits, and its folder keeps the config.
 
+### Second Copy
+
+Keep a second copy of the encrypted backups on a target you run yourself. Turn on encryption first: only encrypted files leave the PC.
+
+```bash
+pfs copy setup     # folder or SFTP
+pfs copy now       # copy the existing encrypted backups
+pfs copy status
+pfs copy disable   # copies already made stay on the target
+```
+
+- **folder:** a local path, for example a network share or a folder that the Nextcloud desktop client syncs.
+- **sftp:** an SSH server with key login. Setup shows the server's host key fingerprint, and pfSentinel then refuses any other key, as it does for pfSense.
+
+After each backup run, pfSentinel copies every encrypted backup that the target does not have yet, into the same `<device>/YYYY/MM/DD/<run>/` folders. A failed copy never fails the backup: it is an alert (event ID 1005), and the next run copies what is missing. On the target, day folders older than `keep_days` (default 90) are removed. Backups from before 0.3.0 are not copied.
+
 ---
 
 ## 9. Change Detection
@@ -660,6 +676,15 @@ Logs are written to `~/.pfsentinel/logs/pfsentinel.log`.
 | `notify eventlog enable` | Write alerts to the Windows Event Log (syslog on Linux) |
 | `notify test` | Send test notification |
 | `notify status` | Show notification status |
+
+### `pfs copy`
+
+| Command | Description |
+|---------|-------------|
+| `copy setup` | Set up the second copy target (folder or SFTP) |
+| `copy now [-d ID]` | Copy every encrypted backup the target does not have yet |
+| `copy status` | Show the target |
+| `copy disable` | Stop copying |
 
 ### `pfs encryption`
 
