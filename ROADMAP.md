@@ -4,7 +4,7 @@ Goal: get pfSentinel to a solid **1.0**, then move it to **maintenance mode**.
 Maintenance mode means a slower pace focused on the Planned list, while security fixes, dependency
 updates and pfSense compatibility fixes keep landing (see the end of this file).
 
-Last updated: 2026-09-19
+Last updated: 2026-11-20
 
 ---
 
@@ -26,6 +26,18 @@ Last updated: 2026-09-19
   CodeQL, Bandit, zizmor, OSV-Scanner, pip-audit, dependency review
 - CI pipeline defined with [Dagger](https://dagger.io), so the same checks run locally and in CI
 
+## Shipped (v0.3.0)
+
+From the homelab field test of 2026-11-20:
+
+- Encryption at rest: AES-256-GCM `.enc` files, keystore key with a recovery key, or a passphrase
+- One folder per backup run, with a run number per device
+- Alerts: risky config changes, a restore check after each backup, and a no-recent-backup check
+  at sign-in and daily
+- System log on both systems: Windows Event Log with fixed event IDs, syslog/journald on Linux
+- Long-term retention: one backup per week for 3 months and per month for a year
+- Second copy of the encrypted backups to a folder or an SFTP server
+
 ---
 
 ## Before 1.0 (required)
@@ -36,8 +48,8 @@ Last updated: 2026-09-19
 
 - [ ] **Desktop notifications on Linux.** Windows has toasts; Linux gets freedesktop notifications
       (the same mechanism `notify-send` uses), with the same on/off setting
-- [ ] **System log on both.** Replace the Windows-only `windows_event_log_enabled` flag (never implemented)
-      with one `system_log_enabled` setting: Windows Event Log on Windows, journald/syslog on Linux
+- [x] **System log on both** (0.3.0): Windows Event Log on Windows, syslog/journald on Linux. The
+      setting keeps its first name, `windows_event_log_enabled`, so existing configs work
 - [ ] **Linux-native backup directory.** The default is `~/Documents/pfSentinel` on both systems.
       Linux should use `~/pfSentinel` (or an XDG path), with a migration for anyone who never set
       `backup_policy.backup_root`, so existing backups are not orphaned
@@ -67,8 +79,9 @@ From the 2026-11 security review. The updater already checks SHA-256 against the
 
 These features exist and are unit tested, but have never been observed working for real:
 
-- [ ] **Windows scheduled backup, end to end.** On a real machine, trigger the registered task and confirm
-      it reads the password from Credential Manager and completes a backup
+- [x] **Windows scheduled backup, end to end.** Observed 2026-11-20 on Windows 11 (v0.2.6): the
+      registered task ran and reported `Last result: OK`. Not yet observed: a key passphrase read from
+      Credential Manager by a scheduled run
 - [ ] **Linux systemd timer, end to end.** `pfs schedule enable`, then
       `systemctl --user start pfsentinel-backup.service` and check `journalctl --user -u pfsentinel-backup`
 - [ ] **Real pfSense smoke test.** SSH and HTTPS backup against current pfSense CE and pfSense Plus
@@ -86,7 +99,7 @@ These features exist and are unit tested, but have never been observed working f
 
 ### Release hygiene
 
-- [ ] `SECURITY.md` states which versions get fixes (latest minor only)
+- [x] `SECURITY.md` states which versions get fixes (latest minor only)
 - [ ] README states the project status (1.0, maintenance mode) and what that means for users
 
 ---
@@ -107,8 +120,8 @@ Bigger features that are planned after 1.0. Maintenance mode pauses new work, no
 
 - [ ] **pfSense REST API backend** (pfSense Plus 23.09+ and the REST API package), as a third
       connection method next to SSH and HTTPS
-- [ ] **Multiple backup destinations:** keep the local copy and also upload to S3-compatible storage
-      and/or a remote SFTP server, with the same retention rules
+- [ ] **More backup destinations:** a folder and SFTP shipped in 0.3.0 (`pfs copy`); S3-compatible
+      storage and WebDAV (Nextcloud without the desktop client) remain
 - [ ] **Baseline comparison:** mark a backup as "known good" and report every change against it
 - [ ] **Slack Block Kit cards** for richer Slack notifications
 
