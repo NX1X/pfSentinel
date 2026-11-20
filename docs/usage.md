@@ -496,6 +496,21 @@ home-fw_2026-11-20_085016_#142_interfaces+system.xml.gz
 
 Retention is enforced automatically after each backup. Configurable per backup type via `max_backups_per_type` and globally via `keep_days` in the config file.
 
+**Long-term retention (since 0.3.0).** Besides those limits, pfSentinel keeps the newest config backup of every week for 12 weeks (about 3 months) and of every month for 12 months. These keepers do not count toward `max_backups_per_type` and do not expire with `keep_days`. Settings in `backup_policy.long_term`:
+
+```json
+{
+  "long_term": {
+    "enabled": true,
+    "weekly_weeks": 12,
+    "monthly_months": 12,
+    "types": ["config"]
+  }
+}
+```
+
+With daily backups and the defaults (30 per type, `keep_days` 30), this keeps about 48 config backups: the last 30 days, 8 weekly and 10 monthly ones. Only `config` is listed by default; the extras of an old run are removed by their own limits, and its folder keeps the config.
+
 ---
 
 ## 9. Change Detection

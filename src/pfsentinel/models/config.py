@@ -73,6 +73,20 @@ class ArchivePolicy(BaseModel):
     exclude_patterns: list[str] = Field(default_factory=lambda: ["*.core", "*.tmp"])
 
 
+class LongTermRetention(BaseModel):
+    """Keep some older backups beyond the normal limits (grandfather-father-son).
+
+    For each listed type, the newest backup of every ISO week in the last
+    ``weekly_weeks`` weeks and of every month in the last ``monthly_months``
+    months is kept, on top of the normal per-type count and ``keep_days``.
+    """
+
+    enabled: bool = True
+    weekly_weeks: int = Field(default=12, ge=0, le=520)  # about 3 months
+    monthly_months: int = Field(default=12, ge=0, le=120)  # 1 year
+    types: list[str] = Field(default_factory=lambda: ["config"])
+
+
 class EncryptionPolicy(BaseModel):
     """Encryption at rest for backup files. See services/backup_crypto.py.
 
@@ -97,6 +111,7 @@ class BackupPolicy(BaseModel):
     zfs: ZfsPolicy = Field(default_factory=ZfsPolicy)
     archive: ArchivePolicy = Field(default_factory=ArchivePolicy)
     encryption: EncryptionPolicy = Field(default_factory=EncryptionPolicy)
+    long_term: LongTermRetention = Field(default_factory=LongTermRetention)
     max_backups_per_type: dict[str, int] = Field(
         default_factory=lambda: {
             "config": 30,

@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Long-term retention** (`backup_policy.long_term`): besides the last 30, the newest config backup of each week is kept for 12 weeks and of each month for 12 months. These do not count toward the per-type limit and do not expire with `keep_days`. With daily backups this keeps about 48 configs. On by default, for `config` only
 - **Alerts** on every enabled channel, each kind with a fixed Windows Event Log ID:
   - **Risky change** (1002): after each config backup, one alert per security-relevant change since the previous config: admin users and groups, the GUI authentication server, WAN pass rules and port forwards, SSH password login, the anti-lockout rule, and the web GUI protocol, port and certificate. Alerts name settings only, never secrets. The changes are stored with the backup
   - **Restore check** (1004): after each config backup, config.xml must parse and have users, an admin user, interfaces and a filter section; CAs and certificates are counted. `pfs backup check [FILE]` runs it on any backup
