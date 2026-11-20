@@ -40,32 +40,40 @@ class PfSenseXMLError(ValueError):
     """Raised when XML does not look like a valid pfSense config."""
 
 
+def parse_untrusted_xml(data: bytes) -> etree._Element:
+    """Parse XML from a source pfSentinel does not control, with the hardened parser.
+
+    Also used for storage server replies (S3 and Azure listings, WebDAV
+    PROPFIND). Raises PfSenseXMLError on a syntax error or any DOCTYPE.
+    """
+    try:
+        # Suppression note (S320): the flagged risk is exactly what _make_parser()
+        # neutralises - entity resolution, network access, DTD loading and huge
+        # trees are all disabled, and any DOCTYPE is rejected below. Covered by
+        # TestXxeHardening in tests/unit/test_xml_parser.py.
+        root = etree.fromstring(data, parser=_make_parser())  # noqa: S320
+    except etree.XMLSyntaxError as e:
+        raise PfSenseXMLError(f"XML parse error: {e}") from e
+
+    # No legitimate document here carries a DTD. Rejecting it outright makes
+    # entity-based attacks fail loudly instead of parsing into a document with
+    # unresolved entity references.
+    docinfo = root.getroottree().docinfo
+    if docinfo.internalDTD is not None or docinfo.externalDTD is not None:
+        raise PfSenseXMLError(
+            "Unsafe XML rejected (possible XXE/entity attack): "
+            "the document declares a DOCTYPE/DTD, which is not permitted"
+        )
+    return root
+
+
 def validate_xml(xml_content: str) -> etree._Element:
     """Parse and validate pfSense config XML. Raises PfSenseXMLError on failure."""
     if not xml_content or not xml_content.strip():
         raise PfSenseXMLError("XML content is empty")
 
-    try:
-        # Encode first: lxml refuses str input carrying an encoding declaration.
-        # Suppression note (S320): the flagged risk is exactly what _make_parser()
-        # neutralises - entity resolution, network access, DTD loading and huge
-        # trees are all disabled, and any DOCTYPE is rejected below. Covered by
-        # TestXxeHardening in tests/unit/test_xml_parser.py.
-        root = etree.fromstring(  # noqa: S320
-            xml_content.encode("utf-8"), parser=_make_parser()
-        )
-    except etree.XMLSyntaxError as e:
-        raise PfSenseXMLError(f"XML parse error: {e}") from e
-
-    # A pfSense config has no legitimate reason to carry a DTD. Rejecting it
-    # outright makes entity-based attacks fail loudly instead of parsing into a
-    # document with unresolved entity references.
-    docinfo = root.getroottree().docinfo
-    if docinfo.internalDTD is not None or docinfo.externalDTD is not None:
-        raise PfSenseXMLError(
-            "Unsafe XML rejected (possible XXE/entity attack): "
-            "config declares a DOCTYPE/DTD, which is not permitted"
-        )
+    # Encode first: lxml refuses str input carrying an encoding declaration.
+    root = parse_untrusted_xml(xml_content.encode("utf-8"))
 
     if root.tag != "pfsense":
         raise PfSenseXMLError(f"Root element is '{root.tag!s}', expected 'pfsense'")

@@ -90,18 +90,42 @@ class LongTermRetention(BaseModel):
 class SecondCopyPolicy(BaseModel):
     """Second copy of the encrypted backups on a self-hosted target.
 
-    See services/second_copy.py. Only encrypted files are copied.
+    See services/second_copy.py and services/cloud_targets.py. Only encrypted
+    files are copied. The s3, azure and webdav kinds are EXPERIMENTAL. Their
+    secrets (S3 secret key, Azure SAS token or account key, WebDAV password)
+    live in the credential store, never here.
     """
 
     enabled: bool = False
-    kind: Literal["folder", "sftp"] = "folder"
+    kind: Literal["folder", "sftp", "s3", "azure", "webdav"] = "folder"
     # folder: local path. sftp: remote directory.
     path: str | None = None
     host: str | None = None
     port: int = Field(default=22, ge=1, le=65535)
+    # sftp and webdav login name.
     username: str | None = None
     key_path: str | None = None
     keep_days: int = Field(default=90, ge=1, le=3650)
+    # s3: https://host[:port] of any S3-compatible service.
+    endpoint: str | None = None
+    region: str | None = None
+    bucket: str | None = None
+    path_style: bool = False
+    access_key_id: str | None = None
+    # azure: storage account, container, and "sas" or "key" (Shared Key).
+    account: str | None = None
+    container: str | None = None
+    azure_auth: Literal["sas", "key"] = "sas"
+    # Default https://<account>.blob.core.windows.net
+    azure_endpoint: str | None = None
+    # s3 and azure: folder inside the bucket or container.
+    prefix: str | None = None
+    # webdav: base URL of the target folder.
+    url: str | None = None
+    # webdav only: plain http for a server on the LAN.
+    allow_http: bool = False
+    # s3, azure, webdav: CA file for a server with a private certificate.
+    ca_cert_path: str | None = None
 
 
 class EncryptionPolicy(BaseModel):
