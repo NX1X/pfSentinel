@@ -28,6 +28,8 @@ Registry as `ghcr.io/nx1x/pfsentinel:<version>`. It is not on Docker Hub.
   smoke-tested on a native GitHub runner.
 - There is no `latest` tag. Pin a version and its digest.
 - Each image has a signed build attestation, made by the release pipeline.
+- Anonymous pulls work only after the maintainer makes the package public.
+  If a pull says `denied` or `unauthorized`, use Option B.
 
 1. Read the digest of the version you want:
    `docker buildx imagetools inspect ghcr.io/nx1x/pfsentinel:<version>`.

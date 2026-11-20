@@ -505,8 +505,11 @@ jobs:
           if [[ "$RELEASE_TAG" == *-* ]]; then
             PRE=(--prerelease)
           fi
+          # --target: the tag points at the commit this run built and tested,
+          # even if main moved on during the run.
           gh release create "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
             --title "pfSentinel $RELEASE_TAG" \
             --notes-file artifacts/release-notes/release_notes.md \
             "${PRE[@]}" \

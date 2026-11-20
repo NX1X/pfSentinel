@@ -7,6 +7,11 @@ name: Publish container image (experimental)
 #
 # Called by the release pipeline (ci.yml) after a release, or run by hand for
 # an existing release tag. No third-party actions: plain docker on the runner.
+#
+# The image is built from this run's own commit, so the attestation names the
+# commit the image really came from. Before the build, the job checks that the
+# package source at this commit is identical to the release tag; if it is not,
+# the job stops and nothing is pushed.
 
 on:
   workflow_call:
@@ -57,11 +62,33 @@ jobs:
           fi
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Checkout the release tag
+      - name: Checkout this run's commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          ref: ${{ inputs.tag }}
           persist-credentials: false
+
+      - name: Check that the package source matches the release tag
+        env:
+          TAG: ${{ inputs.tag }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          set -eu
+          git fetch --no-tags --depth=1 "$REPO_URL" "refs/tags/$TAG:refs/tags/$TAG"
+          if ! git diff --quiet "refs/tags/$TAG" HEAD -- \
+              src pyproject.toml requirements.lock README.md LICENSE; then
+            echo "::error::The package source at $GITHUB_SHA differs from $TAG. Run this workflow from the tag's commit."
+            git diff --stat "refs/tags/$TAG" HEAD -- \
+              src pyproject.toml requirements.lock README.md LICENSE
+            exit 1
+          fi
+
+      - name: Patch version
+        # Same as the other release builders in ci.yml.
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          sed -i "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" \
+            src/pfsentinel/__init__.py
 
       - name: Build image
         run: docker build --tag pfsentinel:release .
@@ -85,7 +112,10 @@ jobs:
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           docker tag pfsentinel:release "$IMAGE:$VERSION-$ARCH"
           docker push "$IMAGE:$VERSION-$ARCH"
-          docker logout ghcr.io
+
+      - name: Log out of ghcr.io
+        if: always()
+        run: docker logout ghcr.io
 
   manifest:
     name: Multi-arch tag and attestation
@@ -111,7 +141,6 @@ jobs:
             "$IMAGE:$VERSION-amd64" "$IMAGE:$VERSION-arm64"
           DIGEST=$(docker buildx imagetools inspect "$IMAGE:$VERSION" \
             --format '{{json .Manifest}}' | jq -r .digest)
-          docker logout ghcr.io
           echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
           {
             echo "### Published"
@@ -125,3 +154,8 @@ jobs:
           subject-name: ${{ env.IMAGE }}
           subject-digest: ${{ steps.index.outputs.digest }}
           push-to-registry: true
+
+      - name: Log out of ghcr.io
+        # After the attestation: push-to-registry needs the login.
+        if: always()
+        run: docker logout ghcr.io
