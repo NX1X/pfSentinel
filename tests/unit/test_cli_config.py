@@ -109,13 +109,6 @@ class TestValidate:
         assert "not found" in _out(result)
         assert "pfs config init" in _out(result)
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "BUG: AppConfig.load() returns a default config for any parse error, "
-            "so 'pfs config validate' reports a corrupt config.json as valid"
-        ),
-    )
     def test_corrupt_config_file_is_reported_invalid(
         self, cli_runner: CliRunner, cli_config_path: Path
     ) -> None:
@@ -124,6 +117,15 @@ class TestValidate:
 
         assert result.exit_code == 1
         assert "invalid" in _out(result).lower()
+
+    def test_a_corrupt_config_is_never_overwritten(
+        self, cli_runner: CliRunner, cli_config_path: Path
+    ) -> None:
+        """Before 1.0, load() returned defaults and the next save erased the devices."""
+        broken = '{"devices": [{"id": "fw", "host": "192.0.2.1"}], oops'
+        cli_config_path.write_text(broken, encoding="utf-8")
+        cli_runner.invoke(app, ["config", "set", "backup-dir", "/tmp/x"])
+        assert cli_config_path.read_text(encoding="utf-8") == broken
 
     def test_valid_config_without_devices(
         self, cli_runner: CliRunner, saved_config: AppConfig

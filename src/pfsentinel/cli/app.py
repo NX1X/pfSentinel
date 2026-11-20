@@ -270,8 +270,17 @@ def _configure_logging_from_config() -> None:
 
 def main_entry() -> None:
     """Entry point for the CLI."""
+    from pfsentinel.models.config import ConfigError
+
     _configure_logging_from_config()
-    app()
+    try:
+        app()
+    except ConfigError as e:
+        # One clear line instead of a traceback; nothing was written.
+        from pfsentinel.cli.formatters import print_error
+
+        print_error(str(e))
+        raise SystemExit(1) from None
 
 
 if __name__ == "__main__":

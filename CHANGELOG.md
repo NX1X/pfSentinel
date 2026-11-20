@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A corrupt `config.json` was treated as empty**, so `pfs config validate` called it valid and the next command that saved the config wrote empty defaults over your devices. pfSentinel now stops with one clear message (what is wrong and where), exit code 1, and leaves the file as it is. Found by the new CLI tests
+
 From the 0.3.0 field test (2026-11-20, Windows 11, PowerShell 7):
 
 - The progress bar no longer runs into one long line: Rich's `print()` removed the carriage return that brings the bar back to the line start. The bar is now written straight to the terminal, and not drawn at all when the output is not a terminal
@@ -47,6 +49,7 @@ From the 0.3.0 field test (2026-11-20, Windows 11, PowerShell 7):
 
 ### Changed
 
+- Test coverage is 92% (was 71% in 0.3.0), mostly new CLI tests; CI fails below 80%
 - CI builds the PyInstaller binary on Linux and Windows for every PR that touches the code, and runs it against a fake SSH server (`scripts/binary_smoke.py`: host key pinning, encryption, two runs, second copy, verify, restore check, decrypt). The release jobs run the same test before they upload a binary, and both systems now use one build definition (`scripts/build_exe.py`)
 - mypy finds no errors, and CI now runs it in the required lint job, so a type error blocks a merge
 

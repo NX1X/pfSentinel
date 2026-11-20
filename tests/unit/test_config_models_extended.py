@@ -46,12 +46,15 @@ class TestAppConfigLoad:
         assert isinstance(cfg, AppConfig)
         assert cfg.devices == []
 
-    def test_corrupt_file_returns_default(self, tmp_path: Path, monkeypatch):
+    def test_corrupt_file_raises_a_clear_error(self, tmp_path: Path, monkeypatch):
+        """Defaults would be saved over the user's devices; raise instead (1.0)."""
+        from pfsentinel.models.config import ConfigError
+
         bad = tmp_path / "config.json"
         bad.write_text("{{{not json", encoding="utf-8")
         monkeypatch.setattr(AppConfig, "config_path", staticmethod(lambda: bad))
-        cfg = AppConfig.load()
-        assert isinstance(cfg, AppConfig)
+        with pytest.raises(ConfigError, match="did not change it"):
+            AppConfig.load()
 
     def test_valid_file_loads(self, tmp_path: Path, monkeypatch):
         p = tmp_path / "config.json"

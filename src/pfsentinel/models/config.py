@@ -249,6 +249,20 @@ class SyslogConfig(BaseModel):
     facility: int = Field(default=1, ge=0, le=23)
 
 
+class ConfigError(Exception):
+    """config.json exists but cannot be used."""
+
+
+def _config_error_reason(error: ValueError) -> str:
+    """The first problem and where it is, without echoing the file content."""
+    errors = getattr(error, "errors", None)
+    if callable(errors):
+        first = errors()[0] if errors() else {}
+        where = ".".join(str(part) for part in first.get("loc", ())) or "file"
+        return f"{first.get('msg', 'invalid')} at {where}"
+    return type(error).__name__
+
+
 class AppConfig(BaseModel):
     """Root application config - written to ~/.pfsentinel/config.json"""
 
@@ -269,13 +283,27 @@ class AppConfig(BaseModel):
 
     @classmethod
     def load(cls) -> AppConfig:
+        """Load config.json; defaults when it does not exist yet.
+
+        A file that exists but cannot be read raises ConfigError. Returning
+        defaults instead used to hide the problem, and the next save wrote
+        those defaults over the user's devices.
+        """
         p = cls.config_path()
         try:
-            return cls.model_validate_json(p.read_text(encoding="utf-8"))
+            text = p.read_text(encoding="utf-8")
         except FileNotFoundError:
             return cls()
-        except Exception:
-            return cls()
+        except OSError as e:
+            raise ConfigError(f"Cannot read {p}: {e.strerror or e}") from e
+        try:
+            return cls.model_validate_json(text)
+        except ValueError as e:  # JSON syntax and pydantic validation errors
+            reason = _config_error_reason(e)
+            raise ConfigError(
+                f"{p} is not a valid pfSentinel config ({reason}). pfSentinel did not "
+                "change it. Fix the file, or move it away and run: pfs config init"
+            ) from e
 
     def save(self) -> None:
         p = self.config_path()

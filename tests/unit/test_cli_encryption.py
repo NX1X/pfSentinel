@@ -121,7 +121,7 @@ class TestSetup:
         result = cli_runner.invoke(app, ["encryption", "setup", "--mode", "rot13"])
 
         assert result.exit_code == 1
-        assert "keystore or passphrase" in _out(result)
+        assert "Mode must be" in _out(result)
         assert AppConfig.load().backup_policy.encryption.mode == "off"
 
     def test_mode_is_prompted_when_not_given(
@@ -199,7 +199,7 @@ class TestRecoveryKey:
         result = cli_runner.invoke(app, ["encryption", "recovery-key"], input="y\n")
 
         assert result.exit_code == 1
-        assert "keystore mode" in _out(result)
+        assert "Recovery keys exist only" in _out(result)
 
 
 class TestDisable:

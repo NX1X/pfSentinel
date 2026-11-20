@@ -135,7 +135,7 @@ def test_setup_unknown_target_kind_is_refused(cli_runner: CliRunner, encrypted: 
     result = cli_runner.invoke(app, ["copy", "setup"], input="dropbox\n")
 
     assert result.exit_code == 1
-    assert "folder or sftp" in _out(result)
+    assert "must be one of" in _out(result)
     assert AppConfig.load().backup_policy.second_copy.enabled is False
 
 

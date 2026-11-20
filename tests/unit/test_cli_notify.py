@@ -474,7 +474,7 @@ class TestNotifyTest:
         result = cli_runner.invoke(app, ["notify", "test"])
 
         assert result.exit_code == 0
-        assert "No notification channels enabled" in _out(result)
+        assert "Nothing was sent" in _out(result)
         assert http.posts == []
 
     def test_all_channels_succeed(
@@ -523,7 +523,8 @@ class TestNotifyStatus:
 
         output = _out(result)
         assert result.exit_code == 0, output
-        for channel in ("Telegram", "Slack", "Windows Toast", "syslog"):
+        # The desktop line depends on the OS (Desktop on Linux, Windows Toast on Windows).
+        for channel in ("Telegram", "Slack", "Email", "syslog"):
             assert channel in output
 
     def test_shows_enabled_channels(
