@@ -33,6 +33,12 @@ SERVICE_UNIT = "pfsentinel-backup.service"
 DAILY_TIMER = "pfsentinel-daily.timer"
 WEEKLY_TIMER = "pfsentinel-weekly.timer"
 
+CHECK_SERVICE = "pfsentinel-check.service"
+CHECK_TIMER = "pfsentinel-check.timer"
+# The no-recent-backup check runs at noon and shortly after the user's
+# session (the systemd user manager) starts.
+CHECK_AT = "12:00"
+
 CRON_MARKER = "# pfsentinel-managed"
 
 # systemd OnCalendar day names, and cron day-of-week numbers (0 = Sunday).
@@ -162,17 +168,10 @@ def _systemd_quote(arg: str) -> str:
     return '"' + arg.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def render_service(argv: list[str]) -> str:
+def render_service(argv: list[str], description: str = "pfSentinel scheduled backup") -> str:
     _reject_line_breaks(argv)
     exec_start = " ".join(_systemd_quote(a) for a in argv)
-    return (
-        "[Unit]\n"
-        "Description=pfSentinel scheduled backup\n"
-        "\n"
-        "[Service]\n"
-        "Type=oneshot\n"
-        f"ExecStart={exec_start}\n"
-    )
+    return f"[Unit]\nDescription={description}\n\n[Service]\nType=oneshot\nExecStart={exec_start}\n"
 
 
 def render_timer(description: str, on_calendar: str) -> str:
@@ -190,8 +189,27 @@ def render_timer(description: str, on_calendar: str) -> str:
     )
 
 
+def render_check_timer() -> str:
+    return (
+        "[Unit]\n"
+        "Description=pfSentinel no-recent-backup check\n"
+        "\n"
+        "[Timer]\n"
+        "OnStartupSec=5min\n"
+        f"OnCalendar={daily_on_calendar(CHECK_AT)}\n"
+        "Persistent=true\n"
+        f"Unit={CHECK_SERVICE}\n"
+        "\n"
+        "[Install]\n"
+        "WantedBy=timers.target\n"
+    )
+
+
 def install_systemd_timers(
-    argv: list[str], daily_at: str | None, weekly: tuple[str, str] | None
+    argv: list[str],
+    daily_at: str | None,
+    weekly: tuple[str, str] | None,
+    check_argv: list[str] | None = None,
 ) -> bool:
     """Write the service and timer units and enable the requested timers.
 
@@ -210,16 +228,23 @@ def install_systemd_timers(
     try:
         unit_dir.mkdir(parents=True, exist_ok=True)
         (unit_dir / SERVICE_UNIT).write_text(render_service(argv), encoding="utf-8")
+        if check_argv is not None:
+            (unit_dir / CHECK_SERVICE).write_text(
+                render_service(check_argv, "pfSentinel no-recent-backup check"), encoding="utf-8"
+            )
+            wanted[CHECK_TIMER] = render_check_timer()
         for name, body in wanted.items():
             (unit_dir / name).write_text(body, encoding="utf-8")
     except OSError as e:
         logger.error(f"Cannot write systemd units to {unit_dir}: {e}")
         return False
 
-    for name in (DAILY_TIMER, WEEKLY_TIMER):
+    for name in (DAILY_TIMER, WEEKLY_TIMER, CHECK_TIMER):
         if name not in wanted:
             _systemctl("disable", "--now", name)
             (unit_dir / name).unlink(missing_ok=True)
+    if check_argv is None:
+        (unit_dir / CHECK_SERVICE).unlink(missing_ok=True)
 
     if _systemctl("daemon-reload").returncode != 0:
         logger.error("systemctl --user daemon-reload failed")
@@ -237,11 +262,12 @@ def install_systemd_timers(
 def remove_systemd_timers() -> bool:
     """Disable the timers and delete all pfSentinel unit files."""
     unit_dir = systemd_user_dir()
-    present = [n for n in (DAILY_TIMER, WEEKLY_TIMER, SERVICE_UNIT) if (unit_dir / n).exists()]
+    units = (DAILY_TIMER, WEEKLY_TIMER, CHECK_TIMER, SERVICE_UNIT, CHECK_SERVICE)
+    present = [n for n in units if (unit_dir / n).exists()]
     if not present:
         return True
     if shutil.which("systemctl") is not None:
-        for name in (DAILY_TIMER, WEEKLY_TIMER):
+        for name in (DAILY_TIMER, WEEKLY_TIMER, CHECK_TIMER):
             if name in present:
                 _systemctl("disable", "--now", name)
     ok = True
@@ -315,13 +341,21 @@ def _write_crontab(lines: list[str]) -> bool:
     return result.returncode == 0
 
 
-def cron_lines(
-    argv: list[str], daily_at: str | None, weekly: tuple[str, str] | None, log_path: Path
-) -> list[str]:
-    """Crontab entries for the requested schedule. '%' is escaped (cron treats it as newline)."""
+def _cron_command(argv: list[str], log_path: Path) -> str:
     _reject_line_breaks([*argv, str(log_path)])
     command = " ".join(shlex.quote(a) for a in argv) + f" >> {shlex.quote(str(log_path))} 2>&1"
-    command = command.replace("%", "\\%")
+    return command.replace("%", "\\%")
+
+
+def cron_lines(
+    argv: list[str],
+    daily_at: str | None,
+    weekly: tuple[str, str] | None,
+    log_path: Path,
+    check_argv: list[str] | None = None,
+) -> list[str]:
+    """Crontab entries for the requested schedule. '%' is escaped (cron treats it as newline)."""
+    command = _cron_command(argv, log_path)
     lines: list[str] = []
     if daily_at is not None:
         hour, minute = _hhmm(daily_at)
@@ -330,6 +364,11 @@ def cron_lines(
         day, at = weekly
         hour, minute = _hhmm(at)
         lines.append(f"{minute} {hour} * * {_day(day)[1]} {command} {CRON_MARKER} weekly")
+    if check_argv is not None and lines:
+        check = _cron_command(check_argv, log_path)
+        hour, minute = _hhmm(CHECK_AT)
+        lines.append(f"@reboot sleep 300 && {check} {CRON_MARKER} check-boot")
+        lines.append(f"{minute} {hour} * * * {check} {CRON_MARKER} check")
     return lines
 
 
@@ -346,14 +385,18 @@ def _prepare_private_log(log_path: Path) -> None:
 
 
 def install_cron(
-    argv: list[str], daily_at: str | None, weekly: tuple[str, str] | None, log_path: Path
+    argv: list[str],
+    daily_at: str | None,
+    weekly: tuple[str, str] | None,
+    log_path: Path,
+    check_argv: list[str] | None = None,
 ) -> bool:
     """Replace pfSentinel's crontab entries, leaving every other line untouched."""
     current = _read_crontab()
     if current is None:
         logger.error("Cannot read the current crontab; not modifying it")
         return False
-    new = cron_lines(argv, daily_at, weekly, log_path)
+    new = cron_lines(argv, daily_at, weekly, log_path, check_argv)
     if not new:
         return False
     try:

@@ -60,9 +60,12 @@ class TestApplySchedule:
             result = svc.apply_schedule()
 
         assert result is True
-        assert mock_create.call_count == 2
+        assert mock_create.call_count == 3
         schedule_types = [c.kwargs["schedule_type"] for c in mock_create.call_args_list]
-        assert schedule_types == ["DAILY", "WEEKLY"]
+        assert schedule_types == ["DAILY", "WEEKLY", "CHECK"]
+        check_call = mock_create.call_args_list[2]
+        assert check_call.kwargs["task_name"] == "pfSentinel\\BackupCheck"
+        assert check_call.kwargs["args"] == "backup check-recent --non-interactive"
         # weekly call should carry the configured day
         weekly_call = mock_create.call_args_list[1]
         assert weekly_call.kwargs["day_of_week"] == "sunday"
@@ -87,8 +90,8 @@ class TestApplySchedule:
         ):
             svc.apply_schedule()
 
-        assert mock_create.call_count == 1
-        assert mock_create.call_args.kwargs["schedule_type"] == "DAILY"
+        assert mock_create.call_count == 2
+        assert mock_create.call_args_list[0].kwargs["schedule_type"] == "DAILY"
 
     def test_windows_only_weekly_creates_one_task(self):
         cfg = ScheduleConfig(
@@ -107,9 +110,10 @@ class TestApplySchedule:
         ):
             svc.apply_schedule()
 
-        assert mock_create.call_count == 1
-        assert mock_create.call_args.kwargs["schedule_type"] == "WEEKLY"
-        assert mock_create.call_args.kwargs["day_of_week"] == "wednesday"
+        assert mock_create.call_count == 2
+        weekly = mock_create.call_args_list[0]
+        assert weekly.kwargs["schedule_type"] == "WEEKLY"
+        assert weekly.kwargs["day_of_week"] == "wednesday"
 
     def test_windows_task_creation_failure_returns_false(self):
         cfg = ScheduleConfig(
@@ -145,9 +149,10 @@ class TestApplySchedule:
         ):
             assert svc.apply_schedule() is True
         assert svc.backend == "systemd"
-        argv, daily, weekly = inst.call_args.args
+        argv, daily, weekly, check_argv = inst.call_args.args
         # Scheduled runs have no terminal: they must never hit the interactive menu.
         assert argv[-3:] == ["backup", "run", "--non-interactive"]
+        assert check_argv[-3:] == ["backup", "check-recent", "--non-interactive"]
         assert daily == "02:00"
         assert weekly == ("friday", "03:00")
         rm_cron.assert_called_once()  # no stale cron copy left to double-run
@@ -219,8 +224,9 @@ class TestRemoveSchedule:
         ):
             result = svc.remove_schedule()
         assert result is True
-        assert mock_delete.call_count == 2
+        assert mock_delete.call_count == 3
         called_names = [c.args[0] for c in mock_delete.call_args_list]
+        assert "pfSentinel\\BackupCheck" in called_names
         assert "pfSentinel\\DailyBackup" in called_names
         assert "pfSentinel\\WeeklyBackup" in called_names
 
@@ -562,7 +568,7 @@ class TestWindowsScheduleValidation:
             patch.object(scheduler_mod, "get_executable_path", return_value=("pfs.exe", "")),
         ):
             assert svc.apply_schedule() is True
-        assert create.call_args.kwargs["start_time"] == "02:05"
+        assert create.call_args_list[0].kwargs["start_time"] == "02:05"
 
     def test_unix_install_error_is_reported_not_raised(self):
         cfg = ScheduleConfig(enabled=True, daily_enabled=True, weekly_enabled=False)

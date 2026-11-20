@@ -5,7 +5,7 @@ from __future__ import annotations
 import difflib
 from pathlib import Path
 
-from pfsentinel.models.backup import BackupIndex, BackupRecord, ChangeCategory
+from pfsentinel.models.backup import BackupIndex, BackupRecord, BackupType, ChangeCategory
 from pfsentinel.services import backup_crypto
 from pfsentinel.services.backup_crypto import BackupCrypto
 from pfsentinel.utils import compression, xml_parser
@@ -32,8 +32,12 @@ class DiffService:
         return data.decode("utf-8")
 
     def _load_last_xml(self, device_id: str, index: BackupIndex) -> str | None:
-        """Load XML content from the most recent backup."""
-        latest = index.latest()
+        """Load XML content from the most recent config backup.
+
+        Only config records hold XML; the newest record of any type may be an
+        extra (a tar) from the same run.
+        """
+        latest = index.latest(BackupType.CONFIG)
         if not latest:
             return None
 
@@ -47,6 +51,10 @@ class DiffService:
         except Exception as e:
             logger.warning(f"Could not read latest backup for diff: {e}")
             return None
+
+    def last_config_xml(self, device_id: str, index: BackupIndex) -> str | None:
+        """XML of the device's most recent config backup, or None."""
+        return self._load_last_xml(device_id, index)
 
     def detect(self, device_id: str, current_xml: str, index: BackupIndex) -> list[ChangeCategory]:
         """Compare current XML against last backup and return list of change categories.

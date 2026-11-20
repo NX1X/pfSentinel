@@ -227,6 +227,8 @@ Retention limits are applied independently per backup type. Configure in `backup
 
 The `keep_days` setting applies globally across all types.
 
+Long-term keepers (one per week and one per month) are on top of these limits; see `backup_policy.long_term` in the [Usage Guide](usage.md#retention).
+
 ## Backup Verification
 
 `pfs backup verify` uses type-appropriate validation:

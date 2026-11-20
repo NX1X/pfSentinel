@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
+from enum import IntEnum
 from urllib.parse import urlparse
 from xml.sax.saxutils import escape as xml_escape
 
@@ -51,16 +52,59 @@ def show_windows_toast(title: str, message: str) -> None:
 
     Raises on failure so the caller can report it. Needs no third-party package.
     """
-    env = dict(os.environ)
-    env["PFS_TOAST_XML"] = build_toast_xml(title, message)
-    env["PFS_TOAST_APP_ID"] = _TOAST_APP_ID
+    _run_powershell(
+        _TOAST_SCRIPT,
+        {"PFS_TOAST_XML": build_toast_xml(title, message), "PFS_TOAST_APP_ID": _TOAST_APP_ID},
+    )
+
+
+class AlertKind(IntEnum):
+    """Kinds of alert, valued by their fixed Windows Event Log event ID."""
+
+    BACKUP_OK = 1000
+    BACKUP_FAILED = 1001
+    RISKY_CHANGE = 1002
+    NO_RECENT_BACKUP = 1003
+    RESTORE_CHECK_FAILED = 1004
+    SECOND_COPY_FAILED = 1005
+
+    @property
+    def entry_type(self) -> str:
+        if self is AlertKind.BACKUP_OK:
+            return "Information"
+        if self is AlertKind.RISKY_CHANGE:
+            return "Warning"
+        return "Error"
+
+
+EVENT_SOURCE = "pfSentinel"
+
+# Static scripts: the event text arrives through environment variables, so no
+# message is ever parsed as PowerShell.
+_EVENT_SCRIPT = (
+    "$ErrorActionPreference='Stop';"
+    "Write-EventLog -LogName Application -Source $env:PFS_EVENT_SOURCE "
+    "-EventId ([int]$env:PFS_EVENT_ID) -EntryType $env:PFS_EVENT_TYPE "
+    "-Message $env:PFS_EVENT_MSG"
+)
+_REGISTER_SCRIPT = (
+    "$ErrorActionPreference='Stop';"
+    "if (-not [System.Diagnostics.EventLog]::SourceExists($env:PFS_EVENT_SOURCE)) "
+    "{ New-EventLog -LogName Application -Source $env:PFS_EVENT_SOURCE }"
+)
+
+
+def _powershell() -> str:
     # Absolute path, so a powershell.exe earlier on PATH cannot be picked up.
     system_root = os.environ.get("SYSTEMROOT", r"C:\Windows")
-    powershell = os.path.join(
-        system_root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"
-    )
+    return os.path.join(system_root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+
+
+def _run_powershell(script: str, env_extra: dict[str, str]) -> None:
+    env = dict(os.environ)
+    env.update(env_extra)
     result = subprocess.run(
-        [powershell, "-NoProfile", "-NonInteractive", "-Command", _TOAST_SCRIPT],
+        [_powershell(), "-NoProfile", "-NonInteractive", "-Command", script],
         env=env,
         capture_output=True,
         text=True,
@@ -70,6 +114,46 @@ def show_windows_toast(title: str, message: str) -> None:
     )
     if result.returncode != 0:
         raise RuntimeError((result.stderr or result.stdout or "powershell failed").strip()[:300])
+
+
+def register_event_source() -> None:
+    """Register the "pfSentinel" Application log source (Windows, needs admin once)."""
+    _run_powershell(_REGISTER_SCRIPT, {"PFS_EVENT_SOURCE": EVENT_SOURCE})
+
+
+def write_system_log(kind: AlertKind, title: str, message: str) -> None:
+    """Write one alert to the Windows Event Log, or to syslog/journald on Linux."""
+    text = f"{title}\n{message}"
+    if is_windows():
+        try:
+            _run_powershell(
+                _EVENT_SCRIPT,
+                {
+                    "PFS_EVENT_SOURCE": EVENT_SOURCE,
+                    "PFS_EVENT_ID": str(int(kind)),
+                    "PFS_EVENT_TYPE": kind.entry_type,
+                    "PFS_EVENT_MSG": text,
+                },
+            )
+        except RuntimeError as e:
+            if "source" in str(e).lower():
+                raise RuntimeError(
+                    "Event source 'pfSentinel' is not registered. In an administrator "
+                    "PowerShell, run: pfs notify eventlog enable"
+                ) from e
+            raise
+        return
+    import syslog
+
+    priority = {
+        "Information": syslog.LOG_INFO,
+        "Warning": syslog.LOG_WARNING,
+        "Error": syslog.LOG_ERR,
+    }[kind.entry_type]
+    syslog.openlog("pfsentinel", 0, syslog.LOG_USER)
+    for line in text.splitlines():
+        syslog.syslog(priority, f"[{int(kind)}] {line}")
+    syslog.closelog()
 
 
 def describe_send_error(error: Exception) -> str:
@@ -120,20 +204,27 @@ class NotificationService:
                 f"Total size: {total_size / 1024:.1f} KB"
             )
 
-        results = self._dispatch(title, msg, success=True)
+        results = self._dispatch(title, msg, success=True, kind=AlertKind.BACKUP_OK)
         for channel, err in results.items():
             if err:
                 logger.warning(f"{channel} backup-success notification failed: {err}")
 
     def notify_failure(self, device_id: str, error: str) -> None:
+        self.alert(
+            AlertKind.BACKUP_FAILED,
+            "pfSentinel - Backup Failed",
+            f"Device: {device_id}\nError: {error}",
+        )
+
+    def alert(self, kind: AlertKind, title: str, message: str) -> dict[str, str | None]:
+        """Send a problem alert (anything but BACKUP_OK) to every enabled channel."""
         if not self._config.notify_on_failure:
-            return
-        title = "pfSentinel - Backup Failed"
-        msg = f"Device: {device_id}\nError: {error}"
-        results = self._dispatch(title, msg, success=False)
+            return {}
+        results = self._dispatch(title, message, success=False, kind=kind)
         for channel, err in results.items():
             if err:
-                logger.warning(f"{channel} backup-failure notification failed: {err}")
+                logger.warning(f"{channel} alert ({kind.name}) failed: {err}")
+        return results
 
     def notify_info(self, title: str, message: str) -> dict[str, str | None]:
         """Dispatch an informational notification. Returns per-channel results.
@@ -142,9 +233,22 @@ class NotificationService:
         """
         return self._dispatch(title, message, success=True)
 
-    def _dispatch(self, title: str, message: str, success: bool) -> dict[str, str | None]:
+    def _dispatch(
+        self, title: str, message: str, success: bool, kind: AlertKind | None = None
+    ) -> dict[str, str | None]:
         """Send to all enabled channels. Returns {channel: error_or_None}."""
         results: dict[str, str | None] = {}
+
+        if self._config.windows_event_log_enabled:
+            event_kind = kind or (AlertKind.BACKUP_OK if success else AlertKind.BACKUP_FAILED)
+            channel = "Windows Event Log" if is_windows() else "System log"
+            try:
+                write_system_log(event_kind, title, message)
+                results[channel] = None
+            except Exception as e:
+                reason = redact_secrets(str(e))
+                logger.warning(f"{channel} write failed: {reason}")
+                results[channel] = reason
 
         if self._config.telegram_enabled:
             try:

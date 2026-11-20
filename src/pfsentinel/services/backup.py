@@ -10,12 +10,12 @@ from pathlib import Path
 from pfsentinel.models.backup import BackupRecord, BackupRun
 from pfsentinel.models.config import AppConfig
 from pfsentinel.models.device import DeviceConfig
-from pfsentinel.services import backup_crypto
+from pfsentinel.services import backup_crypto, config_checks
 from pfsentinel.services.backup_crypto import BackupCrypto
 from pfsentinel.services.connection import ConnectionManager
 from pfsentinel.services.credentials import CredentialService
 from pfsentinel.services.diff import DiffService
-from pfsentinel.services.notifications import NotificationService
+from pfsentinel.services.notifications import AlertKind, NotificationService
 from pfsentinel.services.retention import RetentionService
 from pfsentinel.utils import checksum, compression, naming, xml_parser
 from pfsentinel.utils.logging import get_logger
@@ -67,6 +67,13 @@ class BackupService:
     @property
     def crypto(self) -> BackupCrypto:
         return self._crypto
+
+    @property
+    def notifications(self) -> NotificationService:
+        return self._notifications
+
+    def backup_path(self, record: BackupRecord) -> Path:
+        return self._backup_root / record.device_id / record.relative_path
 
     def _retention(self) -> RetentionService:
         return RetentionService(self._backup_root, self._config.backup_policy)
@@ -126,6 +133,9 @@ class BackupService:
             # --- Detect changes ---
             _p("Detecting changes...", 55)
             changes = self._diff.detect(device_id, xml_content, index)
+            previous_xml = self._diff.last_config_xml(device_id, index)
+            risky = self._risky_changes(device_id, previous_xml, xml_content)
+            check = config_checks.restore_check(xml_content)
 
             # --- Generate filename ---
             if run is None:
@@ -192,6 +202,8 @@ class BackupService:
                 description=description,
                 run_number=run.number,
                 encrypted=backup_crypto.is_encrypted(dest_path),
+                risky_changes=[c.summary for c in risky],
+                restore_check=check.summary,
             )
 
             # --- Update index ---
@@ -206,6 +218,19 @@ class BackupService:
             # --- Notify ---
             _p("Sending notifications...", 95)
             self._notifications.notify_success(record)
+            for change in risky:
+                self._notifications.alert(
+                    AlertKind.RISKY_CHANGE,
+                    f"pfSentinel - Risky change on {device_id}",
+                    f"Device: {device_id}\nChange: {change.summary}\nBackup: {record.filename}",
+                )
+            if not check.ok:
+                logger.warning(f"Restore check failed for {record.filename}: {check.summary}")
+                self._notifications.alert(
+                    AlertKind.RESTORE_CHECK_FAILED,
+                    f"pfSentinel - Restore check failed on {device_id}",
+                    f"Device: {device_id}\nBackup: {record.filename}\n{check.summary}",
+                )
 
             _p("Backup complete!", 100)
             logger.info(f"Backup complete: {filename}")
@@ -214,6 +239,20 @@ class BackupService:
         except Exception as e:
             self._notifications.notify_failure(device_id, str(e))
             raise
+
+    def _risky_changes(
+        self, device_id: str, previous_xml: str | None, xml: str
+    ) -> list[config_checks.RiskyChange]:
+        if previous_xml is None:
+            return []
+        try:
+            found = config_checks.detect_risky_changes(previous_xml, xml)
+        except Exception as e:  # a check must never fail the backup
+            logger.warning(f"Risky-change check skipped for {device_id}: {e}")
+            return []
+        for change in found:
+            logger.warning(f"Risky change on {device_id}: {change.summary}")
+        return found
 
     def run_all_backups(self, progress: ProgressCallback | None = None) -> list[BackupRecord]:
         """Run backups for all enabled devices."""

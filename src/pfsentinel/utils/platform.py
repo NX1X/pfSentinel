@@ -133,6 +133,16 @@ def _daily_trigger_xml(start_time: str) -> str:
     )
 
 
+def _logon_trigger_xml() -> str:
+    return (
+        "<LogonTrigger>"
+        "<Enabled>true</Enabled>"
+        f"<UserId>{xml_escape(_current_user_id())}</UserId>"
+        "<Delay>PT5M</Delay>"
+        "</LogonTrigger>"
+    )
+
+
 def _weekly_trigger_xml(start_time: str, day_of_week: str) -> str:
     # Task Scheduler only accepts these seven day element names; anything else
     # (typo, empty, injection attempt) would produce invalid XML, so fall back
@@ -165,7 +175,7 @@ def create_windows_task(
     task_name: str,
     executable: str,
     args: str,
-    schedule_type: str,  # "DAILY" or "WEEKLY"
+    schedule_type: str,  # "DAILY", "WEEKLY" or "CHECK" (sign-in + daily)
     start_time: str,
     day_of_week: str = "",
 ) -> bool:
@@ -188,10 +198,18 @@ def create_windows_task(
         trigger = _daily_trigger_xml(start_time)
     elif schedule_type == "WEEKLY":
         trigger = _weekly_trigger_xml(start_time, day_of_week)
+    elif schedule_type == "CHECK":
+        # At every sign-in (5 minutes later, once the network is up) and daily:
+        # a PC that was off, or a schedule that stopped running, is noticed.
+        trigger = _logon_trigger_xml() + _daily_trigger_xml(start_time)
     else:
         return False
 
-    description = f"pfSentinel scheduled backup ({schedule_type.lower()})"
+    description = (
+        "pfSentinel: alert when there is no recent backup"
+        if schedule_type == "CHECK"
+        else f"pfSentinel scheduled backup ({schedule_type.lower()})"
+    )
     xml_doc = _TASK_XML_TEMPLATE.format(
         description=xml_escape(description),
         trigger=trigger,

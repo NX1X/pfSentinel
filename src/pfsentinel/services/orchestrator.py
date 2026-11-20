@@ -127,7 +127,38 @@ class BackupOrchestrator:
         # 5. Apply retention across all types
         self._retention.apply(device_id)
 
+        # 6. Second copy of the encrypted files (never fails the backup)
+        self._second_copy(device_id)
+
         return records
+
+    def _second_copy(self, device_id: str) -> None:
+        if not self._config.backup_policy.second_copy.enabled:
+            return
+        from pfsentinel.services.notifications import AlertKind
+        from pfsentinel.services.second_copy import SecondCopyService
+
+        problems: list[str] = []
+        try:
+            result = SecondCopyService(self._config, self._creds).sync(device_id)
+        except Exception as e:
+            problems.append(str(e))
+        else:
+            problems.extend(result.errors)
+            if result.skipped_plain:
+                problems.append(
+                    f"{len(result.skipped_plain)} plain file(s) not copied: turn on "
+                    "encryption (pfs encryption setup)"
+                )
+            if result.copied:
+                logger.info(f"Second copy: {len(result.copied)} file(s) copied for {device_id}")
+        if problems:
+            logger.error(f"Second copy failed for {device_id}: {'; '.join(problems)}")
+            self._backup_svc.notifications.alert(
+                AlertKind.SECOND_COPY_FAILED,
+                f"pfSentinel - Second copy failed for {device_id}",
+                f"Device: {device_id}\n" + "\n".join(problems[:5]),
+            )
 
     def run_all(
         self,

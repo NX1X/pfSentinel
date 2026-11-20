@@ -20,9 +20,12 @@ Usage:
 from __future__ import annotations
 
 import io
+import os
+import posixpath
 import socket
 import threading
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Self
 
 import paramiko
@@ -83,6 +86,91 @@ def _make_sftp_interface(files: dict[str, bytes]):
     return _SFTP
 
 
+class _DirSFTPHandle(paramiko.SFTPHandle):
+    def stat(self):
+        return paramiko.SFTPAttributes.from_stat(os.fstat(self.readfile.fileno()))
+
+
+def _make_dir_sftp_interface(root: Path):
+    """A writable SFTP server backed by a real folder (for upload tests)."""
+
+    class _DirSFTP(paramiko.SFTPServerInterface):
+        def _real(self, path: str) -> str:
+            # SFTP paths are POSIX on every OS; os.path would use "\\" on Windows
+            # and turn the result into a path at the drive root.
+            rel = posixpath.normpath("/" + path).lstrip("/")
+            return str(root.joinpath(*rel.split("/"))) if rel else str(root)
+
+        def list_folder(self, path: str):
+            real = self._real(path)
+            try:
+                out = []
+                for name in os.listdir(real):
+                    attr = paramiko.SFTPAttributes.from_stat(os.stat(os.path.join(real, name)))
+                    attr.filename = name
+                    out.append(attr)
+                return out
+            except OSError as e:
+                return paramiko.SFTPServer.convert_errno(e.errno)
+
+        def stat(self, path: str):
+            try:
+                return paramiko.SFTPAttributes.from_stat(os.stat(self._real(path)))
+            except OSError as e:
+                return paramiko.SFTPServer.convert_errno(e.errno)
+
+        def lstat(self, path: str):
+            return self.stat(path)
+
+        def open(self, path: str, flags: int, attr):
+            real = self._real(path)
+            try:
+                fd = os.open(real, flags | getattr(os, "O_BINARY", 0), 0o600)
+            except OSError as e:
+                return paramiko.SFTPServer.convert_errno(e.errno)
+            mode = "wb" if flags & os.O_WRONLY else ("r+b" if flags & os.O_RDWR else "rb")
+            if flags & os.O_APPEND:
+                mode = "ab"
+            handle = _DirSFTPHandle(flags)
+            f = os.fdopen(fd, mode)
+            handle.readfile = f
+            handle.writefile = f
+            return handle
+
+        def remove(self, path: str):
+            try:
+                os.remove(self._real(path))
+            except OSError as e:
+                return paramiko.SFTPServer.convert_errno(e.errno)
+            return paramiko.SFTP_OK
+
+        def rename(self, oldpath: str, newpath: str):
+            try:
+                os.replace(self._real(oldpath), self._real(newpath))
+            except OSError as e:
+                return paramiko.SFTPServer.convert_errno(e.errno)
+            return paramiko.SFTP_OK
+
+        def posix_rename(self, oldpath: str, newpath: str):
+            return self.rename(oldpath, newpath)
+
+        def mkdir(self, path: str, attr):
+            try:
+                os.mkdir(self._real(path))
+            except OSError as e:
+                return paramiko.SFTPServer.convert_errno(e.errno)
+            return paramiko.SFTP_OK
+
+        def rmdir(self, path: str):
+            try:
+                os.rmdir(self._real(path))
+            except OSError as e:
+                return paramiko.SFTPServer.convert_errno(e.errno)
+            return paramiko.SFTP_OK
+
+    return _DirSFTP
+
+
 @dataclass
 class ExecResponse:
     """Canned response for an exec_command invocation."""
@@ -104,6 +192,9 @@ class FakeSSHServer:
     password: str
     files: dict[str, bytes] = field(default_factory=dict)
     exec_responses: dict[str, ExecResponse] = field(default_factory=dict)
+    # Optional: serve a writable folder over SFTP, and accept this public key.
+    sftp_root: Path | None = None
+    authorized_key: paramiko.PKey | None = None
 
     _sock: socket.socket | None = None
     _accept_thread: threading.Thread | None = None
@@ -128,12 +219,16 @@ class FakeSSHServer:
         password: str = "hunter2",
         files: dict[str, bytes] | None = None,
         exec_responses: dict[str, ExecResponse] | None = None,
+        sftp_root: Path | None = None,
+        authorized_key: paramiko.PKey | None = None,
     ) -> Self:
         server = cls(
             username=username,
             password=password,
             files=files or {},
             exec_responses=exec_responses or {},
+            sftp_root=sftp_root,
+            authorized_key=authorized_key,
         )
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -212,12 +307,15 @@ class FakeSSHServer:
             transport.set_subsystem_handler(
                 "sftp",
                 paramiko.SFTPServer,
-                _make_sftp_interface(self.files),
+                _make_dir_sftp_interface(self.sftp_root)
+                if self.sftp_root is not None
+                else _make_sftp_interface(self.files),
             )
             server_iface = _ServerIface(
                 username=self.username,
                 password=self.password,
                 exec_responses=self.exec_responses,
+                authorized_key=self.authorized_key,
             )
             try:
                 transport.start_server(server=server_iface)
@@ -248,10 +346,12 @@ class _ServerIface(paramiko.ServerInterface):
         username: str,
         password: str,
         exec_responses: dict[str, ExecResponse],
+        authorized_key: paramiko.PKey | None = None,
     ) -> None:
         self._username = username
         self._password = password
         self._exec_responses = exec_responses
+        self._authorized_key = authorized_key
 
     def check_channel_request(self, kind: str, chanid: int) -> int:
         if kind == "session":
@@ -263,8 +363,17 @@ class _ServerIface(paramiko.ServerInterface):
             return paramiko.AUTH_SUCCESSFUL
         return paramiko.AUTH_FAILED
 
+    def check_auth_publickey(self, username: str, key: paramiko.PKey) -> int:
+        if (
+            self._authorized_key is not None
+            and username == self._username
+            and key.asbytes() == self._authorized_key.asbytes()
+        ):
+            return paramiko.AUTH_SUCCESSFUL
+        return paramiko.AUTH_FAILED
+
     def get_allowed_auths(self, username: str) -> str:
-        return "password"
+        return "password,publickey" if self._authorized_key is not None else "password"
 
     def check_channel_exec_request(self, channel, command: bytes) -> bool:
         cmd = command.decode("utf-8", errors="replace")

@@ -73,6 +73,37 @@ class ArchivePolicy(BaseModel):
     exclude_patterns: list[str] = Field(default_factory=lambda: ["*.core", "*.tmp"])
 
 
+class LongTermRetention(BaseModel):
+    """Keep some older backups beyond the normal limits (grandfather-father-son).
+
+    For each listed type, the newest backup of every ISO week in the last
+    ``weekly_weeks`` weeks and of every month in the last ``monthly_months``
+    months is kept, on top of the normal per-type count and ``keep_days``.
+    """
+
+    enabled: bool = True
+    weekly_weeks: int = Field(default=12, ge=0, le=520)  # about 3 months
+    monthly_months: int = Field(default=12, ge=0, le=120)  # 1 year
+    types: list[str] = Field(default_factory=lambda: ["config"])
+
+
+class SecondCopyPolicy(BaseModel):
+    """Second copy of the encrypted backups on a self-hosted target.
+
+    See services/second_copy.py. Only encrypted files are copied.
+    """
+
+    enabled: bool = False
+    kind: Literal["folder", "sftp"] = "folder"
+    # folder: local path. sftp: remote directory.
+    path: str | None = None
+    host: str | None = None
+    port: int = Field(default=22, ge=1, le=65535)
+    username: str | None = None
+    key_path: str | None = None
+    keep_days: int = Field(default=90, ge=1, le=3650)
+
+
 class EncryptionPolicy(BaseModel):
     """Encryption at rest for backup files. See services/backup_crypto.py.
 
@@ -97,6 +128,8 @@ class BackupPolicy(BaseModel):
     zfs: ZfsPolicy = Field(default_factory=ZfsPolicy)
     archive: ArchivePolicy = Field(default_factory=ArchivePolicy)
     encryption: EncryptionPolicy = Field(default_factory=EncryptionPolicy)
+    long_term: LongTermRetention = Field(default_factory=LongTermRetention)
+    second_copy: SecondCopyPolicy = Field(default_factory=SecondCopyPolicy)
     max_backups_per_type: dict[str, int] = Field(
         default_factory=lambda: {
             "config": 30,
@@ -140,9 +173,15 @@ class NotificationConfig(BaseModel):
     slack_enabled: bool = False
     # slack_webhook_url stored in keyring, not here
     windows_toast_enabled: bool = True
+    # Windows Event Log (Application, source "pfSentinel") or syslog/journald
+    # on Linux. Kept under its first name for existing configs.
     windows_event_log_enabled: bool = False
     notify_on_success: bool = True
+    # Failures and alerts: failed backup, risky change, failed restore check,
+    # no recent backup, failed second copy.
     notify_on_failure: bool = True
+    # Alert when a device has had no successful backup for this many days.
+    stale_after_days: int = Field(default=3, ge=1, le=365)
 
 
 class SyslogConfig(BaseModel):

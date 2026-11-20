@@ -57,15 +57,19 @@ class RetentionService:
             max_count = self._policy.max_backups_per_type.get(
                 type_name, self._policy.max_backups_per_device
             )
+            # Long-term keepers sit outside the normal limits: they neither
+            # count toward max_count nor expire with keep_days.
+            protected = self.long_term_keep(type_name, records)
+            normal = [r for r in records if r.id not in protected]
             to_delete: list[BackupRecord] = []
 
             # Apply max count per type
-            if len(records) > max_count:
-                to_delete.extend(records[max_count:])
+            if len(normal) > max_count:
+                to_delete.extend(normal[max_count:])
 
             # Apply keep_days
             marked = {r.id for r in to_delete}
-            for record in records:
+            for record in normal:
                 if record.id not in marked and record.created_at < cutoff_date:
                     to_delete.append(record)
 
@@ -78,6 +82,34 @@ class RetentionService:
             logger.info(f"Retention: deleted {len(deleted)} backups for {device_id}")
 
         return deleted
+
+    def long_term_keep(
+        self, type_name: str, records: list[BackupRecord], now: datetime | None = None
+    ) -> set[str]:
+        """IDs of the weekly and monthly keepers among ``records`` (newest first)."""
+        policy = self._policy.long_term
+        if not policy.enabled or type_name not in policy.types:
+            return set()
+        now = now or datetime.now()
+        week_cutoff = now - timedelta(weeks=policy.weekly_weeks)
+        # The first day of the month that starts the monthly window.
+        months_back = now.year * 12 + now.month - 1 - (policy.monthly_months - 1)
+        month_cutoff = datetime(months_back // 12, months_back % 12 + 1, 1)
+
+        keep: set[str] = set()
+        weeks_seen: set[tuple[int, int]] = set()
+        months_seen: set[tuple[int, int]] = set()
+        for record in sorted(records, key=lambda r: r.created_at, reverse=True):
+            when = record.created_at
+            week = when.isocalendar()[:2]
+            if policy.weekly_weeks and when >= week_cutoff and week not in weeks_seen:
+                weeks_seen.add(week)
+                keep.add(record.id)
+            month = (when.year, when.month)
+            if policy.monthly_months and when >= month_cutoff and month not in months_seen:
+                months_seen.add(month)
+                keep.add(record.id)
+        return keep
 
     def _delete_record(self, device_id: str, record: BackupRecord, index: BackupIndex) -> None:
         """Delete backup file and remove from index."""
