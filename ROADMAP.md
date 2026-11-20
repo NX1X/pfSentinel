@@ -40,6 +40,22 @@ From the homelab field test of 2026-11-20:
 
 ---
 
+## Path to 1.0 (decided 2026-11-20)
+
+Four steps, each ending with a real-world test on a homelab:
+
+- **0.4.0 Hardening:** self-update hardening, Windows file permissions, an alert when the number of
+  firewall rules, users or certificates drops sharply, an update-available alert, a binary smoke test
+  in CI, the TUI removed and mypy required in CI.
+- **0.5.0 Alerts and destinations:** email (SMTP) alerts for any mail server, a daily digest, Linux
+  desktop notifications, an S3-compatible second copy (experimental; encrypted backups only), and an
+  `age` encryption mode readable with the standard `age` tool.
+- **0.6.0 Polish:** scheduling without admin on Windows, `--json` output, 80% test coverage, and the
+  remaining docs below.
+- **1.0.0:** a release candidate that runs 14 days in a row without a failed backup, then 1.0.0.
+
+The lists below hold the details.
+
 ## Before 1.0 (required)
 
 ### Full cross-platform parity (Windows and Linux)
@@ -108,9 +124,13 @@ These features exist and are unit tested, but have never been observed working f
 
 Small features worth doing only if there is time. Each one is self-contained.
 
-- [ ] `--json` output for `backup list`, `device list` and `schedule status` (for scripting)
+- [ ] `--json` output for `device list` and `schedule status` (`backup list` has it)
 - [ ] Richer Telegram messages (size, pfSense version, hostname)
-- [ ] Email (SMTP) notifications
+- [ ] Email (SMTP) notifications for any mail server (planned for 0.5.0)
+- [ ] Daily digest: one message a day for all devices (planned for 0.5.0)
+- [ ] S3-compatible second copy, experimental (planned for 0.5.0)
+- [ ] `age` encryption mode (planned for 0.5.0)
+- [ ] Alert when rules, users or certificates drop sharply between backups (planned for 0.4.0)
 
 ---
 
@@ -120,8 +140,8 @@ Bigger features that are planned after 1.0. Maintenance mode pauses new work, no
 
 - [ ] **pfSense REST API backend** (pfSense Plus 23.09+ and the REST API package), as a third
       connection method next to SSH and HTTPS
-- [ ] **More backup destinations:** a folder and SFTP shipped in 0.3.0 (`pfs copy`); S3-compatible
-      storage and WebDAV (Nextcloud without the desktop client) remain
+- [ ] **More backup destinations:** a folder and SFTP shipped in 0.3.0 (`pfs copy`), S3 is planned for
+      0.5.0; WebDAV (Nextcloud without the desktop client) remains
 - [ ] **Baseline comparison:** mark a backup as "known good" and report every change against it
 - [ ] **Slack Block Kit cards** for richer Slack notifications
 
