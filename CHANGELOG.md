@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-20
+
+Encryption at rest, one folder per backup run, alerts (risky changes, restore check, no recent backup, Windows Event Log), long-term retention and a second copy. Most items come from the homelab field test of 2026-11-20.
+
+**After updating** (`pfs update install`):
+
+1. In an administrator PowerShell, run `pfs schedule disable`, then `pfs schedule enable --daily-time 02:00` (your time). This adds the no-recent-backup check task and registers the Event Log source.
+2. Run `pfs encryption setup`, store the recovery key in your password manager, then run `pfs encryption encrypt-existing --wipe` for the older backups.
+3. Optional: `pfs notify eventlog enable` and `pfs copy setup`.
+
 ### Added
 
 - **Second copy** (`pfs copy setup`): after each run, every encrypted backup the target does not have yet is copied to a folder (a share, or a Nextcloud-synced folder) or an SFTP server (key login, pinned host key). Plain files are never copied, so setup requires encryption. A failed copy does not fail the backup: it is an alert (event 1005), and the next run catches up. The target keeps its own retention (`keep_days`, default 90). `pfs copy now`, `status`, `disable`
