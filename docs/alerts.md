@@ -28,6 +28,10 @@ ID, and each email ends with a line such as `pfSentinel event 1001
 | 1006 | Update available     | At once, once per release                |
 | 1007 | Daily digest         | Once a day, if the digest is on          |
 
+The daily check also sends 1003 when the backup index of a device cannot
+be read. The title then says "Backup index of DEVICE cannot be read". See
+[Rebuild the Backup Index](usage.md#rebuild-the-backup-index).
+
 ## Email (SMTP)
 
 Email works with any mail server. You need the server name, the port, the

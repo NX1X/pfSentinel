@@ -16,10 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - The experimental container image is published to the GitHub Container Registry as `ghcr.io/nx1x/pfsentinel:<version>`, for `linux/amd64` and `linux/arm64`, with a signed build attestation. There is no `latest` tag: pin a version and its digest. It is not on Docker Hub. See [docs/docker.md](docs/docker.md).
+- **`pfs backup reindex [-d DEVICE] [--dry-run]`** rebuilds a device's backup index from the backup files on disk. A readable index keeps its records and gets the files it is missing. An unreadable index is moved aside to `backup_index.json.broken-<time>`, never deleted. The checksum of each added file is computed again, and the next run number continues after the highest one found. Backup files are only read, and links out of the device folder are not followed. `--dry-run` shows what would change and writes nothing. See [Rebuild the Backup Index](docs/usage.md#rebuild-the-backup-index).
 
 ### Changed
 
 - The Docker build stage installs only the wheel builder (hatchling and its four dependencies) from the dev lockfile, with hashes checked, not the whole dev toolchain.
+
+### Fixed
+
+- **A backup index that could not be read was replaced by an empty one.** If `backup_index.json` was locked, had no read permission, or was damaged, pfSentinel treated it as "no index". The next run then saved a new index with only that run, numbered #001 and marked "initial". The old records disappeared from `pfs backup list`, and `check-recent` sent a false "no recent backup" alert. The backup files stayed on disk. Seen on Windows 11 with 1.0.0-rc.1. Now only a missing file means a new index. Any other problem stops every command that reads the index (`backup run`, `list`, `check`, `verify`, `check-recent`, retention, `copy now`, `encryption encrypt-existing` and others) with one error line and exit code 1. The file is not changed. A backup run also sends a "Backup failed" alert (1001). `check-recent` sends its alert (1003) with the title "Backup index of DEVICE cannot be read". To recover lost records, run `pfs backup reindex`.
+- The backup index is now written atomically: to a temp file in the same folder, flushed to disk, then swapped in one step. The previous version is kept as `backup_index.json.bak`. On Linux and macOS, the index is owner-only (0600).
 
 ## [1.0.0-rc.1] - 2026-11-20
 

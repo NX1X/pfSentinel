@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from pfsentinel.models.backup import BackupRecord, BackupRun
+from pfsentinel.models.backup import BackupIndexError, BackupRecord, BackupRun
 from pfsentinel.models.config import AppConfig
 from pfsentinel.services.backup import BackupService
 from pfsentinel.services.credentials import CredentialService
@@ -52,7 +52,12 @@ class BackupOrchestrator:
             raise BackupError(f"Device '{device_id}' not found in config")
 
         # One run: the config and every extra share its folder and number.
-        run = self._retention.start_run(device_id)
+        try:
+            run = self._retention.start_run(device_id)
+        except BackupIndexError as e:
+            # A scheduled run has nobody watching the console.
+            self._backup_svc.notifications.notify_failure(device_id, str(e))
+            raise
         timestamp = run.started_at
         sequence = run.number
 
