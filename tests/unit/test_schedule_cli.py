@@ -90,11 +90,17 @@ class TestFormatWindowsTask:
         assert "Registered" in joined
         assert "Last result" not in joined
 
-    def test_positive_last_result_is_informational(self):
-        # 1 is a non-negative status code we do not name; not a failure
+    def test_exit_code_of_a_backup_task_is_a_failure(self):
+        # pfs backup run exits 1 when the backup did not finish.
         lines = _format_windows_task("Daily", {"exists": True, "last_result": 1})
         joined = "\n".join(lines)
-        assert "informational" in joined
+        assert "FAILED (exit code 1)" in joined
+        assert "pfs backup run" in joined
+
+    def test_exit_code_1_of_the_check_task_means_an_alert_went_out(self):
+        lines = _format_windows_task("Check", {"exists": True, "last_result": 1}, check_task=True)
+        joined = "\n".join(lines)
+        assert "no recent backup; alert sent" in joined
         assert "FAILED" not in joined
 
     def test_never_run_task_says_never_not_1999(self):

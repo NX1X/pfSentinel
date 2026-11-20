@@ -198,7 +198,7 @@ _WINDOWS_TASK_STATES = {
 }
 
 
-def _format_windows_task(label: str, task: dict) -> list[str]:
+def _format_windows_task(label: str, task: dict, *, check_task: bool = False) -> list[str]:
     """Render a Windows task's real health, not just whether it's registered."""
     if not task or not task.get("exists"):
         return [f"[bold]{label}:[/] [yellow]Not registered[/]"]
@@ -232,8 +232,13 @@ def _format_windows_task(label: str, task: dict) -> list[str]:
             out.extend(f"  {line}" for line in explanation)
         else:
             out.append(f"  Last result: [red]FAILED {code}[/]")
+    elif check_task:
+        # backup check-recent exits 1 when a device had no recent backup.
+        out.append(f"  Last result: [yellow]{lr} (a device had no recent backup; alert sent)[/]")
     else:
-        out.append(f"  Last result: [dim]{lr} (informational)[/]")
+        # pfs backup run exits non-zero when the backup did not finish.
+        out.append(f"  Last result: [red]FAILED (exit code {lr})[/]")
+        out.append("  Run the same backup by hand to see the error: pfs backup run")
     return out
 
 
@@ -269,7 +274,9 @@ def schedule_status(
         if "windows_check" in status:
             lines.extend(
                 _format_windows_task(
-                    "Windows task (no-recent-backup check)", status["windows_check"]
+                    "Windows task (no-recent-backup check)",
+                    status["windows_check"],
+                    check_task=True,
                 )
             )
 
