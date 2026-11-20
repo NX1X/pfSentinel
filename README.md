@@ -8,7 +8,7 @@
 
 Automated backup and monitoring tool for pfSense firewalls. Built for homelabs.
 
-pfSentinel connects to your pfSense devices over SSH or HTTPS and backs up configuration files, RRD data, package configs, DHCP leases, certificates, logs, ZFS snapshots, and full filesystem archives. It includes change detection, compression, scheduled backups, and notifications via Telegram, Slack, or Windows toast.
+pfSentinel connects to your pfSense devices over SSH or HTTPS and backs up configuration files, RRD data, package configs, DHCP leases, certificates, logs, ZFS snapshots, and full filesystem archives. It includes change detection, a restore check, encryption at rest, a second copy off the PC, scheduled backups, and alerts by Telegram, Slack, email, desktop notification or the system log.
 
 ## A Word From the Developer
 
@@ -23,14 +23,16 @@ If you have a request or an idea, I'd love to hear it, please [open a feature re
 - **ZFS snapshots** with incremental send (pfSense 2.5+)
 - **Filesystem archives** (tar.gz) as a non-ZFS fallback
 - **Change detection** -- every backup names the config sections that changed (`firewall`, `users`, ...), and risky changes raise an alert
-- **SHA-256 verification** for every backup file
-- **Encryption at rest** (optional) -- AES-256-GCM with a key in the OS keystore and a recovery key, or a passphrase; [details](docs/encryption.md)
+- **SHA-256 verification** for every backup file, and a **restore check** of each config backup (users, admin, interfaces, firewall rules, certificates)
+- **Encryption at rest** (optional) -- AES-256-GCM with a key in the OS keystore and a recovery key, or a passphrase, or the open age format; [details](docs/encryption.md)
+- **Second copy** of the encrypted backups to a folder or SFTP, and (experimental) S3-compatible storage, Azure Blob Storage or WebDAV; [details](docs/second-copy.md)
+- **Long-term retention** -- daily backups, plus weekly and monthly ones kept longer
 - **Scheduled backups** via Windows Task Scheduler, systemd user timers or cron
-- **Notifications** -- Telegram, Slack, Windows toast
+- **Alerts** -- Telegram, Slack, email (any SMTP server), Windows toast or Linux desktop notification, Windows Event Log or syslog, and an optional daily digest; for a failed backup, a risky change, no recent backup, a failed restore check or a failed second copy; [details](docs/alerts.md)
 - **SSH key authentication** -- no password required
 - **Strict SSH host key checking** -- confirm the pfSense key once (`pfs device trust-key`); a changed key is refused
 - **Credential security** -- passwords in the OS keyring (or an AES-256-GCM encrypted store on headless systems), never in config files
-- **Self-update** -- check for and install new releases from GitHub
+- **Self-update** -- install new releases from GitHub; the binary's checksum and its signed build attestation are checked first
 - **Cross-platform** -- Windows and Linux (macOS best effort)
 - **Reproducible CI** -- lint, tests, security audit and build defined with [Dagger](https://dagger.io), so the same pipeline runs on your machine and in GitHub Actions; hash-verified lockfiles and SHA-pinned Actions
 
