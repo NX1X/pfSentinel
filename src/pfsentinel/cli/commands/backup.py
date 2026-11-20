@@ -18,7 +18,7 @@ from pfsentinel.cli.formatters import (
     print_success,
     print_warning,
 )
-from pfsentinel.models.backup import BackupRecord
+from pfsentinel.models.backup import BackupIndexError, BackupRecord
 from pfsentinel.models.config import AppConfig
 from pfsentinel.services.backup import BackupError, BackupService
 from pfsentinel.services.credentials import CredentialService
@@ -279,7 +279,7 @@ def backup_run(
                     print_warning("  Post-backup validation failed — file may be corrupt.")
                     print_warning(f"  Run: pfs backup verify {record.filename}")
             print_success(f"Backup complete: {len(records)} file(s)")
-        except BackupError as e:
+        except (BackupError, BackupIndexError) as e:
             print_error(str(e))
             raise typer.Exit(1)
         except Exception as e:
@@ -468,9 +468,22 @@ def backup_check_recent(
     cutoff = datetime.now() - timedelta(days=limit)
     stale = 0
     for device in config.enabled_devices():
-        latest = next(
-            (r for r in svc.list_backups(device.id) if r.backup_type == BackupType.CONFIG), None
-        )
+        try:
+            records = svc.list_backups(device.id)
+        except BackupIndexError as e:
+            # Same alert kind as a missing backup (event 1003): the check
+            # cannot confirm a recent backup, and backups of this device stop.
+            stale += 1
+            print_error(str(e))
+            svc.notifications.alert(
+                AlertKind.NO_RECENT_BACKUP,
+                f"pfSentinel - Backup index of {device.id} cannot be read",
+                f"Device: {device.id}\nThe backup index cannot be read ({e.reason}), so the "
+                f"last backup is unknown and new backups of this device stop.\n"
+                f"File: {e.path}\nRebuild it: pfs backup reindex -d {device.id}",
+            )
+            continue
+        latest = next((r for r in records if r.backup_type == BackupType.CONFIG), None)
         if latest is not None and latest.created_at >= cutoff:
             print_success(f"{device.id}: last backup {latest.created_at:%Y-%m-%d %H:%M}")
             continue
@@ -814,6 +827,9 @@ def backup_snapshot(
     except ZfsError as e:
         print_error(f"ZFS snapshot failed: {e}")
         raise typer.Exit(1)
+    except BackupIndexError as e:
+        print_error(str(e))
+        raise typer.Exit(1)
     except Exception as e:
         print_error(f"Unexpected error: {e}")
         raise typer.Exit(1)
@@ -903,6 +919,64 @@ def backup_archive(
     except ArchiveBackupError as e:
         print_error(f"Archive backup failed: {e}")
         raise typer.Exit(1)
+    except BackupIndexError as e:
+        print_error(str(e))
+        raise typer.Exit(1)
     except Exception as e:
         print_error(f"Unexpected error: {e}")
+        raise typer.Exit(1)
+
+
+@app.command("reindex")
+def backup_reindex(
+    device: str | None = typer.Option(None, "--device", "-d", help="Device ID (default: all)"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Only show what would change"),
+) -> None:
+    """Rebuild the backup index from the backup files on disk (recovery).
+
+    Keeps every record of a readable index and adds the files it is missing.
+    An unreadable index is moved aside as backup_index.json.broken-<time>,
+    never deleted. Backup files are only read, never changed or deleted.
+    """
+    from pfsentinel.services.reindex import ReindexError, reindex_device
+    from pfsentinel.services.retention import RetentionService
+
+    config = AppConfig.load()
+    if device and not config.get_device(device):
+        print_error(f"Device '{device}' not found. Run: pfs device list")
+        raise typer.Exit(1)
+    retention = RetentionService(config.backup_policy.resolved_root, config.backup_policy)
+    failed = False
+    for device_id in [device] if device else [d.id for d in config.devices]:
+        try:
+            result = reindex_device(retention, device_id, dry_run=dry_run)
+        except ReindexError as e:
+            print_error(f"{device_id}: {e}")
+            failed = True
+            continue
+        except OSError as e:
+            print_error(f"{device_id}: reindex failed, nothing changed: {e}")
+            failed = True
+            continue
+
+        if result.broken_reason:
+            print_warning(f"{device_id}: the backup index cannot be read ({result.broken_reason})")
+            moved = "Would move" if dry_run else "Moved"
+            print_info(f"  {moved} it aside to: {result.moved_to}")
+        for record in result.added:
+            print_info(f"  {'Would add' if dry_run else 'Added'}: {record.relative_path}")
+        for rel in result.skipped_unsafe:
+            print_warning(f"  Skipped (a link or outside the device folder): {rel}")
+        for rel in result.unreadable:
+            print_error(f"{device_id}: could not read {rel}")
+            failed = True
+        counts = f"{len(result.added)} to add, {result.kept} kept"
+        next_run = f"next run #{result.last_run_number + 1:03d}"
+        if dry_run:
+            print_info(f"{device_id}: {counts}, {next_run}. Dry run: nothing changed.")
+        elif result.saved:
+            print_success(f"{device_id}: {len(result.added)} added, {result.kept} kept, {next_run}")
+        else:
+            print_success(f"{device_id}: nothing to add, the index is up to date")
+    if failed:
         raise typer.Exit(1)

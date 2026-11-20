@@ -2,17 +2,25 @@
 
 from __future__ import annotations
 
+import contextlib
+import errno
 import json
+import os
+import shutil
+import sys
+import tempfile
 from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from pfsentinel.models.backup import BackupIndex, BackupRecord, BackupRun
+from pfsentinel.models.backup import BackupIndex, BackupIndexError, BackupRecord, BackupRun
 from pfsentinel.models.config import BackupPolicy
 from pfsentinel.utils.logging import get_logger
 from pfsentinel.utils.permissions import restrict_to_owner
 
 logger = get_logger(__name__)
+
+INDEX_FILE = "backup_index.json"
 
 
 class RetentionService:
@@ -22,25 +30,60 @@ class RetentionService:
         self._backup_root = backup_root
         self._policy = policy
 
-    def _index_path(self, device_id: str) -> Path:
-        return self._backup_root / device_id / "backup_index.json"
+    def device_dir(self, device_id: str) -> Path:
+        return self._backup_root / device_id
+
+    def index_path(self, device_id: str) -> Path:
+        return self.device_dir(device_id) / INDEX_FILE
 
     def load_index(self, device_id: str) -> BackupIndex:
-        path = self._index_path(device_id)
-        if not path.exists():
-            return BackupIndex(device_id=device_id)
+        """The device's index. Empty only when backup_index.json does not exist.
+
+        Any other problem raises BackupIndexError. An empty index here used
+        to be saved over the real one by the next run, and the old records
+        were lost. Path.exists() is not used: it also returns False when
+        the file exists but cannot be read.
+        """
+        path = self.index_path(device_id)
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            data = BackupIndex.migrate(data)
-            return BackupIndex.model_validate(data)
-        except Exception as e:
-            logger.warning(f"Could not load backup index for {device_id}: {e}")
+            raw = path.read_bytes()
+        except FileNotFoundError:
             return BackupIndex(device_id=device_id)
+        except OSError as e:
+            raise BackupIndexError(device_id, path, e.strerror or type(e).__name__) from e
+        try:
+            data = json.loads(raw.decode("utf-8"))
+            if not isinstance(data, dict):
+                raise TypeError(_NOT_AN_OBJECT)
+            return BackupIndex.model_validate(BackupIndex.migrate(data))
+        except (ValueError, TypeError, AttributeError, KeyError) as e:
+            raise BackupIndexError(device_id, path, _index_error_reason(e)) from e
 
     def save_index(self, index: BackupIndex) -> None:
-        path = self._index_path(index.device_id)
+        """Write the index atomically and keep the previous file as .bak.
+
+        The new content goes to a temp file in the same folder, is flushed
+        to disk, and then replaces the index in one step. A crash or a full
+        disk leaves the old index in place, never a half-written one.
+        """
+        path = self.index_path(index.device_id)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(index.model_dump_json(indent=2), encoding="utf-8")
+        content = index.model_dump_json(indent=2)
+        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{INDEX_FILE}.", suffix=".tmp")
+        try:
+            if sys.platform != "win32":
+                os.fchmod(fd, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(content)
+                f.flush()
+                os.fsync(f.fileno())
+            _keep_previous(path)
+            os.replace(tmp, path)
+        except BaseException:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp)
+            raise
+        _sync_folder(path.parent)
 
     def apply(self, device_id: str) -> list[BackupRecord]:
         """Apply retention policy per backup type. Returns list of deleted records."""
@@ -145,6 +188,8 @@ class RetentionService:
         hands its number to the next run.
         """
         index = self.load_index(device_id)
+        if not index.records:
+            index = self._rebuild_if_files_exist(device_id, index)
         index.last_run_number += 1
         self.save_index(index)
         # Windows: the device folder holds the backups; owner-only like Linux.
@@ -152,6 +197,35 @@ class RetentionService:
         return BackupRun(
             device_id=device_id, number=index.last_run_number, started_at=datetime.now()
         )
+
+    def _rebuild_if_files_exist(self, device_id: str, index: BackupIndex) -> BackupIndex:
+        """An empty index next to backup files: rebuild it before the run saves.
+
+        Field case (2026-11-20): backup_index.json was deleted by hand with
+        old backups, the next run started again at #001 and the newer
+        backups vanished from the list. Reindex only adds records and never
+        touches backup files, so running it here is safe.
+        """
+        from pfsentinel.services.reindex import reindex_device  # avoids an import cycle
+
+        result = reindex_device(self, device_id, strict=True)
+        if result.unreadable:
+            # Saving now would start the run numbers again over files that
+            # exist but cannot be read. Stop; the run alerts as failed.
+            raise BackupIndexError(
+                device_id,
+                self.index_path(device_id),
+                f"the index is missing and {len(result.unreadable)} backup file(s) or "
+                f"folder(s) next to it cannot be read, for example {result.unreadable[0]}",
+            )
+        if not result.added:
+            return index
+        logger.warning(
+            f"The backup index of {device_id} was missing or empty; rebuilt it from "
+            f"{len(result.added)} backup file(s) on disk. Run numbers continue after "
+            f"#{result.last_run_number}."
+        )
+        return self.load_index(device_id)
 
     def next_sequence(self, device_id: str) -> int:
         """Get the next sequence number for today's backups."""
@@ -161,6 +235,66 @@ class RetentionService:
             1 for r in index.records if r.created_at.date() == today and r.device_id == device_id
         )
         return today_count + 1
+
+
+_NOT_AN_OBJECT = "not a JSON object"
+
+
+def _index_error_reason(error: Exception) -> str:
+    """A short reason that never echoes the file content."""
+    if isinstance(error, json.JSONDecodeError):
+        return f"not valid JSON at line {error.lineno}"
+    if isinstance(error, UnicodeDecodeError):
+        return "not UTF-8 text"
+    errors = getattr(error, "errors", None)
+    if callable(errors):  # pydantic ValidationError
+        first = errors()[0] if errors() else {}
+        where = ".".join(str(part) for part in first.get("loc", ())) or "file"
+        # A custom validator's message quotes the value; keep it out.
+        msg = "invalid value" if first.get("type") == "value_error" else first.get("msg")
+        return f"{msg or 'invalid'} at {where}"
+    if str(error) == _NOT_AN_OBJECT:
+        return _NOT_AN_OBJECT
+    return f"unexpected structure ({type(error).__name__})"
+
+
+def _sync_folder(folder: Path) -> None:
+    """Flush the folder entry after os.replace, so the swap survives a crash (POSIX).
+
+    Windows has no folder fsync; NTFS logs the rename itself. A file system
+    that cannot sync a folder (EINVAL, ENOTSUP) is skipped; other errors raise.
+    """
+    if sys.platform == "win32":
+        return
+    fd = os.open(folder, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    except OSError as e:
+        if e.errno not in (errno.EINVAL, errno.ENOTSUP, errno.EBADF):
+            raise
+    finally:
+        os.close(fd)
+
+
+def _keep_previous(path: Path) -> None:
+    """Copy the current index to backup_index.json.bak, itself replaced atomically.
+
+    A failed copy only logs a warning: the .bak is a spare, and the new
+    index must still be saved.
+    """
+    spare = path.with_name(path.name + ".bak")
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{spare.name}.", suffix=".tmp")
+    os.close(fd)
+    try:
+        shutil.copyfile(path, tmp)
+        os.replace(tmp, spare)
+    except FileNotFoundError:
+        pass  # first save: nothing to keep
+    except OSError as e:
+        logger.warning(f"Could not keep the previous backup index as {spare.name}: {e}")
+    finally:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
 
 
 def prune_empty_dirs(folder: Path, stop: Path) -> None:

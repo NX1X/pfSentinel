@@ -111,9 +111,10 @@ class BackupService:
             raise BackupError(f"Device '{device_id}' is disabled")
 
         retention = self._retention()
-        index = retention.load_index(device_id)
 
         try:
+            index = retention.load_index(device_id)
+
             # --- Connect and download ---
             _p("Connecting to pfSense...", 10)
             cm = self._connection_manager(device)

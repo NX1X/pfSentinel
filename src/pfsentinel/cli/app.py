@@ -290,13 +290,14 @@ def _utf8_when_redirected() -> None:
 
 def main_entry() -> None:
     """Entry point for the CLI."""
+    from pfsentinel.models.backup import BackupIndexError
     from pfsentinel.models.config import ConfigError
 
     _utf8_when_redirected()
     _configure_logging_from_config()
     try:
         app()
-    except ConfigError as e:
+    except (ConfigError, BackupIndexError) as e:
         # One clear line instead of a traceback; nothing was written.
         from pfsentinel.cli.formatters import print_error
 

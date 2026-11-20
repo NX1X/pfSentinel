@@ -143,6 +143,37 @@ pfs backup info FILENAME
 
 Shows metadata: timestamp, checksum, size, change categories, and verification status.
 
+### Rebuild the Backup Index
+
+Each device folder has a `backup_index.json`. It lists the backups and the last run number. If pfSentinel cannot read this file, every command that needs it stops with one error line, for example:
+
+```
+✗ Error: Backup index of device 'home-fw' cannot be read: ...\home-fw\backup_index.json (not valid JSON at line 12). pfSentinel did not change it. ...
+```
+
+pfSentinel never replaces an unreadable index with an empty one. Backups of that device stop until you fix it. `pfs backup check-recent` also sends an alert.
+
+To rebuild the index from the backup files on disk:
+
+1. Run `pfs backup reindex -d home-fw --dry-run` to see what would change. Nothing is written.
+2. Run `pfs backup reindex -d home-fw`.
+3. Run `pfs backup list -d home-fw` to check the result.
+
+Without `-d`, the command does every configured device.
+
+What `reindex` does:
+
+- A readable index keeps all its records. Files that are on disk but not in the index are added.
+- An unreadable index is moved aside to `backup_index.json.broken-<YYYYMMDD-HHMMSS>`. It is never deleted.
+- The SHA-256 checksum and size of each added file are computed again.
+- The last run number is set to at least the highest run number found, so the next run gets a new number.
+- Backup files are only read. They are never changed, moved or deleted.
+- It does not follow links, and it skips any path outside the device folder.
+
+Added records have the status `?` (not verified) and the description "Recovered by pfs backup reindex". For a config backup, the connection method is "unknown". Run `pfs backup verify FILE` to check a file.
+
+Each save of the index also keeps the previous version as `backup_index.json.bak`, in the same folder. The index is written to a temp file first and then replaces the old one in one step, so a crash cannot leave a half-written index.
+
 ---
 
 ## 2. Device Management
@@ -404,7 +435,7 @@ Writes every alert to the Application log with source `pfSentinel` (Linux: syslo
 | 1000 | Information | Backup OK (only with `notify_on_success`) |
 | 1001 | Error | Backup failed |
 | 1002 | Warning | Risky change |
-| 1003 | Error | No recent backup |
+| 1003 | Error | No recent backup, or the backup index cannot be read |
 | 1004 | Error | Restore check failed |
 | 1005 | Error | Second copy failed |
 | 1006 | Information | A new pfSentinel release is out (once per release; `notifications.update_alerts`) |
@@ -428,7 +459,7 @@ Alerts name the setting, user or rule only; never a password hash, key or other 
 
 **Restore check.** After each config backup, pfSentinel checks that config.xml parses and has users, an admin user, interfaces and a firewall filter section, and counts the CAs and certificates. A failed check is an alert; the backup is still kept. Run it on any backup with `pfs backup check [FILE]`.
 
-<a id="no-recent-backup"></a>**No recent backup.** `pfs backup check-recent` alerts when a device has had no successful backup for `notifications.stale_after_days` days (default 3). A PC that is off, or a schedule that stopped running, gives no error on its own; this check catches it. `pfs schedule enable` runs it at sign-in and daily.
+<a id="no-recent-backup"></a>**No recent backup.** `pfs backup check-recent` alerts when a device has had no successful backup for `notifications.stale_after_days` days (default 3). A PC that is off, or a schedule that stopped running, gives no error on its own; this check catches it. `pfs schedule enable` runs it at sign-in and daily. If the backup index of a device cannot be read, the check sends the same alert kind (event 1003) with the title "Backup index of DEVICE cannot be read". See [Rebuild the Backup Index](#rebuild-the-backup-index).
 
 ### Check Status
 
@@ -460,6 +491,7 @@ Since 0.3.0, each backup run has one folder. The config and every extra of that 
 ~/Documents/pfSentinel/
 └── home-fw/
     ├── backup_index.json
+    ├── backup_index.json.bak                    # the previous version
     ├── zfs_snapshots.json
     └── 2026/11/20/
         ├── 020000_#141/                         # run 141
@@ -558,6 +590,15 @@ Multiple categories are joined with `+` in the filename. All categories are stor
 **Windows: scheduled task fails with `0x80070002`.** The task points at a pfs executable that is no longer there (moved, uninstalled, or registered by an older pfSentinel version). Re-run `pfs schedule enable` from an Administrator PowerShell to re-register it against the current executable, then check `pfs schedule status`.
 
 
+### Backup index cannot be read
+
+The error names the device, the file and a short reason. pfSentinel did not change the file. Common reasons:
+
+- "Permission denied": another program holds the file, or its permissions changed. On Windows, check that no sync tool or virus scanner locks the backup folder.
+- "not valid JSON": the file is damaged, for example after a disk error.
+
+If the file has a permission problem, fix the permission and run the command again. If the file is damaged, run `pfs backup reindex -d DEVICE`. See [Rebuild the Backup Index](#rebuild-the-backup-index).
+
 ### SSH connection refused
 
 Verify SSH is enabled on pfSense: **System > Advanced > Admin Access > Enable Secure Shell**.
@@ -630,6 +671,7 @@ Logs are written to `~/.pfsentinel/logs/pfsentinel.log`.
 | `backup archive -d ID` | Filesystem tar archive |
 | `backup check [FILE]` | Restore check of a config backup (default: the latest) |
 | `backup check-recent` | Alert when a device has no recent backup |
+| `backup reindex [-d ID] [--dry-run]` | Rebuild the backup index from the files on disk |
 | `backup decrypt FILE` | Decrypt one `.enc` file (`--recovery-key`, `--passphrase`) |
 
 ### `pfs device`

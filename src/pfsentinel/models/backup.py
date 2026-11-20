@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from enum import StrEnum
+from pathlib import Path
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -126,6 +127,24 @@ class BackupRun(BaseModel):
 
     def relative_path(self, filename: str) -> str:
         return f"{self.folder}/{filename}"
+
+
+class BackupIndexError(Exception):
+    """A device's backup_index.json exists but cannot be read or used.
+
+    The message names the device, the file and a short reason, never the
+    file content.
+    """
+
+    def __init__(self, device_id: str, path: Path, reason: str) -> None:
+        self.device_id = device_id
+        self.path = path
+        self.reason = reason
+        super().__init__(
+            f"Backup index of device '{device_id}' cannot be read: {path} ({reason}). "
+            f"pfSentinel did not change it. Fix the file, or rebuild it from the "
+            f"backup files: pfs backup reindex -d {device_id}"
+        )
 
 
 class BackupIndex(BaseModel):

@@ -12,7 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 
-from pfsentinel.models.backup import BackupRecord, BackupType
+from pfsentinel.models.backup import BackupIndexError, BackupRecord, BackupType
 from pfsentinel.models.config import AppConfig, NotificationConfig
 from pfsentinel.services import alert_history
 from pfsentinel.services.alert_history import AlertEntry
@@ -33,6 +33,12 @@ class DeviceSummary:
     stored: int
     recent: int
     problems: list[AlertEntry] = field(default_factory=list)
+    # Set when backup_index.json cannot be read; then no backups are counted.
+    index_error: str | None = None
+
+    @property
+    def problem_count(self) -> int:
+        return len(self.problems) + (1 if self.index_error else 0)
 
 
 @dataclass(frozen=True)
@@ -82,7 +88,20 @@ def summarize_devices(
     since = now - WINDOW
     summaries: list[DeviceSummary] = []
     for device_id in device_ids:
-        records = list_backups(device_id)
+        try:
+            records = list_backups(device_id)
+        except BackupIndexError as e:
+            summaries.append(
+                DeviceSummary(
+                    device_id=device_id,
+                    last_backup=None,
+                    stored=0,
+                    recent=0,
+                    problems=[a for a in alerts if a.device == device_id],
+                    index_error=e.reason,
+                )
+            )
+            continue
         configs = [r for r in records if r.backup_type == BackupType.CONFIG]
         summaries.append(
             DeviceSummary(
@@ -110,19 +129,24 @@ def _alert_line(entry: AlertEntry) -> str:
 def render_digest(
     summaries: list[DeviceSummary], other_alerts: list[AlertEntry], now: datetime
 ) -> Digest:
-    problem_count = sum(len(s.problems) for s in summaries)
+    problem_count = sum(s.problem_count for s in summaries)
     lines = [f"Daily summary at {now:%Y-%m-%d %H:%M}, covering the last 24 hours."]
     if not summaries:
         lines += ["", "No enabled devices."]
     for s in summaries:
-        status = f"{len(s.problems)} problem(s)" if s.problems else "OK"
+        status = f"{s.problem_count} problem(s)" if s.problem_count else "OK"
         last = f"{s.last_backup:%Y-%m-%d %H:%M}" if s.last_backup else "never"
-        lines += [
-            "",
-            f"{s.device_id}: {status}",
-            f"  Last successful config backup: {last}",
-            f"  Backups stored: {s.stored} ({s.recent} in the last 24 hours)",
-        ]
+        lines += ["", f"{s.device_id}: {status}"]
+        if s.index_error:
+            lines += [
+                f"  Backup index cannot be read ({s.index_error}).",
+                f"  Rebuild it: pfs backup reindex -d {s.device_id}",
+            ]
+        else:
+            lines += [
+                f"  Last successful config backup: {last}",
+                f"  Backups stored: {s.stored} ({s.recent} in the last 24 hours)",
+            ]
         if s.problems:
             lines.append("  Problems in the last 24 hours:")
             lines += [_alert_line(a) for a in s.problems]
