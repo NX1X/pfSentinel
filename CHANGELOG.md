@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `pfs backup verify` now saves its result in the backup index. Before, a passed check did not change the `?` status in `pfs backup list`, so files added by `pfs backup reindex` kept `?` forever. A failed check now sets `?`.
 
+### Changed
+
+- The pfs and pfs.exe binaries no longer bundle setuptools. Nothing used it at run time, but its start hook loaded it on every start. The binary is about 1 MB smaller and starts slightly faster (about 7% in a Linux test).
+
 ### Added
 
 - `pfs backup verify` without a filename checks every backup with status `?`. Add `-d DEVICE` for one device.
