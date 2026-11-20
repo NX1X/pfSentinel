@@ -13,6 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Email alerts through any SMTP server:** STARTTLS (587), implicit TLS (465), or no encryption for a local server such as Mailpit. The login is optional, and the password is kept in the OS keystore, never in config.json; a login over an unencrypted connection is refused. TLS certificates are checked by default (`--skip-tls-verify` for lab servers only). Set up with `pfs notify email setup`
+- **Daily digest:** one message a day for every enabled device, with the last successful backup, the number of backups and the problems of the last 24 hours. While it is on, successful backups send no message of their own; failures and risky changes are still sent at once. `pfs notify digest enable --time 08:00`. New event ID 1007
+- **Linux desktop notifications** through `notify-send`, on by default like the Windows toast; nothing is shown without a desktop session. `pfs notify desktop enable|disable|status`
+- **`age` encryption mode:** `pfs encryption setup --mode age` writes backups as standard age v1 files (X25519), encrypted to pfSentinel's own age identity (kept in the OS keystore, shown once) and to your own `age1...` keys (`--recipient`, repeatable). The `age` tool opens them without pfSentinel. Built with `cryptography` only and tested against the 68 applicable C2SP CCTV age test vectors; checked by hand against the `age` 1.3.2 tool. `pfs backup decrypt --identity` and `--identity-file` open them on another PC
+- **Second copy to S3-compatible storage** (`kind: s3`, EXPERIMENTAL): AWS S3, Backblaze B2, Linode/Akamai, Cloudflare R2, Wasabi, DigitalOcean Spaces, Hetzner, Scaleway, MinIO and Google Cloud Storage (XML API, HMAC keys). Signature Version 4 without an SDK, checked against AWS's published test values; the secret key stays in the credential store
+- **Second copy to Azure Blob Storage** (`kind: azure`, EXPERIMENTAL), with a container SAS token (recommended) or the account key
+- **Second copy to a WebDAV folder** (`kind: webdav`, EXPERIMENTAL), for example Nextcloud, ownCloud or Synology: each file is uploaded under a temporary name and then renamed; https only unless you allow http for a LAN server. Only encrypted files are copied, for every target. Guide: `docs/second-copy.md`
+- **Container image (EXPERIMENTAL):** a `Dockerfile` (Python 3.13 slim, pinned by digest, hash-verified dependencies, non-root UID 10001, read-only root filesystem), a Kubernetes CronJob and a Compose example in `deploy/`, and `docs/docker.md`. Not published to a registry yet. A CI workflow builds and smoke-tests the image
+
 ### Fixed
 
 From the 0.3.0 field test (2026-11-20, Windows 11, PowerShell 7):
