@@ -513,6 +513,22 @@ jobs:
             ./release_files/*
 
   # ---------------------------------------------------------------------------
+  # 8b. Publish the container image (EXPERIMENTAL) to ghcr.io, with attestation
+  # ---------------------------------------------------------------------------
+  publish-image:
+    name: Publish container image
+    needs: [resolve-version, release]
+    if: needs.resolve-version.outputs.should_release == 'true'
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/docker-publish.yml
+    with:
+      tag: ${{ needs.resolve-version.outputs.tag }}
+
+  # ---------------------------------------------------------------------------
   # 9. Publish to TestPyPI (trusted publishing / OIDC)
   # ---------------------------------------------------------------------------
   publish-testpypi:

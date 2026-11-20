@@ -1,8 +1,8 @@
 # pfSentinel in a container
 
 > **EXPERIMENTAL.** This image is new and has not been field-tested against a
-> real pfSense. The image is not published to any registry yet. You build it
-> yourself from the repository. Do not rely on it as your only backup path.
+> real pfSense. The maintainer does not test it often; feedback decides its
+> future. Do not rely on it as your only backup path.
 > Report problems at https://github.com/NX1X/pfSentinel/issues.
 
 ## What you get
@@ -17,7 +17,25 @@
   read-only root filesystem and with all Linux capabilities dropped.
 - The entrypoint is `pfs`. The default command is `--help`.
 
-## Build
+## Get the image
+
+### Option A: pull the published image
+
+Each release from 1.0.0-rc.1 on is published to the GitHub Container
+Registry as `ghcr.io/nx1x/pfsentinel:<version>`. It is not on Docker Hub.
+
+- One tag covers `linux/amd64` and `linux/arm64`. Each one is built and
+  smoke-tested on a native GitHub runner.
+- There is no `latest` tag. Pin a version and its digest.
+- Each image has a signed build attestation, made by the release pipeline.
+
+1. Read the digest of the version you want:
+   `docker buildx imagetools inspect ghcr.io/nx1x/pfsentinel:<version>`.
+2. Check the attestation (needs the GitHub CLI):
+   `gh attestation verify oci://ghcr.io/nx1x/pfsentinel:<version> --repo NX1X/pfSentinel`.
+3. Use `ghcr.io/nx1x/pfsentinel:<version>@sha256:<digest>` everywhere.
+
+### Option B: build it yourself
 
 ```
 docker build -t pfsentinel:local .
@@ -126,10 +144,9 @@ the encrypted store on the config PVC.
 
 Steps:
 
-1. Build the image and push it to a registry you control.
+1. Pick the published image, or build one and push it to a registry you control.
 2. Copy the digest: `docker buildx imagetools inspect <image>:<tag>`.
-3. Put the image and digest in both YAML files, in place of
-   `REPLACE_WITH_REAL_DIGEST`.
+3. Check that both YAML files use that image and digest.
 4. Apply `cronjob.yaml`, then follow the steps in `setup-pod.yaml`.
 5. Test once: `kubectl create job --from=cronjob/pfsentinel-backup test-run`.
 
@@ -149,8 +166,9 @@ A systemd timer works the same way.
 
 ## Limits of this experimental image
 
-- Only `linux/amd64` was built and tested.
-- No registry publishing, no signed image, no attestation yet.
+- The release pipeline smoke-tests `linux/amd64` and `linux/arm64` (the
+  version and the config path, as a non-root user with a read-only root
+  filesystem). No backup against a real pfSense was run in the container.
 - Do not use `pfs update` in the container. It was not tested there. Update
   by building or pulling a new image.
 - Desktop notifications (Linux) were not tested and probably have no desktop

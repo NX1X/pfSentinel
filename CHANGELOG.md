@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The experimental container image is published to the GitHub Container Registry as `ghcr.io/nx1x/pfsentinel:<version>`, for `linux/amd64` and `linux/arm64`, with a signed build attestation. There is no `latest` tag: pin a version and its digest. It is not on Docker Hub. See [docs/docker.md](docs/docker.md).
+
+### Changed
+
+- The Docker build stage installs only the wheel builder (hatchling and its four dependencies) from the dev lockfile, with hashes checked, not the whole dev toolchain.
+
 ## [1.0.0-rc.1] - 2026-11-20
 
 The release candidate for 1.0: everything planned for 0.4.0, 0.5.0 and 0.6.0 in one pre-release. It is published as a GitHub pre-release, so `pfs update install` keeps users on 0.3.0 unless they ask for it. 1.0.0 follows after it runs 14 days in a row without a failed backup.
