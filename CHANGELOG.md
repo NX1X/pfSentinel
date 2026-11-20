@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+From the 0.3.0 field test (2026-11-20, Windows 11, PowerShell 7):
+
+- The progress bar no longer runs into one long line: Rich's `print()` removed the carriage return that brings the bar back to the line start. The bar is now written straight to the terminal, and not drawn at all when the output is not a terminal
+- The `pkg` target on a non-root user gives one info line again. pfSense's bsdtar adds two harmless lines and quotes the file name with a backtick, so the 0.3.0 check fell back to a raw warning
+- "logs need root" is shown once, not twice
+
 ### Security
 
 - **`pfs update install` checks the signed build attestation** before it installs a binary: the SLSA provenance that the release workflow signs through Sigstore must name the downloaded file's SHA-256, chain to the pinned Sigstore CA, name this repository's `ci.yml` on main as the signer, and carry a valid transparency-log promise. Done with `cryptography`, no new dependency. A failed check installs nothing
@@ -31,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Count-drop alert** (a risky change, event 1002): firewall rules, port forwards, users, certificates, CAs or interfaces fell by 20% or more (and at least two), or to zero, since the previous config
+- **Update-available alert** (event 1006, Information): the daily check task tells you once per new release. Turn it off with `notifications.update_alerts`
 - `pfs update check --pre` and `pfs update install --pre` include pre-releases (release candidates)
 
 ### Documentation

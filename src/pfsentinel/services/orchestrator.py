@@ -91,9 +91,10 @@ class BackupOrchestrator:
                 logger.info(f"Extra backup '{target}' complete: {record.filename}")
             except NeedsRootError as e:
                 # Expected with a non-root backup user: one clear line, no ERROR.
-                logger.info(str(e))
                 if on_warning:
                     on_warning(str(e))
+                else:
+                    logger.info(str(e))
             except Exception as e:
                 msg = f"Extra backup '{target}' failed: {e}"
                 logger.error(f"{msg} (device: {device_id})")

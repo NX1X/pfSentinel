@@ -124,6 +124,19 @@ class TestNonRootUser:
         line = "tar: usr/local/etc/sasldb2.db: Couldn't open file: Permission denied"
         assert connection._denied_name(line) == "usr/local/etc/sasldb2.db"
 
+    def test_pfsense_bsdtar_output_is_one_info_line(self, caplog) -> None:
+        """Seen on pfSense 2.8.1 in the 0.3.0 field test (2026-11-20)."""
+        caplog.set_level(logging.INFO, logger="pfsentinel")
+        connection._log_partial_read(
+            1,
+            "tar: Removing leading '/' from member names\n"
+            "tar: Can't open `sasldb2.db': Permission denied\n"
+            "tar: Error exit delayed from previous errors.\n",
+        )
+        records = [r for r in caplog.records if r.name.startswith("pfsentinel")]
+        assert [r.levelno for r in records] == [logging.INFO]
+        assert records[0].getMessage().endswith("(root only): sasldb2.db")
+
     def test_other_tar_errors_stay_warnings(self, caplog) -> None:
         caplog.set_level(logging.INFO, logger="pfsentinel")
         connection._log_partial_read(1, "tar: file changed as we read it\n")
@@ -133,6 +146,23 @@ class TestNonRootUser:
 
 
 class TestProgressLine:
+    @pytest.fixture(autouse=True)
+    def _terminal(self, monkeypatch):
+        from pfsentinel.cli import formatters
+
+        monkeypatch.setattr(formatters, "_progress_enabled", lambda: True)
+        monkeypatch.setattr(formatters, "_progress_line_open", False)
+
+    def test_the_bar_returns_to_the_line_start(self, capsys) -> None:
+        """Rich's print() strips "\\r"; the bar must keep it (0.3.0 field test)."""
+        from pfsentinel.cli import formatters
+
+        formatters.print_progress("Connecting to pfSense...", 10)
+        formatters.print_progress("Connecting via SSH...", 10)
+        out = capsys.readouterr().out
+        assert out.count("\r") == 2
+        assert "\n" not in out
+
     def test_a_log_line_never_starts_inside_the_progress_bar(self, capsys) -> None:
         import io
 
@@ -155,6 +185,13 @@ class TestProgressLine:
         formatters.print_success("done")
         out = capsys.readouterr().out
         assert "downloaded\n" in out
+
+    def test_no_bar_in_a_log_file(self, capsys, monkeypatch) -> None:
+        from pfsentinel.cli import formatters
+
+        monkeypatch.setattr(formatters, "_progress_enabled", lambda: False)
+        formatters.print_progress("Saving backup...", 65)
+        assert capsys.readouterr().out == ""
 
 
 @pytest.mark.parametrize(

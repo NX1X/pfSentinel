@@ -121,6 +121,13 @@ class UpdateService:
 
     # ── State persistence ──────────────────────────────────────────────
 
+    @property
+    def state(self) -> dict:
+        return self._state
+
+    def save_state(self) -> None:
+        self._save_state()
+
     def _load_state(self) -> dict:
         try:
             state: dict = json.loads(self._state_path.read_text(encoding="utf-8"))

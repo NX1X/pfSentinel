@@ -22,6 +22,7 @@ def test_event_ids_are_fixed() -> None:
         "NO_RECENT_BACKUP": 1003,
         "RESTORE_CHECK_FAILED": 1004,
         "SECOND_COPY_FAILED": 1005,
+        "UPDATE_AVAILABLE": 1006,
     }
     assert AlertKind.BACKUP_OK.entry_type == "Information"
     assert AlertKind.RISKY_CHANGE.entry_type == "Warning"

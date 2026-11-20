@@ -182,6 +182,8 @@ class NotificationConfig(BaseModel):
     notify_on_failure: bool = True
     # Alert when a device has had no successful backup for this many days.
     stale_after_days: int = Field(default=3, ge=1, le=365)
+    # Alert once when a new pfSentinel release is out (checked by the daily task).
+    update_alerts: bool = True
 
 
 class SyslogConfig(BaseModel):

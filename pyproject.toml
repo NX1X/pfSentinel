@@ -128,6 +128,8 @@ pythonpath = ["src"]
 markers = [
     "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
     "e2e: marks tests as end-to-end (real local SSH server; deselect with '-m \"not e2e\"')",
+    "release_check: runs the real update-available check (otherwise stubbed)",
+    "real_attestation: runs the real attestation check in updater tests (otherwise stubbed)",
 ]
 addopts = "--strict-markers"
 filterwarnings = [

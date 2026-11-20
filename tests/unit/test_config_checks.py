@@ -165,3 +165,29 @@ class TestRestoreCheck:
             )
         )
         assert result.ok and "no CA" in result.summary
+
+
+class TestCountDrops:
+    def _with_rules(self, n: int) -> str:
+        rules = "".join(
+            f"<rule><tracker>{i}</tracker><type>pass</type><interface>lan</interface></rule>"
+            for i in range(n)
+        )
+        return BASE.replace("<filter>", f"<filter>{rules}", 1)
+
+    def test_a_sharp_drop_in_rules_alerts(self) -> None:
+        found = detect_risky_changes(self._with_rules(10), self._with_rules(2))
+        assert [c.summary for c in found if c.kind == "count-drop"] == [
+            "Firewall rules dropped from 11 to 3 (-8)"
+        ]
+
+    def test_a_small_edit_does_not_alert(self) -> None:
+        found = detect_risky_changes(self._with_rules(10), self._with_rules(9))
+        assert [c for c in found if c.kind == "count-drop"] == []
+
+    def test_dropping_to_zero_always_alerts(self) -> None:
+        no_ca = BASE.replace(
+            "<ca><refid>ca1</refid><descr>Home CA</descr><prv>PRIVATE-KEY-DATA</prv></ca>", ""
+        )
+        found = detect_risky_changes(BASE, no_ca)
+        assert "CAs dropped from 1 to 0 (-1)" in [c.summary for c in found]

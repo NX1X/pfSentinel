@@ -435,6 +435,12 @@ class SSHConnector:
         self.disconnect()
 
 
+_BENIGN_TAR_LINES = (
+    "Removing leading '/' from member names",
+    "Error exit delayed from previous errors",
+)
+
+
 def _log_partial_read(exit_code: int, stderr_text: str) -> None:
     """Report a non-fatal remote tar exit.
 
@@ -443,6 +449,8 @@ def _log_partial_read(exit_code: int, stderr_text: str) -> None:
     instead of a raw warning.
     """
     lines = [ln.strip() for ln in stderr_text.splitlines() if ln.strip()]
+    # bsdtar on pfSense adds these lines around the real ones; they are not problems.
+    lines = [ln for ln in lines if not any(b in ln for b in _BENIGN_TAR_LINES)]
     denied = [ln for ln in lines if "Permission denied" in ln]
     if denied and len(denied) == len(lines):
         names = [_denied_name(ln) for ln in denied]
@@ -462,7 +470,8 @@ def _denied_name(line: str) -> str:
     "tar: usr/local/etc/sasldb2.db: Couldn't open file: Permission denied"
     -> "usr/local/etc/sasldb2.db"
     """
-    match = re.search(r"'([^']+)':\s*Permission denied", line)
+    # Quoted as 'name' (GNU tar) or `name' (bsdtar on pfSense 2.8.1).
+    match = re.search(r"[`']([^`']+)':\s*Permission denied", line)
     if match:
         return match.group(1)
     head = line.split(": Permission denied")[0].removeprefix("tar: ")

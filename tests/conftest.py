@@ -149,3 +149,10 @@ def mock_ssh_client() -> MagicMock:
     stderr.read.return_value = b""
     client.exec_command.return_value = (MagicMock(), stdout, stderr)
     return client
+
+
+@pytest.fixture(autouse=True)
+def _no_release_check(request, monkeypatch):
+    """`backup check-recent` asks GitHub for a new release; never in tests."""
+    if "release_check" not in request.keywords:
+        monkeypatch.setattr("pfsentinel.cli.commands.backup._alert_new_release", lambda svc: None)

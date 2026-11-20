@@ -482,8 +482,35 @@ def backup_check_recent(
             f"Device: {device.id}\nLast successful backup: {when}\n"
             f"Limit: {limit} day(s). Check that the PC was on and run: pfs schedule status",
         )
+    if config.notifications.update_alerts:
+        _alert_new_release(svc)
     if stale:
         raise typer.Exit(1)
+
+
+def _alert_new_release(svc: BackupService) -> None:
+    """Alert once per new release. Any error here is ignored: it is a courtesy."""
+    from pfsentinel.services.notifications import AlertKind
+    from pfsentinel.services.updater import UpdateService
+
+    try:
+        updater = UpdateService()
+        result = updater.check(force=True)
+        if result is None or updater.state.get("alerted_version") == result["latest"]:
+            return
+        print_info(f"Update available: v{result['latest']} (current: v{result['current']})")
+        svc.notifications.alert(
+            AlertKind.UPDATE_AVAILABLE,
+            f"pfSentinel - Update available: v{result['latest']}",
+            f"Installed: v{result['current']}\nRelease notes: {result['release_url']}\n"
+            "Update with: pfs update install",
+        )
+        updater.state["alerted_version"] = result["latest"]
+        updater.save_state()
+    except Exception as e:  # no network, rate limit, ...
+        from pfsentinel.utils.logging import get_logger
+
+        get_logger(__name__).debug(f"Update check skipped: {e}")
 
 
 @app.command("decrypt")

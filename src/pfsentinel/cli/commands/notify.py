@@ -358,7 +358,8 @@ def eventlog_enable() -> None:
     target = "Windows Event Log (Application, source pfSentinel)" if is_windows() else "syslog"
     print_success(f"Alerts are written to the {target}")
     print_info("Event IDs: 1000 backup OK, 1001 backup failed, 1002 risky change,")
-    print_info("           1003 no recent backup, 1004 restore check failed, 1005 copy failed")
+    print_info("           1003 no recent backup, 1004 restore check failed, 1005 copy failed,")
+    print_info("           1006 update available")
 
 
 @eventlog_app.command("disable")

@@ -21,7 +21,8 @@ ADMIN_PRIV = "page-all"
 
 @dataclass(frozen=True)
 class RiskyChange:
-    kind: str  # admin, auth-server, wan-rule, port-forward, ssh-password, anti-lockout, webgui
+    kind: str  # admin, auth-server, wan-rule, port-forward, ssh-password, anti-lockout, webgui,
+    # count-drop
     summary: str
 
 
@@ -125,6 +126,44 @@ def _ssh_password_allowed(root: Any) -> bool:
     return _text(root, "system/ssh/sshdkeyonly") not in ("enabled", "both")
 
 
+# What a count-drop alert watches. A drop of DROP_RATIO or more (and at least
+# DROP_MIN items) is unusual for a normal edit and typical for a bad restore,
+# a broken package or a hostile change.
+_COUNTED = {
+    "firewall rules": "filter/rule",
+    "port forwards": "nat/rule",
+    "users": "system/user",
+    "certificates": "cert",
+    "CAs": "ca",
+}
+DROP_RATIO = 0.2
+DROP_MIN = 2
+
+
+def _counts(root: Any) -> dict[str, int]:
+    counts = {label: len(root.findall(path)) for label, path in _COUNTED.items()}
+    interfaces = root.find("interfaces")
+    counts["interfaces"] = 0 if interfaces is None else len(interfaces)
+    return counts
+
+
+def count_drops(old_root: Any, new_root: Any) -> list[RiskyChange]:
+    """Sharp drops in rules, users, certificates or interfaces since the previous config."""
+    before, after = _counts(old_root), _counts(new_root)
+    out = []
+    for label, was in before.items():
+        now = after[label]
+        lost = was - now
+        if was and (now == 0 or (lost >= DROP_MIN and lost / was >= DROP_RATIO)):
+            out.append(
+                RiskyChange(
+                    "count-drop",
+                    f"{label[0].upper()}{label[1:]} dropped from {was} to {now} (-{lost})",
+                )
+            )
+    return out
+
+
 def detect_risky_changes(old_xml: str, new_xml: str) -> list[RiskyChange]:
     """Security-relevant differences from the previous config, one per change."""
     old = xml_parser.validate_xml(old_xml)
@@ -185,6 +224,7 @@ def detect_risky_changes(old_xml: str, new_xml: str) -> list[RiskyChange]:
                 else ""
             )
             changes.append(RiskyChange("webgui", f"Web GUI {label} changed{detail}"))
+    changes.extend(count_drops(old, new))
     return changes
 
 

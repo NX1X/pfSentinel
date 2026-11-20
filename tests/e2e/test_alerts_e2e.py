@@ -119,3 +119,20 @@ def test_check_recent_alerts_only_when_backups_are_missing(
     stale = cli_runner.invoke(app, ["backup", "check-recent"])
     assert stale.exit_code == 1
     assert [k for k, _, _ in alerts] == [AlertKind.NO_RECENT_BACKUP]
+
+
+@pytest.mark.release_check
+def test_update_available_alerts_once_per_release(
+    cli_runner: CliRunner, seeded_config: AppConfig, alerts, tmp_path, monkeypatch
+) -> None:
+    from pfsentinel.services import updater
+
+    monkeypatch.setattr(updater, "app_config_dir", lambda: tmp_path / "state")
+    newer = {"current": "0.3.0", "latest": "9.9.9", "release_url": "https://x", "tag": "v9.9.9"}
+    monkeypatch.setattr(updater.UpdateService, "check", lambda self, force=False: newer)
+    assert cli_runner.invoke(app, RUN).exit_code == 0
+    alerts.clear()
+
+    for _ in range(2):
+        cli_runner.invoke(app, ["backup", "check-recent"])
+    assert [k for k, _, _ in alerts] == [AlertKind.UPDATE_AVAILABLE], "once, not every day"
