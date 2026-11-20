@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import shlex
 from collections.abc import Callable
-from datetime import datetime
 
-from pfsentinel.models.backup import BackupRecord, BackupType
+from pfsentinel.models.backup import BackupRecord, BackupRun, BackupType
 from pfsentinel.models.config import AppConfig
 from pfsentinel.services.connection import SSHConnector
 from pfsentinel.services.credentials import CredentialService
+from pfsentinel.services.retention import RetentionService
 from pfsentinel.utils import checksum, naming
 from pfsentinel.utils.logging import get_logger
 
@@ -44,6 +44,7 @@ class ArchiveBackupService:
         device_id: str,
         directories: list[str] | None = None,
         progress: ProgressCallback | None = None,
+        run: BackupRun | None = None,
     ) -> BackupRecord:
         """Create tar archive on remote device and stream to local storage.
 
@@ -57,15 +58,19 @@ class ArchiveBackupService:
         if not dirs:
             raise ArchiveBackupError("No directories configured for archive backup")
 
-        timestamp = datetime.now()
+        if run is None:
+            run = RetentionService(self._backup_root, self._config.backup_policy).start_run(
+                device.id
+            )
+        timestamp = run.started_at
         filename = naming.generate_backup_filename(
             device_id=device.id,
             backup_type="archive",
             compressed=True,
             timestamp=timestamp,
-            sequence=1,
+            sequence=run.number,
         )
-        rel_path = naming.generate_typed_relative_path("archive", filename, timestamp)
+        rel_path = run.relative_path(filename)
         dest = self._backup_root / device.id / rel_path
 
         # Build tar command with exclude patterns (shell-escaped)
@@ -106,6 +111,7 @@ class ArchiveBackupService:
             backup_type=BackupType.FS_ARCHIVE,
             source_paths=dirs,
             compressed=True,
-            sequence=1,
+            sequence=run.number,
             verified=True,
+            run_number=run.number,
         )

@@ -74,6 +74,9 @@ class BackupRecord(BaseModel):
     zfs_snapshot_name: str | None = None
     zfs_incremental: bool = False
     zfs_base_snapshot: str | None = None
+    # The run this file belongs to (0.3.0 and later). All files of one run
+    # share a folder: <device>/YYYY/MM/DD/<HHMMSS>_#NNN/.
+    run_number: int | None = None
 
     @property
     def size_human(self) -> str:
@@ -98,11 +101,34 @@ class BackupRecord(BaseModel):
         return self.backup_type.value
 
 
+class BackupRun(BaseModel):
+    """One backup run of a device. Every file of the run shares one folder.
+
+    The number counts the device's runs and never resets, so "run #142"
+    names one run on its own.
+    """
+
+    device_id: str
+    number: int
+    started_at: datetime
+
+    @property
+    def folder(self) -> str:
+        """Relative folder of this run, e.g. '2026/11/20/085016_#142'."""
+        t = self.started_at
+        return f"{t.year}/{t.month:02d}/{t.day:02d}/{t:%H%M%S}_#{self.number:03d}"
+
+    def relative_path(self, filename: str) -> str:
+        return f"{self.folder}/{filename}"
+
+
 class BackupIndex(BaseModel):
     """Root of the backup_index.json per device."""
 
     device_id: str
-    schema_version: int = 2
+    schema_version: int = 3
+    # Highest run number handed out so far; see BackupRun.
+    last_run_number: int = 0
     records: list[BackupRecord] = Field(default_factory=list)
 
     @classmethod
@@ -116,6 +142,16 @@ class BackupIndex(BaseModel):
                 if "source_paths" not in record:
                     record["source_paths"] = []
             data["schema_version"] = 2
+        if version < 3:
+            # Before 0.3.0 the sequence restarted every day, and the files of
+            # one run shared its date and sequence. Count those runs, so new
+            # run numbers continue after them. Old files keep their paths.
+            runs = {
+                (str(r.get("created_at", ""))[:10], r.get("sequence", 1))
+                for r in data.get("records", [])
+            }
+            data["last_run_number"] = max(int(data.get("last_run_number", 0)), len(runs))
+            data["schema_version"] = 3
         return data
 
     def add(self, record: BackupRecord) -> None:

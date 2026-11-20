@@ -132,7 +132,7 @@ class ExtraBackupService:
                 timestamp=timestamp,
                 sequence=sequence,
             )
-            rel_path = naming.generate_typed_relative_path("pkg", filename, timestamp)
+            rel_path = naming.run_relative_path(filename, timestamp, sequence)
             dest = self._backup_root / device.id / rel_path
             dest.parent.mkdir(parents=True, exist_ok=True)
 
@@ -163,6 +163,7 @@ class ExtraBackupService:
                 compressed=True,
                 sequence=sequence,
                 verified=True,
+                run_number=sequence,
             )
 
     def backup_dhcp_leases(
@@ -185,7 +186,7 @@ class ExtraBackupService:
                 timestamp=timestamp,
                 sequence=sequence,
             )
-            rel_path = naming.generate_typed_relative_path("dhcp", filename, timestamp)
+            rel_path = naming.run_relative_path(filename, timestamp, sequence)
             dest = self._backup_root / device.id / rel_path
             dest.parent.mkdir(parents=True, exist_ok=True)
 
@@ -218,6 +219,7 @@ class ExtraBackupService:
                 compressed=self._config.backup_policy.compress,
                 sequence=sequence,
                 verified=True,
+                run_number=sequence,
             )
 
     def backup_aliases(
@@ -367,7 +369,7 @@ class ExtraBackupService:
             timestamp=timestamp,
             sequence=sequence,
         )
-        rel_path = naming.generate_typed_relative_path(backup_type.value, filename, timestamp)
+        rel_path = naming.run_relative_path(filename, timestamp, sequence)
         dest = self._backup_root / device.id / rel_path
         dest.parent.mkdir(parents=True, exist_ok=True)
 
@@ -391,4 +393,5 @@ class ExtraBackupService:
             compressed=compress,
             sequence=sequence,
             verified=True,
+            run_number=sequence,
         )

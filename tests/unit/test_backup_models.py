@@ -118,7 +118,7 @@ class TestBackupIndexMigration:
             ],
         }
         migrated = BackupIndex.migrate(v1_data)
-        assert migrated["schema_version"] == 2
+        assert migrated["schema_version"] == 3
         assert migrated["records"][0]["backup_type"] == "config"
         assert migrated["records"][0]["source_paths"] == []
 
@@ -203,7 +203,7 @@ class TestBackupIndexMigration:
         data = json.loads(v1_json)
         data = BackupIndex.migrate(data)
         index = BackupIndex.model_validate(data)
-        assert index.schema_version == 2
+        assert index.schema_version == 3
         assert index.records[0].backup_type == BackupType.CONFIG
         assert index.records[0].changes == [ChangeCategory.INITIAL]
 

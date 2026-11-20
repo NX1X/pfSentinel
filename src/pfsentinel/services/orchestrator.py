@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime
 
-from pfsentinel.models.backup import BackupRecord
+from pfsentinel.models.backup import BackupRecord, BackupRun
 from pfsentinel.models.config import AppConfig
 from pfsentinel.services.backup import BackupService
 from pfsentinel.services.credentials import CredentialService
@@ -52,8 +51,10 @@ class BackupOrchestrator:
 
             raise BackupError(f"Device '{device_id}' not found in config")
 
-        timestamp = datetime.now()
-        sequence = self._retention.next_sequence(device_id)
+        # One run: the config and every extra share its folder and number.
+        run = self._retention.start_run(device_id)
+        timestamp = run.started_at
+        sequence = run.number
 
         # 1. Config backup (always, unless area/no_packages are specific)
         config_record = self._backup_svc.run_backup(
@@ -62,6 +63,7 @@ class BackupOrchestrator:
             progress=progress,
             area=area,
             no_packages=no_packages,
+            run=run,
         )
         records.append(config_record)
 
@@ -101,7 +103,7 @@ class BackupOrchestrator:
         # 4. ZFS snapshot (if enabled)
         if self._config.backup_policy.zfs.enabled:
             try:
-                zfs_record = self._run_zfs_snapshot(device_id, timestamp, sequence, progress)
+                zfs_record = self._run_zfs_snapshot(device_id, run, progress)
                 if zfs_record:
                     records.append(zfs_record)
             except Exception as e:
@@ -109,14 +111,14 @@ class BackupOrchestrator:
                 # Fall back to archive if configured
                 if self._config.backup_policy.archive.enabled:
                     try:
-                        archive_record = self._run_archive(device_id, timestamp, sequence, progress)
+                        archive_record = self._run_archive(device_id, run, progress)
                         if archive_record:
                             records.append(archive_record)
                     except Exception as e2:
                         logger.error(f"Archive fallback also failed for {device_id}: {e2}")
         elif self._config.backup_policy.archive.enabled:
             try:
-                archive_record = self._run_archive(device_id, timestamp, sequence, progress)
+                archive_record = self._run_archive(device_id, run, progress)
                 if archive_record:
                     records.append(archive_record)
             except Exception as e:
@@ -177,15 +179,14 @@ class BackupOrchestrator:
     def _run_zfs_snapshot(
         self,
         device_id: str,
-        timestamp: datetime,
-        sequence: int,
+        run: BackupRun,
         progress: ProgressCallback | None = None,
     ) -> BackupRecord | None:
         """Run a ZFS snapshot backup."""
         from pfsentinel.services.zfs_backup import ZfsBackupService
 
         zfs_svc = ZfsBackupService(self._config, self._creds)
-        record = zfs_svc.run_snapshot_backup(device_id, progress=progress)
+        record = zfs_svc.run_snapshot_backup(device_id, progress=progress, run=run)
 
         # Add to backup index
         index = self._retention.load_index(device_id)
@@ -196,15 +197,14 @@ class BackupOrchestrator:
     def _run_archive(
         self,
         device_id: str,
-        timestamp: datetime,
-        sequence: int,
+        run: BackupRun,
         progress: ProgressCallback | None = None,
     ) -> BackupRecord | None:
         """Run a filesystem archive backup."""
         from pfsentinel.services.archive_backup import ArchiveBackupService
 
         archive_svc = ArchiveBackupService(self._config, self._creds)
-        record = archive_svc.run_archive_backup(device_id, progress=progress)
+        record = archive_svc.run_archive_backup(device_id, progress=progress, run=run)
 
         # Add to backup index
         index = self._retention.load_index(device_id)

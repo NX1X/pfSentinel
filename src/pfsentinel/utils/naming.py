@@ -12,7 +12,7 @@ _FILENAME_RE = re.compile(
     r"^(?P<device_id>[a-z0-9\-]+)_"
     r"(?P<date>\d{4}-\d{2}-\d{2})_"
     r"(?P<time>\d{6})_"
-    r"#(?P<seq>\d{3})_"
+    r"#(?P<seq>\d{3,})_"
     r"(?P<changes>[a-z+]+)"
     r"\.xml(?P<gz>\.gz)?$"
 )
@@ -102,6 +102,20 @@ def generate_typed_relative_path(
     """
     ts = timestamp or datetime.now()
     return f"{backup_type}/{ts.year}/{ts.month:02d}/{ts.day:02d}/{filename}"
+
+
+def run_relative_path(filename: str, timestamp: datetime, run_number: int) -> str:
+    """Path of a file in its run folder (0.3.0 layout).
+
+    Example: 2026/11/20/085016_#142/fw_2026-11-20_085016_#142_rrd.tar.gz
+    The config and every extra of one run share that folder. Earlier
+    versions used generate_relative_path / generate_typed_relative_path;
+    their files keep those paths.
+    """
+    from pfsentinel.models.backup import BackupRun
+
+    run = BackupRun(device_id="", number=run_number, started_at=timestamp)
+    return run.relative_path(filename)
 
 
 def parse_filename(filename: str) -> dict | None:

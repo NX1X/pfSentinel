@@ -7,7 +7,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from pfsentinel.models.backup import BackupIndex, BackupRecord
+from pfsentinel.models.backup import BackupIndex, BackupRecord, BackupRun
 from pfsentinel.models.config import BackupPolicy
 from pfsentinel.utils.logging import get_logger
 
@@ -102,7 +102,21 @@ class RetentionService:
         else:
             logger.warning(f"Backup file not found during cleanup: {path}")
 
+        prune_empty_dirs(path.parent, self._backup_root / device_id)
         index.remove(record.id)
+
+    def start_run(self, device_id: str) -> BackupRun:
+        """Reserve the next run number for the device and return the run.
+
+        The number is saved at once, so a run that fails half-way never
+        hands its number to the next run.
+        """
+        index = self.load_index(device_id)
+        index.last_run_number += 1
+        self.save_index(index)
+        return BackupRun(
+            device_id=device_id, number=index.last_run_number, started_at=datetime.now()
+        )
 
     def next_sequence(self, device_id: str) -> int:
         """Get the next sequence number for today's backups."""
@@ -112,3 +126,22 @@ class RetentionService:
             1 for r in index.records if r.created_at.date() == today and r.device_id == device_id
         )
         return today_count + 1
+
+
+def prune_empty_dirs(folder: Path, stop: Path) -> None:
+    """Remove ``folder`` and its parents while empty, up to (not including) ``stop``.
+
+    Each run has its own folder, so deleting a run's last file would
+    otherwise leave empty run, day and month folders behind.
+    """
+    try:
+        folder.resolve().relative_to(stop.resolve())
+    except (ValueError, OSError):
+        return
+    current = folder
+    while current != stop and current.is_dir() and not current.is_symlink():
+        try:
+            current.rmdir()  # only succeeds when empty
+        except OSError:
+            return
+        current = current.parent
