@@ -36,6 +36,7 @@ From the 0.3.0 field test (2026-11-20, Windows 11, PowerShell 7):
 
 ### Changed
 
+- CI builds the PyInstaller binary on Linux and Windows for every PR that touches the code, and runs it against a fake SSH server (`scripts/binary_smoke.py`: host key pinning, encryption, two runs, second copy, verify, restore check, decrypt). The release jobs run the same test before they upload a binary, and both systems now use one build definition (`scripts/build_exe.py`)
 - mypy finds no errors, and CI now runs it in the required lint job, so a type error blocks a merge
 
 ### Added

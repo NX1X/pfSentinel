@@ -38,7 +38,7 @@ def main() -> None:
     exe = DIST / f"{EXE_NAME}.exe" if sys.platform == "win32" else DIST / EXE_NAME
     if exe.exists():
         size_mb = exe.stat().st_size / (1024 * 1024)
-        print(f"\nBuild successful!")
+        print("\nBuild successful!")
         print(f"  Output: {exe}")
         print(f"  Size: {size_mb:.1f} MB")
 
@@ -57,9 +57,7 @@ def write_spec() -> None:
     src_path = str(ROOT / "src").replace("\\", "/")
     icon_file = ROOT / "assets" / "pfsentinel.ico"
     icon_line = (
-        f"    icon='{str(icon_file).replace(chr(92), '/')}',\n"
-        if icon_file.exists()
-        else ""
+        f"    icon='{str(icon_file).replace(chr(92), '/')}',\n" if icon_file.exists() else ""
     )
     spec_content = f"""# -*- mode: python ; coding: utf-8 -*-
 block_cipher = None

@@ -330,38 +330,14 @@ jobs:
             src/pfsentinel/__init__.py
 
       - name: Build Linux binary
-        run: |
-          pyinstaller \
-            --onefile \
-            --console \
-            --name pfs \
-            --hidden-import paramiko \
-            --hidden-import paramiko.transport \
-            --hidden-import paramiko.sftp_client \
-            --hidden-import paramiko.sftp_handle \
-            --hidden-import paramiko.server \
-            --hidden-import paramiko.auth_handler \
-            --hidden-import cryptography.hazmat.backends \
-            --hidden-import cryptography.hazmat.backends.openssl \
-            --hidden-import keyring.backends.fail \
-            --hidden-import rich \
-            --hidden-import pydantic \
-            --hidden-import lxml \
-            --hidden-import lxml.etree \
-            --hidden-import lxml._elementpath \
-            --hidden-import pfsentinel.cli.commands.backup \
-            --hidden-import pfsentinel.cli.commands.config \
-            --hidden-import pfsentinel.cli.commands.device \
-            --hidden-import pfsentinel.cli.commands.update \
-            --exclude-module tkinter \
-            --exclude-module customtkinter \
-            src/pfsentinel/__main__.py
+        # Same build definition as Windows (scripts/build_exe.py writes the spec).
+        run: python scripts/build_exe.py
 
       - name: Make binary executable
         run: chmod +x dist/pfs
 
-      - name: Smoke test
-        run: dist/pfs --version
+      - name: Smoke test (the frozen binary against a fake SSH server)
+        run: python scripts/binary_smoke.py
 
       - name: Upload Linux binary
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
@@ -408,6 +384,10 @@ jobs:
       - name: Build Windows .exe
         shell: bash
         run: python scripts/build_exe.py
+
+      - name: Smoke test (the frozen binary against a fake SSH server)
+        shell: bash
+        run: python scripts/binary_smoke.py
 
       - name: Smoke test
         shell: bash
