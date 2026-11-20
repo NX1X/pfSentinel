@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- `CODE_OF_CONDUCT.md`: the Contributor Covenant 2.1. Reports go through the contact form at nx1xlab.dev/contact
+
 ## [0.3.0] - 2026-11-20
 
 Encryption at rest, one folder per backup run, alerts (risky changes, restore check, no recent backup, Windows Event Log), long-term retention and a second copy. Most items come from the homelab field test of 2026-11-20.
