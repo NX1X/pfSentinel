@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import io
 import os
+import posixpath
 import socket
 import threading
 from dataclasses import dataclass, field
@@ -95,8 +96,10 @@ def _make_dir_sftp_interface(root: Path):
 
     class _DirSFTP(paramiko.SFTPServerInterface):
         def _real(self, path: str) -> str:
-            rel = os.path.normpath("/" + path).lstrip("/")
-            return str(root / rel)
+            # SFTP paths are POSIX on every OS; os.path would use "\\" on Windows
+            # and turn the result into a path at the drive root.
+            rel = posixpath.normpath("/" + path).lstrip("/")
+            return str(root.joinpath(*rel.split("/"))) if rel else str(root)
 
         def list_folder(self, path: str):
             real = self._real(path)
