@@ -19,6 +19,7 @@ import smtplib
 import ssl
 from email.message import EmailMessage
 from email.utils import formatdate, make_msgid
+from pathlib import Path
 
 from pfsentinel.models.config import NotificationConfig
 from pfsentinel.utils.logging import get_logger, redact_secrets
@@ -54,14 +55,15 @@ def parse_addresses(text: str) -> list[str]:
     return [validate_address(p) for p in parts]
 
 
-def tls_context(skip_verify: bool) -> ssl.SSLContext:
-    context = ssl.create_default_context()
-    if skip_verify:
-        # Opt-in only (email_skip_tls_verify), for a lab server whose
-        # certificate is self-signed. The connection is still encrypted.
-        context.check_hostname = False
-        context.verify_mode = ssl.CERT_NONE
-    return context
+def tls_context(ca_cert: str | None) -> ssl.SSLContext:
+    """A verifying TLS context; ``ca_cert`` adds a private CA (lab) as a trust anchor.
+
+    Certificate and host name checks are never turned off: a lab server with
+    its own CA is trusted by naming that CA's certificate file instead.
+    """
+    if ca_cert and not Path(ca_cert).expanduser().is_file():
+        raise EmailError(f"CA certificate file not found: {ca_cert}")
+    return ssl.create_default_context(cafile=str(Path(ca_cert).expanduser()) if ca_cert else None)
 
 
 def build_message(config: NotificationConfig, subject: str, body: str) -> EmailMessage:
@@ -155,8 +157,8 @@ def send_email(config: NotificationConfig, password: str | None, subject: str, b
     except ssl.SSLCertVerificationError as e:
         raise EmailError(
             f"TLS certificate check failed for {where}: {e.verify_message}. "
-            "Only for a lab server with a self-signed certificate, run: "
-            "pfs notify email setup --skip-tls-verify"
+            "For a lab server with its own CA, give that CA's certificate file: "
+            "pfs notify email setup --ca-cert FILE"
         ) from None
     except ssl.SSLError as e:
         raise EmailError(
@@ -172,7 +174,7 @@ def send_email(config: NotificationConfig, password: str | None, subject: str, b
 
 def _deliver(config: NotificationConfig, password: str | None, message: EmailMessage) -> None:
     host = config.email_host or ""
-    context = tls_context(config.email_skip_tls_verify)
+    context = tls_context(config.email_ca_cert)
     server: smtplib.SMTP
     if config.email_security == "tls":
         server = smtplib.SMTP_SSL(

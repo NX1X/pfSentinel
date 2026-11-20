@@ -6,6 +6,7 @@ is the only faked edge (see ``unresolvable``); SSH is real.
 
 from __future__ import annotations
 
+import secrets
 import socket
 from pathlib import Path
 
@@ -217,14 +218,15 @@ def test_add_with_an_encrypted_key_stores_its_passphrase(
     cli_runner: CliRunner, empty_config: AppConfig, ssh_server: FakeSSHServer, tmp_path: Path
 ) -> None:
     key_file = tmp_path / "id_ecdsa_enc"
-    paramiko.ECDSAKey.generate().write_private_key_file(str(key_file), password="kp-123")
+    passphrase = secrets.token_hex(8)  # a throwaway key passphrase for this test
+    paramiko.ECDSAKey.generate().write_private_key_file(str(key_file), password=passphrase)
     args = _ssh_add_args(ssh_server, "key-fw")
     # key path, password (skip), passphrase, trust key (no), test (no)
-    result = cli_runner.invoke(app, args, input=f"{key_file}\n\nkp-123\nn\nn\n")
+    result = cli_runner.invoke(app, args, input=f"{key_file}\n\n{passphrase}\nn\nn\n")
 
     assert result.exit_code == 0, _out(result)
     assert "the key is encrypted" in _out(result)
-    assert CredentialService().get_ssh_key_passphrase("key-fw") == "kp-123"
+    assert CredentialService().get_ssh_key_passphrase("key-fw") == passphrase
 
 
 def test_add_with_a_missing_key_file_warns_but_continues(

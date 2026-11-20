@@ -126,7 +126,10 @@ class TestStartTLS:
     def test_login_and_send_after_starttls(self, smtp) -> None:
         server = _start(smtp, starttls=True, login=(USER, PASSWORD))
         config = _config(
-            server, email_security="starttls", email_username=USER, email_skip_tls_verify=True
+            server,
+            email_security="starttls",
+            email_username=USER,
+            email_ca_cert=str(server.cert_path),
         )
         send_email(config, PASSWORD, "Subject", "Body")
 
@@ -140,7 +143,7 @@ class TestStartTLS:
         config = _config(server, email_security="starttls", email_username=USER)
         with pytest.raises(EmailError, match="certificate check failed") as e:
             send_email(config, PASSWORD, "Subject", "Body")
-        assert "--skip-tls-verify" in str(e.value)
+        assert "--ca-cert" in str(e.value)
         assert server.logins == [], "no login before the certificate is trusted"
         assert server.messages == []
 
@@ -166,7 +169,10 @@ class TestStartTLS:
         # The server quotes the AUTH line and the password back in its reply.
         server = _start(smtp, starttls=True, login=(USER, "other"), echo_auth=True)
         config = _config(
-            server, email_security="starttls", email_username=USER, email_skip_tls_verify=True
+            server,
+            email_security="starttls",
+            email_username=USER,
+            email_ca_cert=str(server.cert_path),
         )
         with pytest.raises(EmailError, match="Login refused") as e:
             send_email(config, PASSWORD, "Subject", "Body")
@@ -188,7 +194,10 @@ class TestStartTLS:
         creds = CredentialService()
         creds.store_secret(SMTP_KEYSTORE_NAME, PASSWORD)
         config = _config(
-            server, email_security="starttls", email_username=USER, email_skip_tls_verify=True
+            server,
+            email_security="starttls",
+            email_username=USER,
+            email_ca_cert=str(server.cert_path),
         )
         assert USER in config.model_dump_json()
         assert PASSWORD not in config.model_dump_json()
@@ -208,7 +217,7 @@ class TestImplicitTLS:
     def test_send_over_implicit_tls(self, smtp) -> None:
         server = _start(smtp, implicit_tls=True, login=(USER, PASSWORD))
         config = _config(
-            server, email_security="tls", email_username=USER, email_skip_tls_verify=True
+            server, email_security="tls", email_username=USER, email_ca_cert=str(server.cert_path)
         )
         send_email(config, PASSWORD, "Subject", "Body")
         assert server.logins == [(USER, PASSWORD)]

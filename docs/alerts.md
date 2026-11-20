@@ -76,16 +76,17 @@ messages and logs never show it.
 
 ### Certificates
 
-pfSentinel checks the server's TLS certificate against the system trust
-store. For a lab server with a self-signed certificate, you can turn the
-check off:
+pfSentinel always checks the server's TLS certificate and host name. For a
+lab server whose certificate comes from your own CA (or is self-signed),
+give that CA's certificate file. pfSentinel then trusts it in addition to
+the system trust store:
 
 ```
-pfs notify email setup --host mail.lab.local --skip-tls-verify ...
+pfs notify email setup --host mail.lab.local --ca-cert lab-ca.pem ...
 ```
 
-The connection is still encrypted, but pfSentinel cannot tell if it talks
-to the right server. Do not use this option for a real mail provider.
+For a self-signed server certificate, the certificate itself is the CA
+file. Its name must match the host you give with `--host`.
 
 ### Other email commands
 
@@ -97,7 +98,7 @@ to the right server. Do not use this option for a real mail provider.
 
 Options of `pfs notify email setup`: `--host`, `--port`, `--security`,
 `--username`, `--no-login`, `--from`, `--to` (separate addresses with
-commas), `--timeout` (seconds, default 20), `--skip-tls-verify`, and
+commas), `--timeout` (seconds, default 20), `--ca-cert FILE` (your lab CA's certificate), and
 `--no-test`. Anything you leave out is asked for.
 
 ## Daily digest
@@ -187,7 +188,7 @@ without changes.
 | `email_from`            | `null`       | From address                               |
 | `email_to`              | `[]`         | To addresses                               |
 | `email_timeout`         | `20`         | Seconds, 1 to 300                          |
-| `email_skip_tls_verify` | `false`      | Skip the certificate check (lab only)      |
+| `email_ca_cert`         | `null`       | PEM file of a CA to trust (lab CA); certificates are always checked |
 | `digest_enabled`        | `false`      | Send the daily digest                      |
 | `digest_time`           | `"08:00"`    | Earliest time of day for the digest        |
 | `linux_desktop_enabled` | `true`       | Show alerts with `notify-send` on Linux    |

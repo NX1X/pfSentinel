@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Literal
 
 import typer
@@ -403,10 +404,10 @@ def email_setup(
     sender: str | None = typer.Option(None, "--from", help="From address"),
     recipients: str | None = typer.Option(None, "--to", help="To address(es), separated by commas"),
     timeout: int = typer.Option(20, "--timeout", min=1, max=300, help="Seconds"),
-    skip_tls_verify: bool = typer.Option(
-        False,
-        "--skip-tls-verify",
-        help="Do not check the TLS certificate. Only for a lab server with a self-signed one.",
+    ca_cert: Path | None = typer.Option(
+        None,
+        "--ca-cert",
+        help="PEM file of your CA, for a lab mail server with its own certificate",
     ),
     test: bool = typer.Option(True, "--test/--no-test", help="Send a test email after setup"),
 ) -> None:
@@ -491,7 +492,7 @@ def email_setup(
     n.email_from = from_addr
     n.email_to = to_addrs
     n.email_timeout = timeout
-    n.email_skip_tls_verify = skip_tls_verify and mode != "none"
+    n.email_ca_cert = str(ca_cert.expanduser()) if ca_cert and mode != "none" else None
     n.email_enabled = True
     config.save()
 
@@ -504,8 +505,8 @@ def email_setup(
             print_warning("  The password is kept in memory only and is lost when pfs exits.")
     print_info(f"  From: {from_addr}")
     print_info(f"  To: {', '.join(to_addrs)}")
-    if n.email_skip_tls_verify:
-        print_warning("  The TLS certificate is NOT checked (--skip-tls-verify).")
+    if n.email_ca_cert:
+        print_info(f"  Trusted CA: {n.email_ca_cert}")
 
     if test:
         _email_send_test(config, creds)
@@ -576,7 +577,7 @@ def email_status() -> None:
         stored_label = "[green]stored[/]" if has_password else "[red]missing[/]"
     else:
         stored_label = "[dim]not used[/]"
-    tls = "[yellow]not checked[/]" if n.email_skip_tls_verify else "checked"
+    tls = f"checked (also trusts {n.email_ca_cert})" if n.email_ca_cert else "checked"
     server = f"{n.email_host}:{n.email_port}" if n.email_host else "[red]not set[/]"
 
     console.print()

@@ -94,7 +94,8 @@ def test_email_setup_with_login_keeps_the_password_out_of_config(
             "me@example.com",
             "--to",
             "ops@example.com",
-            "--skip-tls-verify",
+            "--ca-cert",
+            str(provider.cert_path),
         ],
         input=f"{PASSWORD}\n\n",  # password, then accept the default From (the username)
     )
@@ -107,7 +108,7 @@ def test_email_setup_with_login_keeps_the_password_out_of_config(
     assert PASSWORD not in config_text
     assert CredentialService().get_secret(SMTP_KEYSTORE_NAME) == PASSWORD
     n = AppConfig.load().notifications
-    assert n.email_from == "me@example.com" and n.email_skip_tls_verify
+    assert n.email_from == "me@example.com" and n.email_ca_cert == str(provider.cert_path)
 
     status = cli_runner.invoke(app, ["notify", "email", "status"])
     assert "stored" in status.stdout and PASSWORD not in status.stdout

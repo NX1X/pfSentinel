@@ -231,7 +231,9 @@ class NotificationConfig(BaseModel):
     email_to: list[str] = Field(default_factory=list)
     email_timeout: int = Field(default=20, ge=1, le=300)
     # Only for a lab server with a self-signed certificate.
-    email_skip_tls_verify: bool = False
+    # PEM file of a CA to trust for a mail server with a private certificate
+    # (lab CA). Certificates are always checked; this only adds a trust anchor.
+    email_ca_cert: str | None = None
     # One summary a day instead of a message per successful backup. Failures
     # and risky changes are still sent at once. Sent by the daily check task
     # on its first run at or after digest_time (HH:MM, local time).

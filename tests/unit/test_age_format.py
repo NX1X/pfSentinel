@@ -110,7 +110,9 @@ def test_every_recipient_can_decrypt_and_others_cannot() -> None:
 
 def test_each_file_has_a_fresh_file_key_and_nonce() -> None:
     me = af.Identity.generate()
-    assert _encrypt(b"same", me) != _encrypt(b"same", me)
+    first = _encrypt(b"same", me)
+    second = _encrypt(b"same", me)
+    assert first != second, "a fresh file key and nonce every time"
 
 
 _SHARE_BYTE = len(af.VERSION_LINE) + len(b"-> X25519 ") + 2  # inside the ephemeral share
