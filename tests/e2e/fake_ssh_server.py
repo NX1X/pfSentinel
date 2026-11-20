@@ -380,6 +380,11 @@ class _ServerIface(paramiko.ServerInterface):
         response = self._lookup_exec(cmd)
 
         def _run() -> None:
+            # Only send EOF, never close: this thread can run before the
+            # transport has answered the exec request, and a channel closed
+            # at that point makes the client's exec_command fail with
+            # "Channel closed". The client closes the channel when done, and
+            # stop() closes every transport.
             try:
                 if response.stdout:
                     channel.sendall(response.stdout)
@@ -388,7 +393,7 @@ class _ServerIface(paramiko.ServerInterface):
                 channel.send_exit_status(response.exit_code)
             finally:
                 try:
-                    channel.close()
+                    channel.shutdown_write()
                 except Exception:
                     pass
 
