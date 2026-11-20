@@ -8,6 +8,7 @@ from pfsentinel.cli.formatters import console, print_error, print_info, print_su
 from pfsentinel.models.config import AppConfig
 from pfsentinel.services.backup_crypto import MIN_PASSPHRASE, BackupCrypto, BackupCryptoError
 from pfsentinel.services.credentials import CredentialService
+from pfsentinel.utils.stdin import read_secret_line
 
 app = typer.Typer(help="Encrypt backups at rest", no_args_is_help=True)
 
@@ -62,6 +63,11 @@ def encryption_setup(
         "--recipient",
         "-r",
         help="age mode: your own age public key (age1...). Repeatable.",
+    ),
+    passphrase_stdin: bool = typer.Option(
+        False,
+        "--passphrase-stdin",
+        help="passphrase mode: read the passphrase from the first line of stdin (scripts, containers)",
     ),
 ) -> None:
     """Turn on encryption for new backups, or change the key."""
@@ -130,6 +136,11 @@ def encryption_setup(
                 != last
             ):
                 print_warning("That does not match. Check the key you saved.")
+        elif mode == "passphrase" and passphrase_stdin:
+            # Piped input works on every OS; the hidden prompt reads the Windows
+            # console directly and cannot be scripted.
+            crypto.setup_passphrase(read_secret_line())
+            print_warning("Store the passphrase in your password manager too.")
         elif mode == "passphrase":
             while True:
                 passphrase = typer.prompt(

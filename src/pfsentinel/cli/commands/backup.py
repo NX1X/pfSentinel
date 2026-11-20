@@ -567,6 +567,9 @@ def backup_decrypt(
         None, "--identity-file", help="Read age identities from a file, as made by age-keygen"
     ),
     decompress: bool = typer.Option(False, "--decompress", help="Also un-gzip the result"),
+    passphrase_stdin: bool = typer.Option(
+        False, "--passphrase-stdin", help="Read the passphrase from the first line of stdin"
+    ),
 ) -> None:
     """Decrypt one backup file. Works without the backup index, for example on a new PC."""
     from pfsentinel.services import backup_crypto
@@ -578,7 +581,12 @@ def backup_decrypt(
         print_error(f"Not an encrypted backup file (.enc): {file}")
         raise typer.Exit(1)
     key_text = typer.prompt("Recovery key", hide_input=True) if recovery_key else None
-    phrase = typer.prompt("Passphrase", hide_input=True) if passphrase else None
+    if passphrase_stdin:
+        from pfsentinel.utils.stdin import read_secret_line
+
+        phrase: str | None = read_secret_line()
+    else:
+        phrase = typer.prompt("Passphrase", hide_input=True) if passphrase else None
     identities = [typer.prompt("age identity", hide_input=True)] if identity else []
 
     config = AppConfig.load()

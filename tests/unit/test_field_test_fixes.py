@@ -246,3 +246,28 @@ class TestJsonOutput:
         AppConfig().save()
         data = json.loads(CliRunner().invoke(app, ["schedule", "status", "--json"]).stdout)
         assert data["enabled"] is False and "daily_time" in data
+
+
+def test_passphrase_stdin_sets_up_and_decrypts(tmp_path, monkeypatch) -> None:
+    """Scriptable on every OS: Windows hidden prompts ignore piped input."""
+    from typer.testing import CliRunner
+
+    from pfsentinel.cli.app import app
+
+    monkeypatch.setattr(AppConfig, "config_path", staticmethod(lambda: tmp_path / "c.json"))
+    AppConfig().save()
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["encryption", "setup", "--mode", "passphrase", "--passphrase-stdin"],
+        input="correct horse battery staple\n",
+    )
+    assert result.exit_code == 0, result.stdout
+    assert AppConfig.load().backup_policy.encryption.mode == "passphrase"
+
+    short = runner.invoke(
+        app,
+        ["encryption", "setup", "--mode", "passphrase", "--passphrase-stdin"],
+        input="y\nshort\n",
+    )
+    assert short.exit_code != 0

@@ -46,20 +46,29 @@ def main() -> int:
     )
     results: list[tuple[str, bool, str]] = []
 
+    def record(name: str, ok: bool, detail: str = "") -> None:
+        # Print as we go, so a hang in CI shows which step it was.
+        results.append((name, ok, detail))
+        print(f"{'PASS' if ok else 'FAIL'}  {name}  {detail}", flush=True)
+
     def run(name: str, args: list[str], stdin: str = "", expect: str | None = None) -> str:
-        proc = subprocess.run(
-            [str(BIN), *args],
-            input=stdin,
-            capture_output=True,
-            text=True,
-            env=env,
-            timeout=300,
-            encoding="utf-8",
-            errors="replace",
-        )
+        try:
+            proc = subprocess.run(
+                [str(BIN), *args],
+                input=stdin,
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=180,
+                encoding="utf-8",
+                errors="replace",
+            )
+        except subprocess.TimeoutExpired as e:
+            record(name, False, f"timed out after {e.timeout}s (waiting for input?)")
+            return ""
         out = proc.stdout + proc.stderr
         ok = proc.returncode == 0 and (expect is None or expect in out)
-        results.append((name, ok, "" if ok else out[-600:]))
+        record(name, ok, "" if ok else out[-600:])
         return out
 
     server = FakeSSHServer.start(
@@ -105,8 +114,10 @@ def main() -> int:
         run("device test", ["device", "test", "-d", "home-fw"], expect="OK")
         run(
             "encryption setup (passphrase)",
-            ["encryption", "setup", "--mode", "passphrase"],
-            stdin=f"{PASSPHRASE}\n{PASSPHRASE}\n",
+            # --passphrase-stdin: the hidden prompt reads the Windows console
+            # directly and would wait forever for a keyboard in CI.
+            ["encryption", "setup", "--mode", "passphrase", "--passphrase-stdin"],
+            stdin=f"{PASSPHRASE}\n",
             expect="Encryption is on (passphrase)",
         )
         run("copy setup (folder)", ["copy", "setup"], stdin=f"folder\n{share}\n90\n")
@@ -114,8 +125,8 @@ def main() -> int:
             run(f"backup run {n}", ["backup", "run", "-d", "home-fw", "--include", "dhcp"])
         encs = sorted(backups.rglob("*.enc"))
         plain = [p for p in backups.rglob("*") if p.is_file() and p.suffix in {".gz", ".xml"}]
-        results.append(("4 encrypted files, none plain", len(encs) == 4 and not plain, ""))
-        results.append(("second copy has 4 files", len(list(share.rglob("*.enc"))) == 4, ""))
+        record("4 encrypted files, none plain", len(encs) == 4 and not plain)
+        record("second copy has 4 files", len(list(share.rglob("*.enc"))) == 4)
         run("backup list", ["backup", "list"], expect="#2")
         run("backup verify", ["backup", "verify", encs[0].name])
         run("backup check", ["backup", "check"], expect="OK: 2 users")
@@ -125,21 +136,18 @@ def main() -> int:
         restored = home / "restored.xml"
         run(
             "decrypt",
-            ["backup", "decrypt", str(config_file), "--passphrase", "--decompress"]
+            ["backup", "decrypt", str(config_file), "--passphrase-stdin", "--decompress"]
             + ["-o", str(restored)],
             stdin=f"{PASSPHRASE}\n",
             expect="Decrypted to",
         )
         ok = restored.is_file() and "<pfsense>" in restored.read_text(encoding="utf-8")
-        results.append(("decrypted XML", ok, ""))
+        record("decrypted XML", ok)
         run("schedule status", ["schedule", "status"])
         run("notify status", ["notify", "status"])
     finally:
         server.stop()
 
-    width = max(len(n) for n, _, _ in results)
-    for name, ok, detail in results:
-        print(f"{'PASS' if ok else 'FAIL'}  {name.ljust(width)}  {detail}")
     passed = sum(ok for _, ok, _ in results)
     print(f"\n{passed}/{len(results)} passed")
     return 0 if passed == len(results) else 1
