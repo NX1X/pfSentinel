@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import subprocess
 import sys
 import tempfile
@@ -27,7 +28,8 @@ from tests.e2e.fake_ssh_server import FakeSSHServer  # noqa: E402
 from tests.unit.test_config_checks import BASE  # noqa: E402
 
 BIN = ROOT / "dist" / ("pfs.exe" if sys.platform == "win32" else "pfs")
-PASSPHRASE = "correct horse battery"  # noqa: S105 - throwaway test passphrase
+# A new random passphrase on every run: nothing to mistake for a real secret.
+PASSPHRASE = secrets.token_urlsafe(18)
 
 
 def main() -> int:

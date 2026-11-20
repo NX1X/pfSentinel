@@ -222,9 +222,12 @@ class TestPrerelease:
 
 
 def test_install_command_has_pre_option() -> None:
+    import re
+
     from typer.testing import CliRunner
 
     from pfsentinel.cli.app import app
 
     out = CliRunner().invoke(app, ["update", "install", "--help"]).stdout
-    assert "--pre" in out
+    # CI terminals get colored help; the color codes can split "--pre".
+    assert "--pre" in re.sub(r"\x1b\[[0-9;]*m", "", out)
