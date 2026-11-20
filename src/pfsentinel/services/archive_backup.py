@@ -7,6 +7,8 @@ from collections.abc import Callable
 
 from pfsentinel.models.backup import BackupRecord, BackupRun, BackupType
 from pfsentinel.models.config import AppConfig
+from pfsentinel.services import backup_crypto
+from pfsentinel.services.backup_crypto import BackupCrypto
 from pfsentinel.services.connection import SSHConnector
 from pfsentinel.services.credentials import CredentialService
 from pfsentinel.services.retention import RetentionService
@@ -30,6 +32,7 @@ class ArchiveBackupService:
         self._creds = credential_service
         self._backup_root = config.backup_policy.resolved_root
         self._policy = config.backup_policy.archive
+        self._crypto = BackupCrypto(config.backup_policy.encryption, credential_service)
 
     def _get_ssh_connector(self, device_id: str) -> SSHConnector:
         device = self._config.get_device(device_id)
@@ -70,8 +73,7 @@ class ArchiveBackupService:
             timestamp=timestamp,
             sequence=run.number,
         )
-        rel_path = run.relative_path(filename)
-        dest = self._backup_root / device.id / rel_path
+        dest = self._backup_root / device.id / run.relative_path(filename)
 
         # Build tar command with exclude patterns (shell-escaped)
         excludes = " ".join(f"--exclude={shlex.quote(p)}" for p in self._policy.exclude_patterns)
@@ -85,11 +87,12 @@ class ArchiveBackupService:
 
             # tar exits 1 on non-fatal issues (permission denied, missing files);
             # the archive is still valid with all readable files included.
-            bytes_written = connector.stream_command_to_file(
-                cmd, dest, timeout=600, warn_exit_codes={1}
-            )
-            if bytes_written == 0:
-                raise ArchiveBackupError("No archive data received from device")
+            with self._crypto.create(dest) as (sink, dest):
+                bytes_written = connector.stream_command_to_file(
+                    cmd, dest, timeout=600, warn_exit_codes={1}, sink=sink
+                )
+                if bytes_written == 0:
+                    raise ArchiveBackupError("No archive data received from device")
 
         if progress:
             progress("Calculating checksum...", 85)
@@ -99,11 +102,11 @@ class ArchiveBackupService:
         if progress:
             progress("Archive backup complete!", 100)
 
-        logger.info(f"Archive backup complete: {filename} ({bytes_written} bytes)")
+        logger.info(f"Archive backup complete: {dest.name} ({bytes_written} bytes)")
         return BackupRecord(
             device_id=device.id,
-            filename=filename,
-            relative_path=rel_path,
+            filename=dest.name,
+            relative_path=run.relative_path(dest.name),
             created_at=timestamp,
             size_bytes=dest.stat().st_size,
             sha256=file_hash,
@@ -114,4 +117,5 @@ class ArchiveBackupService:
             sequence=run.number,
             verified=True,
             run_number=run.number,
+            encrypted=backup_crypto.is_encrypted(dest),
         )

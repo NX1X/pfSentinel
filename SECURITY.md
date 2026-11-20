@@ -22,7 +22,8 @@ I will do my best to acknowledge your report promptly and work toward a fix. Thi
 
 | Version | Supported |
 |---------|-----------|
-| 0.1.x (current) | Yes |
+| 0.3.x (current) | Yes |
+| 0.2.x and older | No: update with `pfs update install` |
 
 ---
 
@@ -102,6 +103,14 @@ or verify permissions manually:
 ```bash
 chmod 600 ~/.local/share/python_keyring/keyring_pass.cfg
 ```
+
+---
+
+### Backups at Rest
+
+**Behavior (since 0.3.0):** encryption at rest is optional and off by default. With `pfs encryption setup`, every backup file is written as AES-256-GCM `<name>.enc`, with the key in the OS keystore (plus a one-time recovery key) or derived from a passphrase. Without it, backups are plain `.xml.gz` files that hold password hashes and private keys, so protect the folder or the disk.
+
+**Limit:** scheduled backups use the key without a person present, so the key protects a copied or stolen backup folder, not a machine where malware runs as your user. See [docs/encryption.md](docs/encryption.md).
 
 ---
 

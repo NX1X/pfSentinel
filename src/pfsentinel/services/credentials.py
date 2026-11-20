@@ -184,6 +184,18 @@ class CredentialService:
             return result
         return self._memory.get(key)
 
+    def store_secret(self, name: str, value: str) -> None:
+        """Store a named secret (for example a backup encryption key)."""
+        if self._backend_store(name, value):
+            return
+        self._memory[name] = value
+
+    def get_secret(self, name: str) -> str | None:
+        result = self._backend_get(name)
+        if result is not None:
+            return result
+        return self._memory.get(name)
+
     def has_password(self, device_id: str) -> bool:
         return self.get(device_id) is not None
 

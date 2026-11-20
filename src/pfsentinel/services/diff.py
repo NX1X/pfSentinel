@@ -6,6 +6,8 @@ import difflib
 from pathlib import Path
 
 from pfsentinel.models.backup import BackupIndex, BackupRecord, ChangeCategory
+from pfsentinel.services import backup_crypto
+from pfsentinel.services.backup_crypto import BackupCrypto
 from pfsentinel.utils import compression, xml_parser
 from pfsentinel.utils.logging import get_logger
 
@@ -15,8 +17,19 @@ logger = get_logger(__name__)
 class DiffService:
     """Detect changes between the current config and the last backup."""
 
-    def __init__(self, backup_root: Path) -> None:
+    def __init__(self, backup_root: Path, crypto: BackupCrypto | None = None) -> None:
         self._backup_root = backup_root
+        self._crypto = crypto
+
+    def _read_xml(self, path: Path) -> str:
+        if self._crypto is None:
+            if backup_crypto.is_encrypted(path):
+                raise backup_crypto.MissingKeyError("Encrypted backup: no key provider given")
+            return compression.read_xml(path)
+        data = self._crypto.read_bytes(path)
+        if backup_crypto.plain_name(path.name).endswith(".gz"):
+            data = compression.decompress_bytes(data)
+        return data.decode("utf-8")
 
     def _load_last_xml(self, device_id: str, index: BackupIndex) -> str | None:
         """Load XML content from the most recent backup."""
@@ -30,7 +43,7 @@ class DiffService:
             return None
 
         try:
-            return compression.read_xml(path)
+            return self._read_xml(path)
         except Exception as e:
             logger.warning(f"Could not read latest backup for diff: {e}")
             return None
@@ -122,8 +135,8 @@ class DiffService:
             return f"Error: File not found: {path_b}"
 
         try:
-            xml_a = compression.read_xml(path_a)
-            xml_b = compression.read_xml(path_b)
+            xml_a = self._read_xml(path_a)
+            xml_b = self._read_xml(path_b)
         except Exception as e:
             return f"Error reading backup files: {e}"
 

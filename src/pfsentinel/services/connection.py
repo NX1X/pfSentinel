@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import contextlib
 import fnmatch
 import io
 import re
 import warnings
 from collections.abc import Callable
 from pathlib import Path
+from typing import IO
 
 from pfsentinel.models.device import ConnectionMethod, DeviceConfig, DeviceStatus
 from pfsentinel.services.credentials import CredentialService
@@ -262,6 +264,52 @@ class SSHConnector:
         except Exception as e:
             raise ConnectionError(f"Failed to download {remote_path}: {e}") from e
 
+    def read_file(self, remote_path: str) -> bytes:
+        """Read one remote file into memory via SFTP."""
+        if not self._client:
+            self.connect()
+        try:
+            sftp = self._client.open_sftp()  # type: ignore[union-attr]
+            try:
+                buffer = io.BytesIO()
+                sftp.getfo(remote_path, buffer)
+                return buffer.getvalue()
+            finally:
+                sftp.close()
+        except Exception as e:
+            raise ConnectionError(f"Failed to download {remote_path}: {e}") from e
+
+    def read_files(self, remote_paths: list[str]) -> list[tuple[str, bytes]]:
+        """Read several remote files into memory: [(file name, content)].
+
+        Nothing is written to the local disk, so secrets (for example
+        certificate keys) never sit in a temporary file. Missing files are
+        skipped with a warning; files this user may not read are listed in
+        ``permission_denied``.
+        """
+        if not self._client:
+            self.connect()
+
+        files: list[tuple[str, bytes]] = []
+        self.permission_denied = []
+        try:
+            sftp = self._client.open_sftp()  # type: ignore[union-attr]
+            for rpath in remote_paths:
+                buffer = io.BytesIO()
+                try:
+                    sftp.getfo(rpath, buffer)
+                    files.append((rpath.rsplit("/", 1)[-1], buffer.getvalue()))
+                except FileNotFoundError:
+                    logger.warning(f"Remote file not found: {rpath}")
+                except PermissionError:
+                    self.permission_denied.append(rpath)
+                except Exception as e:
+                    logger.warning(f"Failed to download {rpath}: {e}")
+            sftp.close()
+        except Exception as e:
+            raise ConnectionError(f"SFTP download failed: {e}") from e
+        return files
+
     def download_files(self, remote_paths: list[str], local_dir: Path) -> list[Path]:
         """Download multiple files via SFTP. Skips files that don't exist.
 
@@ -325,8 +373,12 @@ class SSHConnector:
         local_path: Path,
         timeout: int = 600,
         warn_exit_codes: set[int] | None = None,
+        sink: IO[bytes] | None = None,
     ) -> int:
         """Execute command and stream stdout directly to a local file.
+
+        sink: write to this open file object (for example an encrypting
+        writer) instead of opening ``local_path``. The caller closes it.
 
         Used for ZFS send and tar piped output.
         Only commands matching ALLOWED_COMMAND_PREFIXES are permitted.
@@ -351,7 +403,7 @@ class SSHConnector:
             # Set socket-level read timeout to prevent indefinite blocking
             stdout.channel.settimeout(float(timeout))
             bytes_written = 0
-            with open(local_path, "wb") as f:
+            with contextlib.nullcontext(sink) if sink is not None else open(local_path, "wb") as f:
                 while True:
                     chunk = stdout.read(65536)
                     if not chunk:

@@ -24,6 +24,7 @@ If you have a request or an idea, I'd love to hear it, please [open a feature re
 - **Filesystem archives** (tar.gz) as a non-ZFS fallback
 - **Change detection** -- only saves when config sections actually change
 - **SHA-256 verification** for every backup file
+- **Encryption at rest** (optional) -- AES-256-GCM with a key in the OS keystore and a recovery key, or a passphrase; [details](docs/encryption.md)
 - **Scheduled backups** via Windows Task Scheduler, systemd user timers or cron
 - **Notifications** -- Telegram, Slack, Windows toast
 - **SSH key authentication** -- no password required
@@ -65,6 +66,7 @@ See the [Installation Guide](docs/installation.md) for all installation methods.
 | [Installation Guide](docs/installation.md) | pip, pre-built binary, and from-source installation |
 | [Usage Guide](docs/usage.md) | CLI reference, configuration, scheduling, notifications |
 | [Extended Backups](docs/extended-backups.md) | RRD, packages, DHCP, certs, logs, ZFS, archives |
+| [Encryption at Rest](docs/encryption.md) | Modes, recovery key, file format, standalone decryption |
 | [Security Policy](SECURITY.md) | Vulnerability reporting, design decisions, credential storage |
 | [Contributing](CONTRIBUTING.md) | Development setup, code style, pull requests |
 | [CI with Dagger](docs/ci-dagger.md) | Run the CI pipeline locally |

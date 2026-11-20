@@ -77,6 +77,8 @@ class BackupRecord(BaseModel):
     # The run this file belongs to (0.3.0 and later). All files of one run
     # share a folder: <device>/YYYY/MM/DD/<HHMMSS>_#NNN/.
     run_number: int | None = None
+    # Encrypted at rest (filename ends in .enc); see services/backup_crypto.py.
+    encrypted: bool = False
 
     @property
     def size_human(self) -> str:
