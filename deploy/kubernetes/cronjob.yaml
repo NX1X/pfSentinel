@@ -5,9 +5,10 @@
 # on the config PVC (see "One-time setup" in docs/docker.md).
 #
 # Before you apply this file:
-#   1. Replace the image digest. The image is not published yet. Build and
-#      push it yourself, then copy the digest from the registry:
-#        docker buildx imagetools inspect <your-registry>/pfsentinel:<tag>
+#   1. Check the image. It is the published 1.0.0-rc.1 (amd64 and arm64),
+#      pinned by digest. To check its build attestation, run:
+#        gh attestation verify oci://ghcr.io/nx1x/pfsentinel:1.0.0-rc.1 --repo NX1X/pfSentinel
+#      For your own build, put its tag and digest here instead.
 #   2. Run the one-time setup (deploy/kubernetes/setup-pod.yaml).
 #   3. Adjust storageClassName and sizes if your cluster needs it.
 apiVersion: v1
@@ -57,8 +58,8 @@ spec:
               type: RuntimeDefault
           containers:
             - name: pfsentinel
-              # REPLACE the digest below with the real one. Keep the tag.
-              image: ghcr.io/nx1x/pfsentinel:1.0.0-rc.1@sha256:REPLACE_WITH_REAL_DIGEST
+              # Published 1.0.0-rc.1, pinned by digest. Change tag and digest together.
+              image: ghcr.io/nx1x/pfsentinel:1.0.0-rc.1@sha256:504f6889bb7f95eaeab12dfc0a3d7a1cf173ec20dd93d38e5221c36f782d48ac
               args: ["backup", "run", "--non-interactive"]
               securityContext:
                 allowPrivilegeEscalation: false
