@@ -293,6 +293,10 @@ class TestReindex:
 
         with monkeypatch.context() as m:  # a later run, so its folder differs
             m.setattr(retention_module, "datetime", NextDay)
+            # 0.3.0 and rc.1 had no automatic rebuild: recreate their result.
+            m.setattr(
+                RetentionService, "_rebuild_if_files_exist", lambda self, device_id, index: index
+            )
             _run_backups(cli_runner, 1)  # the bug: a second run #001
         assert retention.load_index("home-fw").last_run_number == 1
 
@@ -444,3 +448,30 @@ class TestReindex:
         finally:
             path.chmod(0o600)
         assert json.loads(path.read_text()) == before
+
+
+def test_run_rebuilds_a_deleted_index_from_the_files_on_disk(
+    cli_runner: CliRunner, seeded_config: AppConfig
+) -> None:
+    """Field case: the index was deleted by hand; the next run must not restart at #001."""
+    _run_backups(cli_runner, 3)
+    before = _backup_files(seeded_config)
+    _index_path(seeded_config).unlink()
+
+    _run_backups(cli_runner, 1)
+
+    index = _retention(seeded_config).load_index("home-fw")
+    assert index.last_run_number == 4
+    assert {r.run_number for r in index.records} == {1, 2, 3, 4}
+    for rel, content in before.items():
+        assert _backup_files(seeded_config)[rel] == content
+
+
+def test_first_run_of_a_new_device_starts_at_one(
+    cli_runner: CliRunner, seeded_config: AppConfig
+) -> None:
+    _run_backups(cli_runner, 1)
+
+    index = _retention(seeded_config).load_index("home-fw")
+    assert index.last_run_number == 1
+    assert [r.run_number for r in index.records] == [1]

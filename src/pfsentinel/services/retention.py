@@ -186,6 +186,8 @@ class RetentionService:
         hands its number to the next run.
         """
         index = self.load_index(device_id)
+        if not index.records:
+            index = self._rebuild_if_files_exist(device_id, index)
         index.last_run_number += 1
         self.save_index(index)
         # Windows: the device folder holds the backups; owner-only like Linux.
@@ -193,6 +195,26 @@ class RetentionService:
         return BackupRun(
             device_id=device_id, number=index.last_run_number, started_at=datetime.now()
         )
+
+    def _rebuild_if_files_exist(self, device_id: str, index: BackupIndex) -> BackupIndex:
+        """An empty index next to backup files: rebuild it before the run saves.
+
+        Field case (2026-11-20): backup_index.json was deleted by hand with
+        old backups, the next run started again at #001 and the newer
+        backups vanished from the list. Reindex only adds records and never
+        touches backup files, so running it here is safe.
+        """
+        from pfsentinel.services.reindex import reindex_device  # avoids an import cycle
+
+        result = reindex_device(self, device_id)
+        if not result.added:
+            return index
+        logger.warning(
+            f"The backup index of {device_id} was missing or empty; rebuilt it from "
+            f"{len(result.added)} backup file(s) on disk. Run numbers continue after "
+            f"#{result.last_run_number}."
+        )
+        return self.load_index(device_id)
 
     def next_sequence(self, device_id: str) -> int:
         """Get the next sequence number for today's backups."""
