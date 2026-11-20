@@ -13,6 +13,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+Found in the homelab field test of 2026-11-20 (v0.2.6, Windows 11, pfSense CE 2.8.1, non-root backup user):
+
+- `pfs device add` checks that the host resolves before it saves the device, and asks again if it does not. The prompt now says "IP address or DNS name". Before, a device ID typed as the host was saved, and every method then failed with `getaddrinfo failed`
+- `pfs device add` asks for the SSH key passphrase only when the key is encrypted, and says so when it is not
+- `pfs device test` shows HTTPS and HTTP as skipped, not failed, on a device that logs in with an SSH key and has no password
+- `pfs device test` shows a clear warning, with the fix, when a device's SSH host key is not pinned (devices added before 0.2.0). paramiko's raw `UserWarning` with the key bytes is no longer printed
+- A non-root SSH user no longer gets an ERROR for root-only files. The `logs` target is skipped with one "logs need root" line, and root-only files in `pkg` (such as `sasldb2.db`) are listed in one info line
+- `aliases` no longer warns about alias folders that do not exist on the pfSense version in use (on 2.8.1, only `/var/db/aliastables` exists)
+- `pfs schedule status` shows "Last run: never" and "not run yet" for a task that has not run, instead of `30/11/1999` and result `267011`. A running or disabled task is named as such
+- Log lines no longer start in the middle of the progress bar during `pfs backup run`. A message after an unfinished bar also starts on a new line
+- The trust-key hint names the host key file that matches the key type, and says to run it on the firewall. `SECURITY.md` no longer shows a bash `for` loop, which fails in the pfSense shell (tcsh)
+
+### Documentation
+
+- `docs/extended-backups.md` has a table of which extras work for a non-root SSH user on pfSense 2.8.1
+
 ## [0.2.6] - 2026-11-08
 
 Fixes SSH for users with an SSH host CA in `~/.ssh/known_hosts`.

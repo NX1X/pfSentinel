@@ -36,11 +36,13 @@ The following behaviors are intentional design decisions for homelab use cases. 
 
 **Where keys live:** pinned keys are in `~/.pfsentinel/known_hosts` (owner-only, written atomically). For a pinned device, only that file counts: an entry in `~/.ssh/known_hosts` cannot override it. Without a pin, pfSentinel falls back to your OpenSSH `~/.ssh/known_hosts`.
 
-**Verify the fingerprint:** `trust-key` shows the key's SHA256 fingerprint. Compare it on the pfSense console (option 8, Shell):
+**Verify the fingerprint:** `trust-key` shows the key's SHA256 fingerprint and key type. Compare it on the pfSense console (option 8, Shell), not on your PC. This is the firewall's host key, which pfSense creates; it is not your SSH user key. For an `ssh-ed25519` key, run:
 
 ```
-for f in /etc/ssh/ssh_host_*_key.pub; do ssh-keygen -lf "$f"; done
+ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
 ```
+
+For another key type, use the matching file (`ssh_host_ecdsa_key.pub` or `ssh_host_rsa_key.pub`). The pfSense shell is tcsh, so a `for ... do` loop from bash does not work there.
 
 **After a pfSense reinstall:** the host key changes, so backups stop. Check the new fingerprint on the console, then run `pfs device trust-key <id>` again.
 

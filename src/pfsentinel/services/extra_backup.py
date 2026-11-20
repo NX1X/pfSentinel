@@ -15,6 +15,9 @@ from pfsentinel.models.device import DeviceConfig
 from pfsentinel.services.connection import SSHConnector
 from pfsentinel.services.credentials import CredentialService
 from pfsentinel.utils import checksum, compression, naming
+from pfsentinel.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 ProgressCallback = Callable[[str, int], None]
 
@@ -28,6 +31,14 @@ ALIAS_DIR = "/usr/local/share/pfSense/aliases"
 
 class ExtraBackupError(Exception):
     """Raised when an extra backup target fails."""
+
+
+class NeedsRootError(ExtraBackupError):
+    """The SSH user cannot read any file of this target (they are root only).
+
+    Expected with a non-root backup user, so it is reported as a skip, not
+    as a failure.
+    """
 
 
 class ExtraBackupService:
@@ -224,12 +235,16 @@ class ExtraBackupService:
         with connector:
             # Check common alias locations
             alias_files: list[str] = []
+            # Which of these exist depends on the pfSense version (2.8.1 has
+            # only /var/db/aliastables), so a missing one is not a warning.
             for check_dir in [ALIAS_DIR, "/usr/local/etc/aliases"]:
-                found = connector.list_remote_files(check_dir, "*")
+                found = connector.list_remote_files(check_dir, "*", missing_ok=True)
                 alias_files.extend(found)
 
             # Also check for urltable files
-            urltable_files = connector.list_remote_files("/var/db/aliastables", "*")
+            urltable_files = connector.list_remote_files(
+                "/var/db/aliastables", "*", missing_ok=True
+            )
             alias_files.extend(urltable_files)
 
             if not alias_files:
@@ -311,8 +326,16 @@ class ExtraBackupService:
         with connector, tempfile.TemporaryDirectory() as tmpdir:
             local_dir = Path(tmpdir)
             downloaded = connector.download_files(log_files, local_dir)
+            denied = list(connector.permission_denied)
+            if not downloaded and denied:
+                raise NeedsRootError(
+                    f"logs need root: {', '.join(denied)} "
+                    f"cannot be read by SSH user '{device.username}'. Skipped."
+                )
             if not downloaded:
                 raise ExtraBackupError("Failed to download any log files")
+            if denied:
+                logger.info("Skipped log files that need root: " + ", ".join(denied))
 
             if progress:
                 progress(f"Downloaded {len(downloaded)} log files", 50)

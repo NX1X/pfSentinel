@@ -91,12 +91,27 @@ class TestFormatWindowsTask:
         assert "Last result" not in joined
 
     def test_positive_last_result_is_informational(self):
-        # 267009 is a non-negative status code; not a failure
-        lines = _format_windows_task("Daily", {"exists": True, "last_result": 267009})
+        # 1 is a non-negative status code we do not name; not a failure
+        lines = _format_windows_task("Daily", {"exists": True, "last_result": 1})
         joined = "\n".join(lines)
         assert "informational" in joined
-        assert "267009" in joined
         assert "FAILED" not in joined
+
+    def test_never_run_task_says_never_not_1999(self):
+        """0x41303 (267011) SCHED_S_TASK_HAS_NOT_RUN, seen in the 2026-11-20 field test."""
+        lines = _format_windows_task(
+            "Daily",
+            {"exists": True, "last_result": 267011, "last_run": "30/11/1999 0:00:00"},
+        )
+        joined = "\n".join(lines)
+        assert "Last run: never" in joined
+        assert "not run yet" in joined
+        assert "1999" not in joined
+        assert "267011" not in joined
+
+    def test_running_task_is_named(self):
+        lines = _format_windows_task("Daily", {"exists": True, "last_result": 267009})
+        assert "running now" in "\n".join(lines)
 
     def test_includes_next_run_and_last_run_when_present(self):
         lines = _format_windows_task(

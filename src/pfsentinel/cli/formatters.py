@@ -8,9 +8,25 @@ from rich.table import Table
 
 from pfsentinel.models.backup import BackupRecord
 from pfsentinel.models.device import DeviceConfig, DeviceStatus
+from pfsentinel.utils.logging import set_before_console_line
 
 console = Console()
 err_console = Console(stderr=True)
+
+# True while a progress bar line is drawn without its newline.
+_progress_line_open = False
+_progress_width = 0
+
+
+def end_progress_line() -> None:
+    """End an open progress bar line, so the next output starts on a new line."""
+    global _progress_line_open
+    if _progress_line_open:
+        _progress_line_open = False
+        console.print()
+
+
+set_before_console_line(end_progress_line)
 
 
 def print_backup_table(records: list[BackupRecord], title: str = "Backups") -> None:
@@ -108,25 +124,37 @@ def print_record_detail(record: BackupRecord) -> None:
 
 
 def print_success(msg: str) -> None:
+    end_progress_line()
     console.print(f"[green]✓[/] {msg}")
 
 
 def print_error(msg: str) -> None:
+    end_progress_line()
     err_console.print(f"[red]✗ Error:[/] {msg}")
 
 
 def print_warning(msg: str) -> None:
+    end_progress_line()
     console.print(f"[yellow]![/] {msg}")
 
 
 def print_info(msg: str) -> None:
+    end_progress_line()
     console.print(f"[blue]ℹ[/] {msg}")
 
 
 def print_progress(message: str, percent: int) -> None:
+    global _progress_line_open
     bar_width = 30
     filled = int(bar_width * percent / 100)
     bar = "=" * filled + "-" * (bar_width - filled)
-    console.print(f"\r[{bar}] {percent:3d}% {message}", end="")
+    global _progress_width
+    line = f"[{bar}] {percent:3d}% {message}"
+    # Pad to the previous width, so a shorter message leaves no tail of the
+    # previous one. (No ANSI "erase line": it shows as junk in a log file.)
+    padded = line.ljust(_progress_width) if _progress_line_open else line
+    _progress_width = len(line)
+    console.print("\r" + padded, end="", highlight=False, markup=False)
+    _progress_line_open = True
     if percent == 100:
-        console.print()
+        end_progress_line()

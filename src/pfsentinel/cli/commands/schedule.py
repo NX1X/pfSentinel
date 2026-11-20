@@ -172,6 +172,15 @@ _WINDOWS_TASK_ERRORS: dict[int, tuple[str, tuple[str, ...]]] = {
 }
 
 
+# Informational task results (SCHED_S_* codes), which are states, not errors.
+_SCHED_S_TASK_HAS_NOT_RUN = 0x41303
+_WINDOWS_TASK_STATES = {
+    0x41301: "running now",
+    0x41302: "task is disabled",
+    0x41306: "stopped by the user or a timeout",
+}
+
+
 def _format_windows_task(label: str, task: dict) -> list[str]:
     """Render a Windows task's real health, not just whether it's registered."""
     if not task or not task.get("exists"):
@@ -180,13 +189,22 @@ def _format_windows_task(label: str, task: dict) -> list[str]:
     out = [f"[bold]{label}:[/] Registered"]
     if task.get("next_run"):
         out.append(f"  Next run: {task['next_run']}")
+
+    lr = task.get("last_result")
+    if lr == _SCHED_S_TASK_HAS_NOT_RUN:
+        # Windows reports a placeholder date (30/11/1999) for a task that
+        # never ran; show the plain fact instead.
+        out.append("  Last run: never")
+        out.append("  Last result: [dim]not run yet[/]")
+        return out
     if task.get("last_run"):
         out.append(f"  Last run: {task['last_run']}")
 
-    lr = task.get("last_result")
     if lr is None:
         return out
-    if lr == 0:
+    if lr in _WINDOWS_TASK_STATES:
+        out.append(f"  Last result: [dim]{_WINDOWS_TASK_STATES[lr]}[/]")
+    elif lr == 0:
         out.append("  Last result: [green]OK[/]")
     elif lr & 0x80000000:
         code = f"0x{lr & 0xFFFFFFFF:08X}"
