@@ -329,7 +329,7 @@ def backup_list(
     _, svc = _get_service()
     records = svc.list_backups(device)
 
-    if not records:
+    if not records and not output_json:
         print_info("No backups found.")
         return
 

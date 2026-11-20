@@ -47,14 +47,10 @@ def schedule_enable(
         raise typer.Exit(2)
 
     if use_task_scheduler and is_windows() and not is_elevated():
-        print_error("Administrator privileges are required to register Windows scheduled tasks.")
-        print_info("  Creating or repairing tasks in the \\pfSentinel folder needs an")
-        print_info("  elevated shell. Nothing was changed.")
-        print_info("  Re-run from an Administrator PowerShell:  pfs schedule enable")
-        print_info(
-            "  Or skip Task Scheduler entirely:          pfs schedule enable --no-task-scheduler"
-        )
-        raise typer.Exit(1)
+        print_info("Not an administrator shell: the tasks are created for your user only,")
+        print_info("in the Task Scheduler root (pfSentinel-DailyBackup and so on). From an")
+        print_info("Administrator PowerShell they go into the \\pfSentinel folder instead, and")
+        print_info("the Windows Event Log source is registered too.")
 
     config = AppConfig.load()
     config.schedule.enabled = True
@@ -221,10 +217,17 @@ def _format_windows_task(label: str, task: dict) -> list[str]:
 
 
 @app.command("status")
-def schedule_status() -> None:
+def schedule_status(
+    output_json: bool = typer.Option(False, "--json", help="Output as JSON"),
+) -> None:
     """Show scheduling status."""
     config, scheduler = _get_scheduler()
     status = scheduler.get_status()
+    if output_json:
+        import json
+
+        console.print_json(json.dumps(status, default=str))
+        return
 
     lines = [
         f"[bold]Enabled:[/] {'Yes' if status['enabled'] else 'No'}",

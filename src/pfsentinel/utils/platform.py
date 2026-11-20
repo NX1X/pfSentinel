@@ -28,12 +28,11 @@ def is_macos() -> bool:
 
 
 def is_elevated() -> bool:
-    """Return True if the process can register Windows scheduled tasks.
+    """Return True if the process runs with administrator rights (always True off Windows).
 
-    On Windows, registering tasks under the \\pfSentinel folder requires
-    Administrator rights - without them schtasks fails with "Access is denied"
-    and the (possibly stale, broken) task is left in place. On non-Windows there is no Task Scheduler path, so
-    this is not a gate.
+    On Windows, tasks in the \\pfSentinel Task Scheduler folder and the Event Log
+    source need administrator rights. Without them, pfSentinel registers its
+    tasks for the current user in the Task Scheduler root instead.
     """
     if not is_windows():
         return True

@@ -155,25 +155,25 @@ def tmp_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 class TestScheduleEnableCommand:
-    def test_windows_without_admin_exits_and_does_not_persist(
+    def test_windows_without_admin_registers_user_tasks(
         self,
         cli_runner: CliRunner,
         tmp_config: Path,
         monkeypatch: pytest.MonkeyPatch,
     ):
-        # Simulate Windows without admin - should refuse and leave config untouched.
+        """Since 0.4.0 no admin is needed: the tasks go to the Task Scheduler root."""
         import pfsentinel.utils.platform as platform_mod
+        from pfsentinel.services.scheduler import SchedulerService
 
         monkeypatch.setattr(platform_mod, "is_windows", lambda: True)
         monkeypatch.setattr(platform_mod, "is_elevated", lambda: False)
+        monkeypatch.setattr(SchedulerService, "apply_schedule", lambda self: True)
 
         result = cli_runner.invoke(schedule_app, ["enable"])
 
-        assert result.exit_code == 1
-        combined = (result.stdout or "") + (result.stderr or "")
-        assert "Administrator privileges" in combined
-        # No config file should have been written
-        assert not tmp_config.exists()
+        assert result.exit_code == 0, result.stdout
+        assert "for your user only" in result.stdout
+        assert tmp_config.exists()
 
     def test_non_windows_success_persists_config(
         self,

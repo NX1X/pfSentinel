@@ -200,3 +200,49 @@ class TestProgressLine:
 )
 def test_trust_key_hint_names_the_matching_host_key_file(key_name: str, file_type: str) -> None:
     assert device_cmd._host_key_file_type(key_name) == file_type
+
+
+class TestJsonOutput:
+    """`--json` for scripts (0.6.0 plan): valid JSON, also when empty, no secrets."""
+
+    def test_device_list_json_has_no_password(self, tmp_path, monkeypatch) -> None:
+        import json
+
+        from typer.testing import CliRunner
+
+        from pfsentinel.cli.app import app
+        from pfsentinel.services.credentials import CredentialService
+
+        monkeypatch.setattr(AppConfig, "config_path", staticmethod(lambda: tmp_path / "c.json"))
+        config = AppConfig(devices=[DeviceConfig(id="fw", label="fw", host="192.0.2.1")])
+        config.save()
+        CredentialService().store("fw", "s3cret-pass")
+        out = CliRunner().invoke(app, ["device", "list", "--json"]).stdout
+        data = json.loads(out)
+        assert data[0]["id"] == "fw" and data[0]["host"] == "192.0.2.1"
+        assert "s3cret-pass" not in out
+
+    def test_backup_list_json_is_an_empty_list_not_text(self, tmp_path, monkeypatch) -> None:
+        import json
+
+        from typer.testing import CliRunner
+
+        from pfsentinel.cli.app import app
+
+        monkeypatch.setattr(AppConfig, "config_path", staticmethod(lambda: tmp_path / "c.json"))
+        cfg = AppConfig()
+        cfg.backup_policy.backup_root = tmp_path / "b"
+        cfg.save()
+        assert json.loads(CliRunner().invoke(app, ["backup", "list", "--json"]).stdout) == []
+
+    def test_schedule_status_json(self, tmp_path, monkeypatch) -> None:
+        import json
+
+        from typer.testing import CliRunner
+
+        from pfsentinel.cli.app import app
+
+        monkeypatch.setattr(AppConfig, "config_path", staticmethod(lambda: tmp_path / "c.json"))
+        AppConfig().save()
+        data = json.loads(CliRunner().invoke(app, ["schedule", "status", "--json"]).stdout)
+        assert data["enabled"] is False and "daily_time" in data

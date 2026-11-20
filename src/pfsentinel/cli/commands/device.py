@@ -325,9 +325,17 @@ def device_trust_key(
 
 
 @app.command("list")
-def device_list() -> None:
+def device_list(
+    output_json: bool = typer.Option(False, "--json", help="Output as JSON (no secrets)"),
+) -> None:
     """List configured devices."""
     config, _ = _get_config_and_creds()
+    if output_json:
+        import json
+
+        # Device settings hold no secrets: passwords live in the OS keystore.
+        console.print_json(json.dumps([json.loads(d.model_dump_json()) for d in config.devices]))
+        return
     if not config.devices:
         print_info("No devices configured. Run: pfs device add")
         return

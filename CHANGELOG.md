@@ -41,6 +41,8 @@ From the 0.3.0 field test (2026-11-20, Windows 11, PowerShell 7):
 
 ### Added
 
+- `pfs schedule enable` works without administrator rights on Windows: the tasks are then created for your user in the Task Scheduler root (`pfSentinel-DailyBackup`, `pfSentinel-WeeklyBackup`, `pfSentinel-BackupCheck`). From an Administrator PowerShell they still go into the `\pfSentinel` folder and the Event Log source is registered. `schedule status` and `disable` handle both. Not yet tested on a standard (non-admin) Windows account
+- `--json` output for `pfs device list` and `pfs schedule status` (for scripts). `pfs backup list --json` now prints `[]` instead of a text line when there are no backups
 - **Count-drop alert** (a risky change, event 1002): firewall rules, port forwards, users, certificates, CAs or interfaces fell by 20% or more (and at least two), or to zero, since the previous config
 - **Update-available alert** (event 1006, Information): the daily check task tells you once per new release. Turn it off with `notifications.update_alerts`
 - `pfs update check --pre` and `pfs update install --pre` include pre-releases (release candidates). A version with a suffix (for example `1.0.0-rc.1`) is published as a GitHub pre-release, so the normal update path stays on the last stable release

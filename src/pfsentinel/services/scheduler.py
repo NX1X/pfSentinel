@@ -13,6 +13,7 @@ from pfsentinel.utils.platform import (
     create_windows_task,
     delete_windows_task,
     get_executable_path,
+    is_elevated,
     is_windows,
     query_windows_task,
 )
@@ -72,6 +73,26 @@ def next_weekly_run(now: datetime, day: str, at: str) -> datetime | None:
 _DAILY_TASK_NAME = "pfSentinel\\DailyBackup"
 _WEEKLY_TASK_NAME = "pfSentinel\\WeeklyBackup"
 _CHECK_TASK_NAME = "pfSentinel\\BackupCheck"
+# Without admin rights, tasks cannot go into the \\pfSentinel folder, but a
+# user may create tasks for their own account in the Task Scheduler root.
+_USER_TASK_NAMES = {
+    _DAILY_TASK_NAME: "pfSentinel-DailyBackup",
+    _WEEKLY_TASK_NAME: "pfSentinel-WeeklyBackup",
+    _CHECK_TASK_NAME: "pfSentinel-BackupCheck",
+}
+
+
+def _query_either(name: str) -> dict:
+    """Status of the folder task, or of the no-admin root task if that one exists."""
+    folder = query_windows_task(name)
+    if folder.get("exists"):
+        return folder
+    root = query_windows_task(_USER_TASK_NAMES[name])
+    return root if root.get("exists") else folder
+
+
+def _task_name(name: str, elevated: bool) -> str:
+    return name if elevated else _USER_TASK_NAMES[name]
 
 
 class SchedulerService:
@@ -114,11 +135,12 @@ class SchedulerService:
         """Remove all scheduled tasks."""
         success = True
         if is_windows():
-            if not delete_windows_task(_DAILY_TASK_NAME):
-                success = False
-            if not delete_windows_task(_WEEKLY_TASK_NAME):
-                success = False
-            delete_windows_task(_CHECK_TASK_NAME)  # absent before 0.3.0
+            # Remove both the folder tasks (admin) and the root tasks (no admin);
+            # a missing task is fine, a task we cannot delete is a failure.
+            for folder_name, root_name in _USER_TASK_NAMES.items():
+                for name in (folder_name, root_name):
+                    if query_windows_task(name).get("exists") and not delete_windows_task(name):
+                        success = False
         else:
             # Remove from both backends: the schedule may have been applied
             # with systemd on one run and cron on another.
@@ -144,10 +166,11 @@ class SchedulerService:
         executable, prefix_args = get_executable_path()
         args = f"{prefix_args} backup run --non-interactive".strip()
         success = True
+        elevated = is_elevated()
 
         if self._config.daily_enabled:
             ok = create_windows_task(
-                task_name=_DAILY_TASK_NAME,
+                task_name=_task_name(_DAILY_TASK_NAME, elevated),
                 executable=executable,
                 args=args,
                 schedule_type="DAILY",
@@ -163,7 +186,7 @@ class SchedulerService:
 
         if self._config.weekly_enabled:
             ok = create_windows_task(
-                task_name=_WEEKLY_TASK_NAME,
+                task_name=_task_name(_WEEKLY_TASK_NAME, elevated),
                 executable=executable,
                 args=args,
                 schedule_type="WEEKLY",
@@ -181,7 +204,7 @@ class SchedulerService:
 
         check_args = f"{prefix_args} backup check-recent --non-interactive".strip()
         if create_windows_task(
-            task_name=_CHECK_TASK_NAME,
+            task_name=_task_name(_CHECK_TASK_NAME, elevated),
             executable=executable,
             args=check_args,
             schedule_type="CHECK",
@@ -192,8 +215,12 @@ class SchedulerService:
             logger.error("Failed to create the no-recent-backup check task")
             success = False
 
-        # `schedule enable` runs as administrator, the one moment the Event Log
-        # source can be registered.
+        # As administrator, this is the one moment the Event Log source can be
+        # registered. Without admin it is skipped: `pfs notify eventlog enable`
+        # in an administrator shell does it later.
+        if not elevated:
+            logger.info("Not elevated: Event Log source not registered")
+            return success
         try:
             from pfsentinel.services.notifications import register_event_source
 
@@ -351,11 +378,11 @@ class SchedulerService:
         }
 
         if is_windows() and self._config.use_windows_task_scheduler:
-            daily = query_windows_task(_DAILY_TASK_NAME)
-            weekly = query_windows_task(_WEEKLY_TASK_NAME)
+            daily = _query_either(_DAILY_TASK_NAME)
+            weekly = _query_either(_WEEKLY_TASK_NAME)
             status["windows_daily"] = daily
             status["windows_weekly"] = weekly
-            status["windows_check"] = query_windows_task(_CHECK_TASK_NAME)
+            status["windows_check"] = _query_either(_CHECK_TASK_NAME)
         elif not is_windows():
             status["systemd_daily"] = unix_schedule.query_systemd_timer(unix_schedule.DAILY_TIMER)
             status["systemd_weekly"] = unix_schedule.query_systemd_timer(unix_schedule.WEEKLY_TIMER)
