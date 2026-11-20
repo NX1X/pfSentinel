@@ -2,6 +2,8 @@
 
 Thanks for your interest in contributing! This document covers the basics for getting started.
 
+Everyone who takes part in this project follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## Reporting Bugs
 
 [Open an issue](https://github.com/NX1X/pfSentinel/issues) with:

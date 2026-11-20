@@ -69,6 +69,7 @@ See the [Installation Guide](docs/installation.md) for all installation methods.
 | [Encryption at Rest](docs/encryption.md) | Modes, recovery key, file format, standalone decryption |
 | [Security Policy](SECURITY.md) | Vulnerability reporting, design decisions, credential storage |
 | [Contributing](CONTRIBUTING.md) | Development setup, code style, pull requests |
+| [Code of Conduct](CODE_OF_CONDUCT.md) | How we treat each other, and how to report a problem |
 | [CI with Dagger](docs/ci-dagger.md) | Run the CI pipeline locally |
 | [Roadmap](ROADMAP.md) | Path to 1.0 and what is planned |
 | [Changelog](CHANGELOG.md) | Version history |
