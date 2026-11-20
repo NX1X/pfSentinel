@@ -268,6 +268,31 @@ def test_backup_verify_failure_is_saved(
     assert not any(r.verified for r in _load_records(seeded_config))
 
 
+def test_backup_verify_unreadable_file_is_a_failure(
+    cli_runner: CliRunner,
+    seeded_config: AppConfig,
+    seeded_backup: BackupRecord,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A read error counts as a failed check: saved, reported, exit 1, no traceback."""
+    from pfsentinel.utils import checksum
+
+    def _denied(*_args: object, **_kwargs: object) -> bool:
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(checksum, "verify_file", _denied)
+
+    result = cli_runner.invoke(app, ["backup", "verify"])
+    assert "nothing to check" in result.stdout  # verified after the run
+
+    result = cli_runner.invoke(app, ["backup", "verify", seeded_backup.filename])
+
+    assert result.exit_code == 1
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "Cannot read" in result.stdout + (result.stderr or "")
+    assert not any(r.verified for r in _load_records(seeded_config))
+
+
 def test_backup_verify_unknown_device_errors(
     cli_runner: CliRunner,
     seeded_config: AppConfig,

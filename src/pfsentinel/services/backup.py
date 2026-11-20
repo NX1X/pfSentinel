@@ -297,7 +297,11 @@ class BackupService:
             raise BackupError(f"Backup file not found: {path.name}")
 
         # Checksum check (all types)
-        if record.sha256 and not checksum.verify_file(path, record.sha256):
+        try:
+            checksum_ok = not record.sha256 or checksum.verify_file(path, record.sha256)
+        except OSError as e:
+            raise BackupError(f"Cannot read '{record.filename}': {e}") from e
+        if not checksum_ok:
             raise BackupError(
                 f"Checksum mismatch for '{record.filename}':"
                 " the file may be corrupted or tampered with"
