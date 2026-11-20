@@ -11,9 +11,14 @@ and VPN keys. With encryption on, every backup file is written encrypted as
   once at setup; with it, any machine can decrypt the backups.
 - ``passphrase``: the key is derived from a passphrase with scrypt. The
   passphrase is also kept in the OS keystore, for scheduled runs.
+- ``age``: the file is a standard age v1 file (services/age_format.py),
+  encrypted to pfSentinel's own X25519 identity (kept in the OS keystore,
+  shown once at setup) and to the user's own age recipients. The ``age``
+  tool opens it without pfSentinel.
 
 Every key ever used stays in the keystore under its key ID, so files from
-before a key change can still be read.
+before a key change can still be read. Readers tell the formats apart by
+the first bytes: ``PFSENC`` or ``age-encryption.org/``. Both end in ``.enc``.
 
 ## File format (version 1), all integers big-endian
 
@@ -44,7 +49,7 @@ import hmac
 import io
 import os
 import struct
-from collections.abc import Buffer, Iterator
+from collections.abc import Buffer, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, TYPE_CHECKING
@@ -52,6 +57,8 @@ from typing import IO, TYPE_CHECKING
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
+
+from pfsentinel.services import age_format
 
 if TYPE_CHECKING:
     from pfsentinel.models.config import EncryptionPolicy
@@ -267,6 +274,28 @@ class DecryptingReader(io.RawIOBase):
             super().close()
 
 
+class _AgeReader(io.RawIOBase):
+    """Reports age payload errors as BackupCryptoError, like the native reader."""
+
+    def __init__(self, inner: age_format.DecryptingReader) -> None:
+        super().__init__()
+        self._inner = inner
+
+    def readable(self) -> bool:
+        return True
+
+    def readinto(self, buffer: memoryview | bytearray) -> int:  # type: ignore[override]
+        try:
+            return self._inner.readinto(buffer)
+        except age_format.AgeError as e:
+            raise BackupCryptoError(f"Encrypted file failed authentication: {e}") from e
+
+    def close(self) -> None:
+        if not self.closed:
+            self._inner.close()
+            super().close()
+
+
 # --- keys -----------------------------------------------------------------
 
 
@@ -277,8 +306,9 @@ def _secret_name(kid: bytes) -> str:
 class BackupCrypto:
     """Encrypts new backup files and decrypts any file it has a key for.
 
-    ``recovery_key`` and ``passphrase`` let `pfs backup decrypt` read files
-    on a machine whose keystore does not hold the key.
+    ``recovery_key``, ``passphrase`` and ``identities`` (age) let
+    `pfs backup decrypt` read files on a machine whose keystore does not hold
+    the key.
     """
 
     def __init__(
@@ -287,15 +317,24 @@ class BackupCrypto:
         creds: CredentialService,
         recovery_key: str | None = None,
         passphrase: str | None = None,
+        identities: Sequence[str] = (),
     ) -> None:
         self._policy = policy
         self._creds = creds
         self._recovery = parse_recovery_key(recovery_key) if recovery_key else None
         self._passphrase = passphrase
+        try:
+            self._identities = [age_format.Identity.parse(i) for i in identities]
+        except age_format.AgeError as e:
+            raise BackupCryptoError(str(e)) from e
 
     @property
     def enabled(self) -> bool:
         return self._policy.mode != "off"
+
+    @property
+    def policy(self) -> EncryptionPolicy:
+        return self._policy
 
     # setup ------------------------------------------------------------------
 
@@ -320,10 +359,39 @@ class BackupCrypto:
         self._policy.key_id = kid.hex()
         self._policy.salt = salt.hex()
 
+    def setup_age(self, recipients: Sequence[str]) -> str:
+        """Create pfSentinel's age identity, store it, return it (AGE-SECRET-KEY-1...).
+
+        Files are encrypted to that identity and to each of ``recipients``
+        (the user's own age public keys). pfSentinel reads its backups with
+        its identity; the user reads them with the age tool and either key.
+        """
+        try:
+            extra = [age_format.format_recipient(age_format.parse_recipient(r)) for r in recipients]
+        except age_format.AgeError as e:
+            raise BackupCryptoError(str(e)) from e
+        identity = age_format.Identity.generate()
+        kid = key_id(identity.secret)
+        self._store_secret(kid, "a:" + str(identity))
+        self._policy.mode = "age"
+        self._policy.key_id = kid.hex()
+        self._policy.salt = None
+        self._policy.age_recipient = identity.recipient
+        self._policy.age_recipients = list(
+            dict.fromkeys(r for r in extra if r != identity.recipient)
+        )
+        self._policy.age_key_ids.append(kid.hex())
+        return str(identity)
+
     def recovery_key(self) -> str:
-        """The recovery key of the current keystore key."""
+        """The recovery key of the current keystore key, or the age identity."""
+        if self._policy.mode == "age" and self._policy.key_id:
+            secret = self._creds.get_secret(_secret_name(bytes.fromhex(self._policy.key_id)))
+            if not secret or not secret.startswith("a:"):
+                raise MissingKeyError("The age identity is not in this machine's keystore")
+            return secret[2:]
         if self._policy.mode != "keystore" or not self._policy.key_id:
-            raise BackupCryptoError("Recovery keys exist only in keystore mode")
+            raise BackupCryptoError("Recovery keys exist only in keystore and age modes")
         secret = self._creds.get_secret(_secret_name(bytes.fromhex(self._policy.key_id)))
         if not secret or not secret.startswith("k:"):
             raise MissingKeyError("The backup key is not in this machine's keystore")
@@ -362,9 +430,30 @@ class BackupCrypto:
         dest.parent.mkdir(parents=True, exist_ok=True)
         if not self.enabled:
             return _open_private(dest), dest
-        key, header = self._current()
         final = dest.with_name(dest.name + SUFFIX)
+        if self._policy.mode == "age":
+            recipients = self._age_recipients()
+            sink = _open_private(final)
+            try:
+                return age_format.EncryptingWriter(sink, recipients), final  # type: ignore[return-value]
+            except BaseException:
+                sink.close()
+                final.unlink(missing_ok=True)
+                raise
+        key, header = self._current()
         return EncryptingWriter(_open_private(final), key, header), final  # type: ignore[return-value]
+
+    def _age_recipients(self) -> list[bytes]:
+        """Public keys only: writing an age file needs no secret."""
+        if not self._policy.age_recipient:
+            raise BackupCryptoError("Encryption is on but no key is set up: pfs encryption setup")
+        try:
+            return [
+                age_format.parse_recipient(r)
+                for r in [self._policy.age_recipient, *self._policy.age_recipients]
+            ]
+        except age_format.AgeError as e:
+            raise BackupCryptoError(f"Invalid age recipient in the config: {e}") from e
 
     @contextlib.contextmanager
     def create(self, dest: Path) -> Iterator[tuple[IO[bytes], Path]]:
@@ -415,12 +504,47 @@ class BackupCrypto:
             raise BackupCryptoError("Wrong passphrase or recovery key for this file")
         return key
 
+    def _age_identities(self) -> list[age_format.Identity]:
+        """Identities given on the command line, then every one in the keystore."""
+        found = list(self._identities)
+        for kid in reversed(self._policy.age_key_ids):  # newest first
+            secret = self._creds.get_secret(_secret_name(bytes.fromhex(kid)))
+            if secret and secret.startswith("a:"):
+                with contextlib.suppress(age_format.AgeError):
+                    found.append(age_format.Identity.parse(secret[2:]))
+        return found
+
+    def _open_age(self, source: IO[bytes]) -> IO[bytes]:
+        identities = self._age_identities()
+        if not identities:
+            raise MissingKeyError(
+                "This file is an age file and no age identity is on this machine. "
+                "Run: pfs backup decrypt FILE --identity (or --identity-file KEYFILE)"
+            )
+        try:
+            reader = age_format.open_payload(source, identities)
+        except age_format.AgeNoMatchError as e:
+            raise MissingKeyError(
+                "No age identity on this machine opens this file. "
+                "Run: pfs backup decrypt FILE --identity (or --identity-file KEYFILE)"
+            ) from e
+        except age_format.AgeError as e:
+            raise BackupCryptoError(f"Not a valid age file: {e}") from e
+        return io.BufferedReader(_AgeReader(reader))  # type: ignore[arg-type]
+
     def open_read(self, path: Path) -> IO[bytes]:
-        """Open a backup file for reading, decrypting it when it is encrypted."""
+        """Open a backup file for reading, decrypting it when it is encrypted.
+
+        The first bytes tell the format: pfSentinel's own or age v1.
+        """
         source = path.open("rb")
         if not is_encrypted(path):
             return source
         try:
+            if source.read(len(age_format.INTRO)) == age_format.INTRO:
+                source.seek(0)
+                return self._open_age(source)
+            source.seek(0)
             header_bytes = source.read(HEADER_LEN)
             key = self._key_for(Header.unpack(header_bytes))
             return io.BufferedReader(DecryptingReader(source, key, header_bytes))  # type: ignore[arg-type]

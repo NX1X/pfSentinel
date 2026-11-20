@@ -534,6 +534,20 @@ def _alert_new_release(svc: BackupService) -> None:
         get_logger(__name__).debug(f"Update check skipped: {e}")
 
 
+def _read_identity_file(path: Path) -> list[str]:
+    """age identities (AGE-SECRET-KEY-1...) from an age-keygen file."""
+    from pfsentinel.services import age_format
+    from pfsentinel.services.backup_crypto import BackupCryptoError
+
+    try:
+        text = path.read_text(encoding="utf-8")
+        return [str(i) for i in age_format.parse_identity_file(text)]
+    except (OSError, UnicodeDecodeError) as e:
+        raise BackupCryptoError(f"Cannot read the identity file: {e}") from e
+    except age_format.AgeError as e:
+        raise BackupCryptoError(str(e)) from e
+
+
 @app.command("decrypt")
 def backup_decrypt(
     file: Path = typer.Argument(..., help="Encrypted backup file (.enc)"),
@@ -545,6 +559,12 @@ def backup_decrypt(
     ),
     passphrase: bool = typer.Option(
         False, "--passphrase", help="Ask for the passphrase (passphrase mode, other PC)"
+    ),
+    identity: bool = typer.Option(
+        False, "--identity", help="Ask for an age identity, AGE-SECRET-KEY-1... (age mode)"
+    ),
+    identity_file: Path | None = typer.Option(
+        None, "--identity-file", help="Read age identities from a file, as made by age-keygen"
     ),
     decompress: bool = typer.Option(False, "--decompress", help="Also un-gzip the result"),
 ) -> None:
@@ -559,14 +579,18 @@ def backup_decrypt(
         raise typer.Exit(1)
     key_text = typer.prompt("Recovery key", hide_input=True) if recovery_key else None
     phrase = typer.prompt("Passphrase", hide_input=True) if passphrase else None
+    identities = [typer.prompt("age identity", hide_input=True)] if identity else []
 
     config = AppConfig.load()
     try:
+        if identity_file is not None:
+            identities += _read_identity_file(identity_file.expanduser())
         crypto = BackupCrypto(
             config.backup_policy.encryption,
             CredentialService(),
             recovery_key=key_text,
             passphrase=phrase,
+            identities=identities,
         )
         data = crypto.read_bytes(file)
     except BackupCryptoError as e:

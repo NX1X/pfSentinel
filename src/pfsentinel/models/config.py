@@ -131,13 +131,19 @@ class SecondCopyPolicy(BaseModel):
 class EncryptionPolicy(BaseModel):
     """Encryption at rest for backup files. See services/backup_crypto.py.
 
-    Only the key ID and the scrypt salt live here; the key or passphrase is
-    in the OS keystore.
+    Only key IDs, the scrypt salt and age public keys live here; the key,
+    passphrase or age identity is in the OS keystore.
     """
 
-    mode: Literal["off", "keystore", "passphrase"] = "off"
+    mode: Literal["off", "keystore", "passphrase", "age"] = "off"
     key_id: str | None = None  # hex, identifies the current key
     salt: str | None = None  # hex, passphrase mode only
+    # age mode: the public key (age1...) of pfSentinel's own age identity.
+    age_recipient: str | None = None
+    # age mode: the user's own age public keys; every file is also encrypted to them.
+    age_recipients: list[str] = Field(default_factory=list)
+    # Key IDs of every age identity created here, so older files stay readable.
+    age_key_ids: list[str] = Field(default_factory=list)
 
 
 class BackupPolicy(BaseModel):

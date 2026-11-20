@@ -167,6 +167,108 @@ def test_encrypt_existing_converts_plain_backups(
     assert "2 encrypted, 0 plain" in status.stdout
 
 
+AGE_IDENTITY = re.compile(r"AGE-SECRET-KEY-1[0-9A-Z]{58}")
+
+
+def test_age_mode_end_to_end(
+    cli_runner: CliRunner, seeded_config: AppConfig, with_leases, tmp_path: Path
+) -> None:
+    """Setup with the user's own key, back up, read back, and open on another PC."""
+    from pfsentinel.services import age_format, credentials
+
+    mine = age_format.Identity.generate()
+    setup = cli_runner.invoke(
+        app, ["encryption", "setup", "--mode", "age", "--recipient", mine.recipient]
+    )
+    assert setup.exit_code == 0, _output(setup)
+    pfs_identity = AGE_IDENTITY.search(setup.stdout)
+    assert pfs_identity, setup.stdout
+    policy = AppConfig.load().backup_policy.encryption
+    assert policy.mode == "age" and policy.age_recipients == [mine.recipient]
+
+    for _ in range(2):
+        run = cli_runner.invoke(app, RUN)
+        assert run.exit_code == 0, _output(run)
+    records = _records(seeded_config)
+    assert records and all(r.encrypted for r in records)
+    root = seeded_config.backup_policy.resolved_root / "home-fw"
+    for path in root.rglob("*.enc"):
+        raw = path.read_bytes()
+        assert raw.startswith(b"age-encryption.org/v1\n")
+        assert b"<pfsense" not in raw and b"secret-lease" not in raw
+    for record in records:
+        verify = cli_runner.invoke(app, ["backup", "verify", record.filename])
+        assert verify.exit_code == 0, _output(verify)
+    configs = sorted(
+        (r for r in records if r.backup_type.value == "config"), key=lambda r: r.created_at
+    )
+    diff = cli_runner.invoke(app, ["backup", "diff", configs[0].filename, configs[1].filename])
+    assert diff.exit_code == 0, _output(diff)
+    status = cli_runner.invoke(app, ["encryption", "status"])
+    assert "age" in status.stdout and mine.recipient in status.stdout
+
+    enc = root / configs[0].relative_path
+    copy = tmp_path / "usb" / enc.name
+    copy.parent.mkdir()
+    copy.write_bytes(enc.read_bytes())
+    key_file = tmp_path / "key.txt"
+    key_file.write_text(f"# public key: {mine.recipient}\n{mine}\n")
+
+    with pytest.MonkeyPatch.context() as mp:  # "another PC": an empty keystore
+        mp.setattr(credentials.CredentialService, "get_secret", lambda self, name: None)
+        no_key = cli_runner.invoke(app, ["backup", "decrypt", str(copy)])
+        assert no_key.exit_code != 0 and "--identity" in _output(no_key)
+
+        with_file = cli_runner.invoke(
+            app,
+            ["backup", "decrypt", str(copy), "--identity-file", str(key_file), "--decompress"],
+        )
+        assert with_file.exit_code == 0, _output(with_file)
+        plain = copy.with_name(copy.name.removesuffix(".gz.enc"))
+        assert plain.read_text().lstrip().startswith("<?xml")
+        plain.unlink()
+
+        typed = cli_runner.invoke(
+            app,
+            ["backup", "decrypt", str(copy), "--identity", "--decompress"],
+            input=pfs_identity.group(0) + "\n",
+        )
+        assert typed.exit_code == 0, _output(typed)
+        assert plain.read_text().lstrip().startswith("<?xml")
+
+
+def test_age_setup_without_own_key_asks_to_confirm_the_identity(
+    cli_runner: CliRunner, seeded_config: AppConfig, monkeypatch
+) -> None:
+    from pfsentinel.services import backup_crypto
+
+    shown: list[str] = []
+    real_setup = backup_crypto.BackupCrypto.setup_age
+
+    def setup(self, recipients):
+        shown.append(real_setup(self, recipients))
+        return shown[-1]
+
+    monkeypatch.setattr(backup_crypto.BackupCrypto, "setup_age", setup)
+    answers = iter(["", "WRNG"])  # no own key; then a wrong confirmation
+
+    def prompt(text, *args, **kwargs):
+        answer = next(answers, None)
+        return shown[-1][-4:] if answer is None else answer
+
+    monkeypatch.setattr("pfsentinel.cli.commands.encryption.typer.prompt", prompt)
+    result = cli_runner.invoke(app, ["encryption", "setup", "--mode", "age"])
+    assert result.exit_code == 0, _output(result)
+    assert "does not match" in result.stdout
+    assert AppConfig.load().backup_policy.encryption.age_recipients == []
+
+
+def test_age_setup_rejects_a_bad_recipient(cli_runner: CliRunner, seeded_config: AppConfig) -> None:
+    result = cli_runner.invoke(app, ["encryption", "setup", "--recipient", "age1nope"])
+    assert result.exit_code == 1
+    assert AppConfig.load().backup_policy.encryption.mode == "off"
+
+
 def test_status_warns_when_off(cli_runner: CliRunner, seeded_config: AppConfig) -> None:
     result = cli_runner.invoke(app, ["encryption", "status"])
     assert "OFF" in result.stdout
