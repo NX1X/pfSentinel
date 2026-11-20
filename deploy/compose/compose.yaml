@@ -1,0 +1,32 @@
+# EXPERIMENTAL. See docs/docker.md.
+#
+# One backup run per `docker compose run`. pfSentinel has no daemon mode, so
+# schedule the command with host cron or a systemd timer:
+#   0 2 * * *  cd /opt/pfsentinel && docker compose run --rm pfsentinel
+#
+# One-time setup (interactive):
+#   docker compose run --rm pfsentinel config set backup-dir /data
+#   docker compose run --rm pfsentinel device add
+#   docker compose run --rm pfsentinel device trust-key <device-id>
+#   docker compose run --rm pfsentinel encryption setup
+services:
+  pfsentinel:
+    # REPLACE the digest below with the real one. Keep the tag.
+    image: ghcr.io/nx1x/pfsentinel:0.3.0@sha256:REPLACE_WITH_REAL_DIGEST
+    command: ["backup", "run", "--non-interactive"]
+    read_only: true
+    user: "10001:10001"
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=64m
+    mem_limit: 256m
+    cpus: 0.5
+    volumes:
+      - pfsentinel-data:/data
+      - pfsentinel-config:/home/pfs/.pfsentinel
+
+volumes:
+  pfsentinel-data:
+  pfsentinel-config:
