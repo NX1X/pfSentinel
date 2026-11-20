@@ -151,13 +151,19 @@ class TestLockfileHeaders:
 
     @pytest.mark.parametrize(
         ("lockfile", "extra"),
-        [("requirements.lock", None), ("requirements-dev.lock", "--extra=dev")],
+        [
+            ("requirements.lock", None),
+            ("requirements-dev.lock", "--extra=dev"),
+            ("ci/security-tools.lock", None),
+        ],
     )
     def test_header_is_one_renovate_can_replay(self, lockfile: str, extra: str | None) -> None:
         lines = (Path(__file__).resolve().parents[2] / lockfile).read_text(encoding="utf-8")
         header = next(ln for ln in lines.splitlines()[:4] if "uv pip compile" in ln)
         args = header.split("uv pip compile", 1)[1].split()
-        assert f"--output-file={lockfile}" in args, header
+        # Renovate runs the command in the lockfile's folder, so the name is
+        # relative to that folder.
+        assert f"--output-file={Path(lockfile).name}" in args, header
         assert "-o" not in args, header
         assert "--universal" in args, header
         assert "--generate-hashes" in args, header
