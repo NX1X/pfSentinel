@@ -214,11 +214,11 @@ class TestPrerelease:
             UpdateService.GITHUB_RELEASES_URL,
             json=[
                 {"tag_name": "v0.3.0", "assets": [], "html_url": ""},
-                {"tag_name": "v1.0.0rc1", "prerelease": True, "assets": [], "html_url": ""},
+                {"tag_name": "v9.0.0rc1", "prerelease": True, "assets": [], "html_url": ""},
             ],
         )
         result = _svc(tmp_path).check(force=True, prerelease=True)
-        assert result is not None and result["latest"] == "1.0.0rc1"
+        assert result is not None and result["latest"] == "9.0.0rc1"
 
 
 def test_install_command_has_pre_option() -> None:

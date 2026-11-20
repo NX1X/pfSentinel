@@ -58,7 +58,7 @@ spec:
           containers:
             - name: pfsentinel
               # REPLACE the digest below with the real one. Keep the tag.
-              image: ghcr.io/nx1x/pfsentinel:0.3.0@sha256:REPLACE_WITH_REAL_DIGEST
+              image: ghcr.io/nx1x/pfsentinel:1.0.0-rc.1@sha256:REPLACE_WITH_REAL_DIGEST
               args: ["backup", "run", "--non-interactive"]
               securityContext:
                 allowPrivilegeEscalation: false

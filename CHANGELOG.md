@@ -13,6 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-rc.1] - 2026-11-20
+
+The release candidate for 1.0: everything planned for 0.4.0, 0.5.0 and 0.6.0 in one pre-release. It is published as a GitHub pre-release, so `pfs update install` keeps users on 0.3.0 unless they ask for it. 1.0.0 follows after it runs 14 days in a row without a failed backup.
+
+**To try it:**
+
+1. Run `pfs update install --pre` (or `pip install --pre --upgrade pfsentinel`).
+2. Run `pfs --version`. Expected: `pfSentinel v1.0.0-rc.1`.
+3. Optional: `pfs notify email setup`, `pfs notify digest enable --time 08:00`, `pfs copy setup`.
+
+S3, Azure, WebDAV and the container image are EXPERIMENTAL in this release.
+
 ### Added
 
 - **Email alerts through any SMTP server:** STARTTLS (587), implicit TLS (465), or no encryption for a local server such as Mailpit. The login is optional, and the password is kept in the OS keystore, never in config.json; a login over an unencrypted connection is refused. TLS certificates are checked by default (`--skip-tls-verify` for lab servers only). Set up with `pfs notify email setup`

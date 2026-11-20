@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import responses
+from packaging.version import Version
 
 from pfsentinel import __version__
 from pfsentinel.services.updater import UpdateError, UpdateService, child_env
@@ -204,7 +205,7 @@ class TestCurrentVersion:
     def test_returns_version_object(self, tmp_path):
         svc = _make_service(tmp_path)
         v = svc.current_version()
-        assert str(v) == CURRENT_VERSION
+        assert v == Version(CURRENT_VERSION)  # 1.0.0-rc.1 normalizes to 1.0.0rc1
 
 
 # ── should_auto_check ──────────────────────────────────────────────────
