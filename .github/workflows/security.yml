@@ -41,7 +41,7 @@ jobs:
       - name: Install Bandit
         # Hash-pinned (ci/security-tools.lock), so a changed release cannot run
         # here; wheels only, so no package's setup code runs at install time.
-        run: pip install --only-binary :all: --require-hashes -r ci/security-tools.lock
+        run: "pip install --only-binary :all: --require-hashes -r ci/security-tools.lock"
 
       - name: Run Bandit
         run: bandit -c pyproject.toml -r src/ --severity-level medium --confidence-level medium
@@ -76,7 +76,7 @@ jobs:
       - name: Install zizmor
         # Hash-pinned (ci/security-tools.lock), so a changed release cannot run
         # here; wheels only, so no package's setup code runs at install time.
-        run: pip install --only-binary :all: --require-hashes -r ci/security-tools.lock
+        run: "pip install --only-binary :all: --require-hashes -r ci/security-tools.lock"
 
       - name: Run zizmor
         env:
