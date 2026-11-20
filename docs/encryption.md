@@ -67,14 +67,14 @@ All integers are big-endian.
 |-------|-------|-------|
 | magic | 8 | `PFSENC` `00` `01` |
 | mode | 1 | 1 = keystore key, 2 = passphrase |
-| key ID | 8 | first 8 bytes of SHA-256(`pfsentinel-key-id` + key) |
+| key ID | 8 | first 8 bytes of HMAC-SHA256(key, `pfsentinel-key-id`) |
 | salt | 16 | scrypt salt (zeros in keystore mode) |
 | log2 N, r, p | 3 | scrypt parameters (zeros in keystore mode) |
 | nonce prefix | 7 | random, new for every file |
 
 After the 43-byte header come the chunks: AES-256-GCM of each 64 KiB of plaintext, each with a 16-byte tag. The nonce of chunk `i` is `prefix + i (4 bytes) + last (1 byte)`, where `last` is 1 only for the final chunk. The associated data of every chunk is the header. This is the STREAM construction, as used by age and Tink: a changed, reordered, dropped or added chunk, or a changed header, fails authentication.
 
-The recovery key is `PFSK-` followed by the base32 of the 32-byte key plus 3 check bytes (the first 3 bytes of SHA-256 of the key), in groups of 4.
+The recovery key is `PFSK-` followed by the base32 of the 32-byte key plus 3 check bytes (the first 3 bytes of HMAC-SHA256(key, `pfsentinel-recovery-check`)), in groups of 4.
 
 ### Standalone decryption
 
@@ -82,7 +82,7 @@ This script needs only Python 3 and the `cryptography` package. It reads a file 
 
 ```python
 """Decrypt a pfSentinel .enc backup: python pfs_decrypt.py FILE OUT (keystore or passphrase)."""
-import base64, getpass, hashlib, struct, sys
+import base64, getpass, hashlib, hmac, struct, sys
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
@@ -98,11 +98,11 @@ def decrypt(src, dst, secret):
             raw = "".join(secret.split()).upper().replace("-", "").removeprefix("PFSK")
             raw = base64.b32decode(raw + "=" * (-len(raw) % 8))
             key = raw[:32]
-            if hashlib.sha256(key).digest()[:3] != raw[32:]:
+            if hmac.new(key, b"pfsentinel-recovery-check", hashlib.sha256).digest()[:3] != raw[32:]:
                 sys.exit("recovery key has a typo")
         else:  # passphrase
             key = Scrypt(salt=salt, length=32, n=2**log2_n, r=r, p=p).derive(secret.encode())
-        if hashlib.sha256(b"pfsentinel-key-id" + key).digest()[:8] != kid:
+        if hmac.new(key, b"pfsentinel-key-id", hashlib.sha256).digest()[:8] != kid:
             sys.exit("wrong key or passphrase for this file")
         aead, counter, out = AESGCM(key), 0, open(dst, "wb")
         chunk = f.read(CHUNK + TAG)

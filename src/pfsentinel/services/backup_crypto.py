@@ -19,7 +19,7 @@ before a key change can still be read.
 
     magic      8   b"PFSENC" 0x00 0x01
     mode       1   1 = keystore key, 2 = passphrase (scrypt)
-    key_id     8   first 8 bytes of SHA-256(b"pfsentinel-key-id" + key)
+    key_id     8   first 8 bytes of HMAC-SHA256(key, b"pfsentinel-key-id")
     salt      16   scrypt salt (zeros in keystore mode)
     log2_n     1   scrypt cost N = 2**log2_n (0 in keystore mode)
     r          1   scrypt block size (0 in keystore mode)
@@ -40,6 +40,7 @@ import base64
 import contextlib
 import functools
 import hashlib
+import hmac
 import io
 import os
 import struct
@@ -84,8 +85,14 @@ class MissingKeyError(BackupCryptoError):
     """The key for a file is not on this machine."""
 
 
+def _tag(key: bytes, label: bytes, size: int) -> bytes:
+    """HMAC-SHA256 of a fixed label, keyed with the key: identifies the key
+    without revealing it, and is not a hash of a password."""
+    return hmac.new(key, label, hashlib.sha256).digest()[:size]
+
+
 def key_id(key: bytes) -> bytes:
-    return hashlib.sha256(b"pfsentinel-key-id" + key).digest()[:8]
+    return _tag(key, b"pfsentinel-key-id", 8)
 
 
 @functools.lru_cache(maxsize=8)
@@ -101,7 +108,7 @@ def derive_key(passphrase: str, salt: bytes, log2_n: int, r: int, p: int) -> byt
 
 def format_recovery_key(key: bytes) -> str:
     """'PFSK-XXXX-XXXX-...': the key plus a 3-byte check, in base32 groups of 4."""
-    raw = key + hashlib.sha256(key).digest()[:_CHECK_BYTES]
+    raw = key + _tag(key, b"pfsentinel-recovery-check", _CHECK_BYTES)
     text = base64.b32encode(raw).decode("ascii").rstrip("=")
     return "-".join([_RECOVERY_PREFIX] + [text[i : i + 4] for i in range(0, len(text), 4)])
 
@@ -114,7 +121,9 @@ def parse_recovery_key(text: str) -> bytes:
     except (ValueError, TypeError) as e:
         raise BackupCryptoError("Recovery key is not valid (bad characters)") from e
     key, check = raw[:-_CHECK_BYTES], raw[-_CHECK_BYTES:]
-    if len(key) != 32 or hashlib.sha256(key).digest()[:_CHECK_BYTES] != check:
+    if len(key) != 32 or not hmac.compare_digest(
+        _tag(key, b"pfsentinel-recovery-check", _CHECK_BYTES), check
+    ):
         raise BackupCryptoError("Recovery key is not valid (typo or incomplete)")
     return key
 

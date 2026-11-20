@@ -186,7 +186,8 @@ def test_streaming_reader_works_with_gzip_and_tar(keystore_crypto, tmp_path: Pat
 def _doc_script() -> dict:
     """The standalone decryption script from docs/encryption.md, loaded as code."""
     doc = (Path(__file__).resolve().parents[2] / "docs" / "encryption.md").read_text()
-    code = doc.split("### Standalone decryption", 1)[1].split("```python\n", 1)[1].split("```", 1)[0]
+    section = doc.split("### Standalone decryption", 1)[1]
+    code = section.split("```python\n", 1)[1].split("```", 1)[0]
     namespace: dict = {"__name__": "pfs_decrypt"}
     exec(compile(code, "pfs_decrypt.py", "exec"), namespace)  # noqa: S102 - our own docs
     return namespace
