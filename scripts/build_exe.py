@@ -96,7 +96,7 @@ a = Analysis(
     # time, but bundled it adds a start hook that loads it on every start.
     excludes=[
         'tkinter', 'customtkinter', 'PyQt5', 'PyQt6', 'wx', 'matplotlib',
-        'setuptools', 'pkg_resources', '_distutils_hack', 'distutils',
+        'setuptools', 'pkg_resources', '_distutils_hack',
     ],
     cipher=block_cipher,
     noarchive=False,
