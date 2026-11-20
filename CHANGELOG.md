@@ -17,6 +17,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **One folder per backup run:** `<device>/YYYY/MM/DD/<HHMMSS>_#NNN/` holds the config and every extra of that run. Before, the config went to `<device>/YYYY/MM/DD/` and each extra to `<device>/<type>/YYYY/MM/DD/`. `NNN` is now a run number that counts the device's runs and never resets, instead of a daily sequence. `backup list` shows it in a "Run" column, which replaces the row number. Backups made before 0.3.0 stay where they are and keep working with list, verify, diff, restore and retention, and new run numbers continue after them. Retention removes run folders that it empties. The backup index moves to schema 3 on first use
 
+### Security
+
+- Bandit and zizmor in `security.yml` are installed with `--require-hashes` from a new lockfile, `ci/security-tools.lock`, instead of a version range. A changed or compromised release can no longer run in CI. This fixes the two open OpenSSF Scorecard "Pinned-Dependencies" findings. OSV-Scanner and Renovate cover the new lockfile
+- soupsieve 4.0.1 (dev only, GHSA-mmhr-3c5m-f64f, high) and OpenTelemetry 1.45.2 in the Dagger CI module (GHSA-mf5v-w3w3-f6cg, medium)
+
+### Changed
+
+- Dependencies updated within the 14-day release cooldown: pydantic 2.14.3, typer 0.27.3, paramiko 5.1.0, cryptography 50.0.2, lxml 6.1.3, keyring 25.7.0, packaging 26.3, certifi 2026.10.23; dev tools ruff 0.17.4, pytest 9.2.0, mypy 2.4.1, hypothesis 6.170.14, hatchling 1.33.0, types-paramiko 5.1.0. The floors in `pyproject.toml` match
+- CI: github/codeql-action 4.39.3, Dagger engine 0.21.11, and uv_build 0.13.7 for the Dagger module
+- `renovate.json` says why the dashboard always shows "pip-compile: dependency not found in lock file": it is `requires-python`, which no lockfile contains
+
 ### Fixed
 
 Found in the homelab field test of 2026-11-20 (v0.2.6, Windows 11, pfSense CE 2.8.1, non-root backup user):

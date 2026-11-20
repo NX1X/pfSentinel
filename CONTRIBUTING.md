@@ -107,6 +107,15 @@ UV_EXCLUDE_NEWER="14 days" uv pip compile --universal --extra=dev --generate-has
   A test checks that too.
 - Add `--upgrade` to move every pin to the newest version the cooldown allows.
 
+The security scanners that `security.yml` runs (Bandit, zizmor) are installed
+with `--require-hashes` from their own lockfile. Regenerate it from the `ci`
+folder:
+
+```bash
+cd ci
+UV_EXCLUDE_NEWER="14 days" uv pip compile --universal --generate-hashes security-tools.in --output-file=security-tools.lock
+```
+
 ## CI Pipeline
 
 Lint, test, security-audit and package-build run as a single [Dagger](https://dagger.io)

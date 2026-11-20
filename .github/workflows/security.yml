@@ -36,9 +36,11 @@ jobs:
         with:
           python-version: '3.14'
           cache: 'pip'
+          cache-dependency-path: ci/security-tools.lock
 
       - name: Install Bandit
-        run: pip install "bandit[toml]>=1.8,<2"
+        # Hash-pinned (ci/security-tools.lock), so a changed release cannot run here.
+        run: pip install --require-hashes -r ci/security-tools.lock
 
       - name: Run Bandit
         run: bandit -c pyproject.toml -r src/ --severity-level medium --confidence-level medium
@@ -68,9 +70,11 @@ jobs:
         with:
           python-version: '3.14'
           cache: 'pip'
+          cache-dependency-path: ci/security-tools.lock
 
       - name: Install zizmor
-        run: pip install "zizmor>=1.5,<2"
+        # Hash-pinned (ci/security-tools.lock), so a changed release cannot run here.
+        run: pip install --require-hashes -r ci/security-tools.lock
 
       - name: Run zizmor
         env:
@@ -78,7 +82,7 @@ jobs:
         run: zizmor --persona regular --format sarif . > zizmor.sarif
 
       - name: Upload zizmor SARIF
-        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370  # v4.39.1
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066  # v4.39.3
         with:
           sarif_file: zizmor.sarif
           category: zizmor
@@ -128,4 +132,5 @@ jobs:
             --config=osv-scanner.toml
             --lockfile=requirements.txt:requirements.lock
             --lockfile=requirements.txt:requirements-dev.lock
+            --lockfile=requirements.txt:ci/security-tools.lock
             --lockfile=.dagger/uv.lock

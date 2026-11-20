@@ -32,7 +32,7 @@ Scheduler, toast notifications via PowerShell) is exercised by the native
 ## Running locally
 
 Install the Dagger CLI (see [Dagger's install docs](https://docs.dagger.io/install));
-this repo pins the engine to `v0.21.9` in `dagger.json`, and `dagger` will
+this repo pins the engine to `v0.21.11` in `dagger.json`, and `dagger` will
 fetch a matching engine automatically. From the repository root:
 
 ```bash
@@ -104,7 +104,7 @@ dagger.json                   # engine version pin, sdk, source dir (points at .
 ```
 
 The root-level `dagger.json` records the pinned engine version
-(`engineVersion: v0.21.9`) and points at `.dagger` as the module source.
+(`engineVersion: v0.21.11`) and points at `.dagger` as the module source.
 
 ## Future work
 

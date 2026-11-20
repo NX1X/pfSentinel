@@ -51,10 +51,11 @@
   },
 
   "pip-compile": {
-    "description": "Owns pyproject.toml together with requirements.lock and requirements-dev.lock. Their headers must use --extra=dev and --output-file= (with '='); Renovate rejects the short or spaced forms and then manages neither lockfile.",
+    "description": "Owns pyproject.toml together with requirements.lock and requirements-dev.lock, and ci/security-tools.in with ci/security-tools.lock (the hash-pinned scanners of security.yml). Headers must use --extra=dev and --output-file= (with '='); Renovate rejects the short or spaced forms and then manages none of the lockfiles. The dashboard warning 'pip-compile: dependency not found in lock file' is expected: it is requires-python, which no lockfile contains.",
     "managerFilePatterns": [
       "/(^|/)requirements\\.lock$/",
-      "/(^|/)requirements-dev\\.lock$/"
+      "/(^|/)requirements-dev\\.lock$/",
+      "/(^|/)ci/security-tools\\.lock$/"
     ]
   },
 
