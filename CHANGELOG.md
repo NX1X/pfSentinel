@@ -43,7 +43,7 @@ From the 0.3.0 field test (2026-11-20, Windows 11, PowerShell 7):
 
 - **Count-drop alert** (a risky change, event 1002): firewall rules, port forwards, users, certificates, CAs or interfaces fell by 20% or more (and at least two), or to zero, since the previous config
 - **Update-available alert** (event 1006, Information): the daily check task tells you once per new release. Turn it off with `notifications.update_alerts`
-- `pfs update check --pre` and `pfs update install --pre` include pre-releases (release candidates)
+- `pfs update check --pre` and `pfs update install --pre` include pre-releases (release candidates). A version with a suffix (for example `1.0.0-rc.1`) is published as a GitHub pre-release, so the normal update path stays on the last stable release
 
 ### Documentation
 

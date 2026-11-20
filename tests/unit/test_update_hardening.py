@@ -203,6 +203,10 @@ class TestPrerelease:
         ]
         assert _newest_release(releases)["tag_name"] == "v1.0.0rc1"
 
+    def test_the_changelog_style_rc_tag_sorts_above_the_last_stable(self) -> None:
+        releases = [{"tag_name": "v0.6.0"}, {"tag_name": "v1.0.0-rc.1", "prerelease": True}]
+        assert _newest_release(releases)["tag_name"] == "v1.0.0-rc.1"
+
     @responses.activate
     def test_check_with_pre_finds_the_release_candidate(self, tmp_path: Path) -> None:
         responses.add(

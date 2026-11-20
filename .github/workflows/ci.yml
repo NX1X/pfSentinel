@@ -498,10 +498,18 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ needs.resolve-version.outputs.tag }}
         run: |
+          # A version with a suffix (1.0.0-rc.1) is a pre-release: GitHub then
+          # keeps the last stable release as "latest", so `pfs update install`
+          # moves only users who ask with --pre.
+          PRE=()
+          if [[ "$RELEASE_TAG" == *-* ]]; then
+            PRE=(--prerelease)
+          fi
           gh release create "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --title "pfSentinel $RELEASE_TAG" \
             --notes-file artifacts/release-notes/release_notes.md \
+            "${PRE[@]}" \
             ./release_files/*
 
   # ---------------------------------------------------------------------------
