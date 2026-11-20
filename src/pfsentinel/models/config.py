@@ -140,9 +140,15 @@ class NotificationConfig(BaseModel):
     slack_enabled: bool = False
     # slack_webhook_url stored in keyring, not here
     windows_toast_enabled: bool = True
+    # Windows Event Log (Application, source "pfSentinel") or syslog/journald
+    # on Linux. Kept under its first name for existing configs.
     windows_event_log_enabled: bool = False
     notify_on_success: bool = True
+    # Failures and alerts: failed backup, risky change, failed restore check,
+    # no recent backup, failed second copy.
     notify_on_failure: bool = True
+    # Alert when a device has had no successful backup for this many days.
+    stale_after_days: int = Field(default=3, ge=1, le=365)
 
 
 class SyslogConfig(BaseModel):

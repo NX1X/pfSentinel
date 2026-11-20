@@ -8,7 +8,7 @@ from pfsentinel.cli.formatters import console, print_error, print_info, print_su
 from pfsentinel.models.config import AppConfig
 from pfsentinel.services.credentials import CredentialService
 
-app = typer.Typer(help="Notification setup (Telegram, Slack)")
+app = typer.Typer(help="Notification setup (Telegram, Slack, Event Log)")
 
 
 def _load() -> tuple[AppConfig, CredentialService]:
@@ -321,6 +321,55 @@ def _slack_send_test(webhook_url: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Windows Event Log (syslog / journald on Linux)
+# ---------------------------------------------------------------------------
+
+eventlog_app = typer.Typer(help="Windows Event Log (syslog/journald on Linux)")
+app.add_typer(eventlog_app, name="eventlog")
+
+
+@eventlog_app.command("enable")
+def eventlog_enable() -> None:
+    """Write every alert to the Windows Event Log (Application, source pfSentinel).
+
+    On Windows the source is registered once, which needs an administrator
+    PowerShell ('pfs schedule enable' also does it). On Linux, alerts go to
+    syslog/journald with the tag 'pfsentinel'.
+    """
+    from pfsentinel.services.notifications import register_event_source
+    from pfsentinel.utils.platform import is_elevated, is_windows
+
+    config, _ = _load()
+    if is_windows():
+        try:
+            register_event_source()
+        except RuntimeError as e:
+            if not is_elevated():
+                print_error("Registering the event source needs an administrator PowerShell.")
+                print_info(
+                    "Open PowerShell with 'Run as administrator' and run this command again."
+                )
+            else:
+                print_error(f"Could not register the event source: {e}")
+            raise typer.Exit(1)
+    config.notifications.windows_event_log_enabled = True
+    config.save()
+    target = "Windows Event Log (Application, source pfSentinel)" if is_windows() else "syslog"
+    print_success(f"Alerts are written to the {target}")
+    print_info("Event IDs: 1000 backup OK, 1001 backup failed, 1002 risky change,")
+    print_info("           1003 no recent backup, 1004 restore check failed, 1005 copy failed")
+
+
+@eventlog_app.command("disable")
+def eventlog_disable() -> None:
+    """Stop writing alerts to the Event Log / syslog."""
+    config, _ = _load()
+    config.notifications.windows_event_log_enabled = False
+    config.save()
+    print_success("Event Log / syslog alerts disabled")
+
+
 @app.command("test")
 def notify_test() -> None:
     """Send a test notification to all enabled channels."""
@@ -385,10 +434,14 @@ def notify_status() -> None:
     wt_ok = config.notifications.windows_toast_enabled and is_windows()
     wt_str = "[green]enabled[/]" if wt_ok else "[dim]disabled[/] (Windows only)"
     console.print(f"  Windows Toast: {wt_str}")
+    el = "Event Log" if is_windows() else "syslog"
+    el_ok = config.notifications.windows_event_log_enabled
+    console.print(f"  {el + ':':<14}{'[green]enabled[/]' if el_ok else '[dim]disabled[/]'}")
 
     console.print()
     on_success = "Yes" if config.notifications.notify_on_success else "No"
     on_failure = "Yes" if config.notifications.notify_on_failure else "No"
     console.print(f"  Notify on success: {on_success}")
-    console.print(f"  Notify on failure: {on_failure}")
+    console.print(f"  Notify on failure: {on_failure} (also risky changes and other alerts)")
+    console.print(f"  No-recent-backup alert after: {config.notifications.stale_after_days} day(s)")
     console.print()

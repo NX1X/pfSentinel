@@ -408,6 +408,83 @@ def backup_restore(
         raise typer.Exit(1)
 
 
+@app.command("check")
+def backup_check(
+    filename: str | None = typer.Argument(None, help="Config backup filename (default: latest)"),
+    device: str | None = typer.Option(None, "--device", "-d", help="Device ID (with no filename)"),
+) -> None:
+    """Restore check: would this config backup restore a working firewall?
+
+    Parses config.xml and checks for users, an admin user, interfaces and the
+    firewall filter section. Encrypted backups are decrypted in memory.
+    """
+    from pfsentinel.models.backup import BackupType
+    from pfsentinel.services.config_checks import restore_check
+
+    _, svc = _get_service()
+    configs = [r for r in svc.list_backups(device) if r.backup_type == BackupType.CONFIG]
+    if filename:
+        configs = [r for r in configs if r.filename == filename]
+    if not configs:
+        print_error(f"Backup not found: {filename}" if filename else "No config backups found")
+        raise typer.Exit(1)
+    record = configs[0]
+    try:
+        result = restore_check(svc.read_xml(svc.backup_path(record)))
+    except Exception as e:
+        print_error(f"Cannot read {record.filename}: {e}")
+        raise typer.Exit(1)
+    console.print(f"{record.filename}")
+    if result.ok:
+        print_success(f"Restore check {result.summary}")
+    else:
+        print_error(f"Restore check {result.summary}")
+        raise typer.Exit(1)
+
+
+@app.command("check-recent")
+def backup_check_recent(
+    days: int | None = typer.Option(
+        None, "--days", help="Alert after this many days (default: notifications.stale_after_days)"
+    ),
+    non_interactive: bool = typer.Option(
+        False, "--non-interactive", help="For scheduled runs (this command never prompts)"
+    ),
+) -> None:
+    """Alert when a device has had no successful backup for some days.
+
+    Scheduled at sign-in and daily by 'pfs schedule enable': a PC that was
+    off, or a schedule that stopped, gives no error on its own.
+    """
+    from datetime import datetime, timedelta
+
+    from pfsentinel.models.backup import BackupType
+    from pfsentinel.services.notifications import AlertKind
+
+    config, svc = _get_service()
+    limit = days or config.notifications.stale_after_days
+    cutoff = datetime.now() - timedelta(days=limit)
+    stale = 0
+    for device in config.enabled_devices():
+        latest = next(
+            (r for r in svc.list_backups(device.id) if r.backup_type == BackupType.CONFIG), None
+        )
+        if latest is not None and latest.created_at >= cutoff:
+            print_success(f"{device.id}: last backup {latest.created_at:%Y-%m-%d %H:%M}")
+            continue
+        stale += 1
+        when = f"{latest.created_at:%Y-%m-%d %H:%M}" if latest else "never"
+        print_warning(f"{device.id}: no backup in {limit} day(s) (last: {when})")
+        svc.notifications.alert(
+            AlertKind.NO_RECENT_BACKUP,
+            f"pfSentinel - No recent backup of {device.id}",
+            f"Device: {device.id}\nLast successful backup: {when}\n"
+            f"Limit: {limit} day(s). Check that the PC was on and run: pfs schedule status",
+        )
+    if stale:
+        raise typer.Exit(1)
+
+
 @app.command("decrypt")
 def backup_decrypt(
     file: Path = typer.Argument(..., help="Encrypted backup file (.enc)"),

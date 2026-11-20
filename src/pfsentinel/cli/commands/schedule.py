@@ -242,11 +242,18 @@ def schedule_status() -> None:
         lines.extend(
             _format_windows_task("Windows task (weekly)", status.get("windows_weekly", {}))
         )
+        if "windows_check" in status:
+            lines.extend(
+                _format_windows_task(
+                    "Windows task (no-recent-backup check)", status["windows_check"]
+                )
+            )
 
     if "systemd_daily" in status:
         timers = [
             ("systemd timer (daily)", status["systemd_daily"]),
             ("systemd timer (weekly)", status["systemd_weekly"]),
+            ("systemd timer (no-recent-backup check)", status.get("systemd_check", {})),
         ]
         if any(t.get("exists") for _, t in timers):
             lines.append("")

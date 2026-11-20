@@ -79,6 +79,10 @@ class BackupRecord(BaseModel):
     run_number: int | None = None
     # Encrypted at rest (filename ends in .enc); see services/backup_crypto.py.
     encrypted: bool = False
+    # Config only: security-relevant changes since the previous config, and
+    # the result of the restore check (services/config_checks.py).
+    risky_changes: list[str] = Field(default_factory=list)
+    restore_check: str | None = None
 
     @property
     def size_human(self) -> str:

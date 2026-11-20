@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Alerts** on every enabled channel, each kind with a fixed Windows Event Log ID:
+  - **Risky change** (1002): after each config backup, one alert per security-relevant change since the previous config: admin users and groups, the GUI authentication server, WAN pass rules and port forwards, SSH password login, the anti-lockout rule, and the web GUI protocol, port and certificate. Alerts name settings only, never secrets. The changes are stored with the backup
+  - **Restore check** (1004): after each config backup, config.xml must parse and have users, an admin user, interfaces and a filter section; CAs and certificates are counted. `pfs backup check [FILE]` runs it on any backup
+  - **No recent backup** (1003): `pfs backup check-recent` alerts when a device has had no successful backup for `stale_after_days` days (default 3). `pfs schedule enable` now also registers it at sign-in and daily: `pfSentinel\BackupCheck` on Windows, `pfsentinel-check.timer` (or cron) on Linux
+  - **Windows Event Log** channel (`pfs notify eventlog enable`): Application log, source `pfSentinel`, IDs 1000 backup OK, 1001 failed, 1002 risky change, 1003 no recent backup, 1004 restore check failed, 1005 second copy failed. On Linux the same alerts go to syslog/journald. `pfs schedule enable` registers the event source
 - **Encryption at rest** (`pfs encryption setup`). Every backup file (config, extras, ZFS, archive) is written as AES-256-GCM `<name>.enc` in 64 KiB authenticated chunks, so a changed, cut or reordered file fails to decrypt. Two modes: `keystore` (a random key in the OS keystore, plus a recovery key shown once) and `passphrase` (scrypt). Both work for scheduled runs without input. `list`, `verify`, `diff` and `restore` decrypt on the fly. New commands: `pfs encryption status`, `recovery-key`, `disable`, `encrypt-existing [--wipe]` (encrypts older plain backups, checks them, then deletes the plain files), and `pfs backup decrypt FILE --recovery-key | --passphrase` for another PC. `docs/encryption.md` documents the format and has a standalone decryption script; a test keeps it working. Encryption is off by default
 - Extras (RRD, aliases, certificates, logs, DHCP) are read into memory instead of a temporary folder, so certificate keys and the rest never sit in a plain temporary file, with or without encryption
 - **One folder per backup run:** `<device>/YYYY/MM/DD/<HHMMSS>_#NNN/` holds the config and every extra of that run. Before, the config went to `<device>/YYYY/MM/DD/` and each extra to `<device>/<type>/YYYY/MM/DD/`. `NNN` is now a run number that counts the device's runs and never resets, instead of a daily sequence. `backup list` shows it in a "Run" column, which replaces the row number. Backups made before 0.3.0 stay where they are and keep working with list, verify, diff, restore and retention, and new run numbers continue after them. Retention removes run folders that it empties. The backup index moves to schema 3 on first use
@@ -31,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `renovate.json` says why the dashboard always shows "pip-compile: dependency not found in lock file": it is `requires-python`, which no lockfile contains
 
 ### Fixed
+
+- Change detection compared a new config with the newest backup of any type, which can be an extra (a tar file) of the same run; it now always compares with the newest config backup
 
 Found in the homelab field test of 2026-11-20 (v0.2.6, Windows 11, pfSense CE 2.8.1, non-root backup user):
 

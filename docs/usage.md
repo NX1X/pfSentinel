@@ -319,7 +319,15 @@ pfs schedule enable --daily-time 02:00
 
 **Windows:** registers `pfSentinel\DailyBackup` (and `WeeklyBackup`) in Task Scheduler. Run it from an Administrator PowerShell. Tasks run while you are signed in (a locked screen counts). A run missed while you were signed out or the machine was off starts at your next sign-in.
 
-**Linux:** installs systemd user timers (`pfsentinel-daily.timer`, `pfsentinel-weekly.timer`). A run missed while the machine was off starts at the next boot. By default, user timers only fire while you are logged in. To back up while logged out (servers, headless boxes), enable lingering once:
+It also registers `pfSentinel\BackupCheck`, which runs `pfs backup check-recent` 5 minutes after each sign-in and daily at 12:00 (see [No recent backup](#no-recent-backup)), and the Windows Event Log source `pfSentinel`.
+
+To check a task, use `schtasks` (on some PCs `Get-ScheduledTask` fails with "The system cannot find the file specified"):
+
+```powershell
+schtasks /Query /TN "pfSentinel\DailyBackup" /V /FO LIST
+```
+
+**Linux:** installs systemd user timers (`pfsentinel-daily.timer`, `pfsentinel-weekly.timer`, and `pfsentinel-check.timer` for the no-recent-backup check). A run missed while the machine was off starts at the next boot. By default, user timers only fire while you are logged in. To back up while logged out (servers, headless boxes), enable lingering once:
 
 ```bash
 loginctl enable-linger $USER
@@ -382,6 +390,42 @@ pfs schedule status
    ```bash
    pfs notify test
    ```
+
+### Windows Event Log (syslog on Linux)
+
+```bash
+pfs notify eventlog enable
+```
+
+Writes every alert to the Application log with source `pfSentinel` (Linux: syslog/journald, tag `pfsentinel`). On Windows, registering the source needs an Administrator PowerShell once; `pfs schedule enable` does that too. Each kind of alert has a fixed event ID, so you can filter or forward them:
+
+| Event ID | Level | Alert |
+|----------|-------|-------|
+| 1000 | Information | Backup OK (only with `notify_on_success`) |
+| 1001 | Error | Backup failed |
+| 1002 | Warning | Risky change |
+| 1003 | Error | No recent backup |
+| 1004 | Error | Restore check failed |
+| 1005 | Error | Second copy failed |
+
+### Alerts
+
+Every alert goes to every enabled channel (Slack, Telegram, Windows toast, Event Log). `notify_on_failure` turns all of them on or off; `notify_on_success` controls only the "backup OK" message.
+
+**Risky change.** After each config backup, pfSentinel compares the config with the previous one and sends one alert per security-relevant change:
+
+- a new admin user, a user or group that gained admin rights, or a changed admin user (for example a new password)
+- a changed GUI authentication server (for example a switch to RADIUS)
+- a new or changed WAN pass rule, or a new or changed port forward
+- SSH login with a password alone turned on
+- the anti-lockout rule turned on or off
+- a changed web GUI protocol, port or certificate
+
+Alerts name the setting, user or rule only; never a password hash, key or other secret. The changes are also stored with the backup (`pfs backup info FILE`).
+
+**Restore check.** After each config backup, pfSentinel checks that config.xml parses and has users, an admin user, interfaces and a firewall filter section, and counts the CAs and certificates. A failed check is an alert; the backup is still kept. Run it on any backup with `pfs backup check [FILE]`.
+
+<a id="no-recent-backup"></a>**No recent backup.** `pfs backup check-recent` alerts when a device has had no successful backup for `notifications.stale_after_days` days (default 3). A PC that is off, or a schedule that stopped running, gives no error on its own; this check catches it. `pfs schedule enable` runs it at sign-in and daily.
 
 ### Check Status
 
@@ -558,6 +602,9 @@ Logs are written to `~/.pfsentinel/logs/pfsentinel.log`.
 | `backup snapshot -d ID --full` | ZFS full snapshot |
 | `backup snapshot-list -d ID` | List ZFS snapshots |
 | `backup archive -d ID` | Filesystem tar archive |
+| `backup check [FILE]` | Restore check of a config backup (default: the latest) |
+| `backup check-recent` | Alert when a device has no recent backup |
+| `backup decrypt FILE` | Decrypt one `.enc` file (`--recovery-key`, `--passphrase`) |
 
 ### `pfs device`
 
@@ -595,8 +642,19 @@ Logs are written to `~/.pfsentinel/logs/pfsentinel.log`.
 |---------|-------------|
 | `notify telegram setup` | Configure Telegram bot |
 | `notify slack setup` | Configure Slack webhook |
+| `notify eventlog enable` | Write alerts to the Windows Event Log (syslog on Linux) |
 | `notify test` | Send test notification |
 | `notify status` | Show notification status |
+
+### `pfs encryption`
+
+| Command | Description |
+|---------|-------------|
+| `encryption setup` | Turn on encryption at rest (keystore or passphrase) |
+| `encryption status` | Mode, key ID, encrypted and plain backup counts |
+| `encryption recovery-key` | Show the recovery key again (keystore mode) |
+| `encryption encrypt-existing [--wipe]` | Encrypt older plain backups |
+| `encryption disable` | Write new backups plain again |
 
 ### `pfs update`
 

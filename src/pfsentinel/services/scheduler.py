@@ -71,6 +71,7 @@ def next_weekly_run(now: datetime, day: str, at: str) -> datetime | None:
 
 _DAILY_TASK_NAME = "pfSentinel\\DailyBackup"
 _WEEKLY_TASK_NAME = "pfSentinel\\WeeklyBackup"
+_CHECK_TASK_NAME = "pfSentinel\\BackupCheck"
 
 
 class SchedulerService:
@@ -117,6 +118,7 @@ class SchedulerService:
                 success = False
             if not delete_windows_task(_WEEKLY_TASK_NAME):
                 success = False
+            delete_windows_task(_CHECK_TASK_NAME)  # absent before 0.3.0
         else:
             # Remove from both backends: the schedule may have been applied
             # with systemd on one run and cron on another.
@@ -177,11 +179,36 @@ class SchedulerService:
                     f" at {self._config.weekly_time}"
                 )
 
+        check_args = f"{prefix_args} backup check-recent --non-interactive".strip()
+        if create_windows_task(
+            task_name=_CHECK_TASK_NAME,
+            executable=executable,
+            args=check_args,
+            schedule_type="CHECK",
+            start_time=unix_schedule.CHECK_AT,
+        ):
+            logger.info("No-recent-backup check scheduled at sign-in and daily")
+        else:
+            logger.error("Failed to create the no-recent-backup check task")
+            success = False
+
+        # `schedule enable` runs as administrator, the one moment the Event Log
+        # source can be registered.
+        try:
+            from pfsentinel.services.notifications import register_event_source
+
+            register_event_source()
+        except Exception as e:
+            logger.warning(f"Could not register the Windows Event Log source: {e}")
         return success
 
     def _backup_argv(self) -> list[str]:
         executable, prefix_args = get_executable_path()
         return [executable, *prefix_args.split(), "backup", "run", "--non-interactive"]
+
+    def _check_argv(self) -> list[str]:
+        executable, prefix_args = get_executable_path()
+        return [executable, *prefix_args.split(), "backup", "check-recent", "--non-interactive"]
 
     def _unix_spec(self) -> tuple[str | None, tuple[str, str] | None]:
         daily = self._config.daily_time if self._config.daily_enabled else None
@@ -210,7 +237,7 @@ class SchedulerService:
         try:
             if unix_schedule.systemd_user_available():
                 self.backend = "systemd"
-                ok = unix_schedule.install_systemd_timers(argv, daily, weekly)
+                ok = unix_schedule.install_systemd_timers(argv, daily, weekly, self._check_argv())
                 if ok:
                     # Do not leave a stale cron copy that would double-run backups.
                     unix_schedule.remove_cron()
@@ -219,7 +246,7 @@ class SchedulerService:
             if unix_schedule.cron_available():
                 self.backend = "cron"
                 log_path = app_config_dir() / "logs" / "scheduled.log"
-                return unix_schedule.install_cron(argv, daily, weekly, log_path)
+                return unix_schedule.install_cron(argv, daily, weekly, log_path, self._check_argv())
         except unix_schedule.ScheduleSpecError as e:
             logger.error(f"Cannot install the schedule: {e}")
             return False
@@ -328,9 +355,11 @@ class SchedulerService:
             weekly = query_windows_task(_WEEKLY_TASK_NAME)
             status["windows_daily"] = daily
             status["windows_weekly"] = weekly
+            status["windows_check"] = query_windows_task(_CHECK_TASK_NAME)
         elif not is_windows():
             status["systemd_daily"] = unix_schedule.query_systemd_timer(unix_schedule.DAILY_TIMER)
             status["systemd_weekly"] = unix_schedule.query_systemd_timer(unix_schedule.WEEKLY_TIMER)
+            status["systemd_check"] = unix_schedule.query_systemd_timer(unix_schedule.CHECK_TIMER)
             status["cron_entries"] = unix_schedule.query_cron()
 
         return status
