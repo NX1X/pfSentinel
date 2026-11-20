@@ -108,9 +108,8 @@ class TestTransferFull:
         snap = ZfsSnapshot(name="zroot/ROOT@snap1", dataset="zroot/ROOT", tag="snap1")
         device = config.devices[0]
 
-        def fake_stream(cmd, dest, timeout=1800):
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(b"zfs stream data")
+        def fake_stream(cmd, dest, timeout=1800, sink=None):
+            sink.write(b"zfs stream data")
             return 15
 
         mock_conn.stream_command_to_file.side_effect = fake_stream
@@ -131,9 +130,8 @@ class TestTransferIncremental:
         current = ZfsSnapshot(name="zroot/ROOT@current", dataset="zroot/ROOT", tag="current")
         device = config.devices[0]
 
-        def fake_stream(cmd, dest, timeout=1800):
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(b"incr data")
+        def fake_stream(cmd, dest, timeout=1800, sink=None):
+            sink.write(b"incr data")
             return 9
 
         mock_conn.stream_command_to_file.side_effect = fake_stream

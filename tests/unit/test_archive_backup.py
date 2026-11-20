@@ -69,9 +69,8 @@ class TestRunArchiveBackup:
         mock_conn.__enter__ = MagicMock(return_value=mock_conn)
         mock_conn.__exit__ = MagicMock(return_value=False)
 
-        def fake_stream(cmd, dest, timeout=600, warn_exit_codes=None):
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(b"fake tar data here")
+        def fake_stream(cmd, dest, timeout=600, warn_exit_codes=None, sink=None):
+            sink.write(b"fake tar data here")
             return 18
 
         mock_conn.stream_command_to_file.side_effect = fake_stream
@@ -93,9 +92,8 @@ class TestRunArchiveBackup:
         mock_conn.__enter__ = MagicMock(return_value=mock_conn)
         mock_conn.__exit__ = MagicMock(return_value=False)
 
-        def fake_stream(cmd, dest, timeout=600, warn_exit_codes=None):
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(b"")
+        def fake_stream(cmd, dest, timeout=600, warn_exit_codes=None, sink=None):
+            sink.write(b"")
             return 0
 
         mock_conn.stream_command_to_file.side_effect = fake_stream
@@ -115,9 +113,8 @@ class TestRunArchiveBackup:
         mock_conn.__enter__ = MagicMock(return_value=mock_conn)
         mock_conn.__exit__ = MagicMock(return_value=False)
 
-        def fake_stream(cmd, dest, timeout=600, warn_exit_codes=None):
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(b"data")
+        def fake_stream(cmd, dest, timeout=600, warn_exit_codes=None, sink=None):
+            sink.write(b"data")
             return 4
 
         mock_conn.stream_command_to_file.side_effect = fake_stream

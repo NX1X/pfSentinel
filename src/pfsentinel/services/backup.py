@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import os
 import shutil
-import sys
 from collections.abc import Callable
 from pathlib import Path
 
 from pfsentinel.models.backup import BackupRecord, BackupRun
 from pfsentinel.models.config import AppConfig
 from pfsentinel.models.device import DeviceConfig
+from pfsentinel.services import backup_crypto
+from pfsentinel.services.backup_crypto import BackupCrypto
 from pfsentinel.services.connection import ConnectionManager
 from pfsentinel.services.credentials import CredentialService
 from pfsentinel.services.diff import DiffService
@@ -54,8 +55,18 @@ class BackupService:
         self._config = config
         self._creds = credential_service
         self._backup_root = config.backup_policy.resolved_root
-        self._diff = DiffService(self._backup_root)
+        self._crypto = BackupCrypto(config.backup_policy.encryption, credential_service)
+        self._diff = DiffService(self._backup_root, self._crypto)
         self._notifications = NotificationService(config.notifications, credential_service)
+
+    @property
+    def diff_service(self) -> DiffService:
+        """Diff service that can read this config's encrypted backups."""
+        return self._diff
+
+    @property
+    def crypto(self) -> BackupCrypto:
+        return self._crypto
 
     def _retention(self) -> RetentionService:
         return RetentionService(self._backup_root, self._config.backup_policy)
@@ -135,16 +146,14 @@ class BackupService:
 
             # --- Save backup ---
             _p("Saving backup...", 65)
-            # Restrict file permissions on Unix (owner-only)
-            old_umask = os.umask(0o077) if sys.platform != "win32" else None
-            try:
-                if self._config.backup_policy.compress:
-                    dest_path.write_bytes(compression.compress_bytes(xml_content.encode("utf-8")))
-                else:
-                    dest_path.write_text(xml_content, encoding="utf-8")
-            finally:
-                if old_umask is not None:
-                    os.umask(old_umask)
+            data = xml_content.encode("utf-8")
+            if self._config.backup_policy.compress:
+                data = compression.compress_bytes(data)
+            # Owner-only file; encrypted as <name>.enc when encryption is on,
+            # so the plain config never touches the disk.
+            dest_path = self._crypto.write_bytes(dest_path, data)
+            filename = dest_path.name
+            relative_path = run.relative_path(filename)
 
             file_size = dest_path.stat().st_size
 
@@ -156,7 +165,7 @@ class BackupService:
             if self._config.backup_policy.validate_after_backup:
                 _p("Verifying backup...", 80)
                 try:
-                    read_back = compression.read_xml(dest_path)
+                    read_back = self.read_xml(dest_path)
                     xml_parser.validate_xml(read_back)
                     verified = True
                 except Exception as e:
@@ -182,6 +191,7 @@ class BackupService:
                 verified=verified,
                 description=description,
                 run_number=run.number,
+                encrypted=backup_crypto.is_encrypted(dest_path),
             )
 
             # --- Update index ---
@@ -256,7 +266,7 @@ class BackupService:
         # Type-specific validation
         if record.backup_type == BackupType.CONFIG:
             try:
-                xml = compression.read_xml(path)
+                xml = self.read_xml(path)
                 xml_parser.validate_xml(xml)
             except Exception as e:
                 raise BackupError(f"XML validation failed for '{record.filename}': {e}") from e
@@ -274,20 +284,24 @@ class BackupService:
         return True
 
     def _verify_tar(self, path: Path, compressed: bool) -> None:
-        """Verify a tar archive is readable."""
-        import gzip
+        """Verify a tar archive is readable (decrypting it on the fly if needed)."""
         import tarfile
 
         try:
-            if compressed:
-                with gzip.open(path, "rb") as gz:
-                    with tarfile.open(fileobj=gz, mode="r:") as tar:
-                        tar.getnames()
-            else:
-                with tarfile.open(path, "r") as tar:
-                    tar.getnames()
+            with self._crypto.open_read(path) as raw:
+                # Stream mode reads front to back, which an encrypted file needs.
+                with tarfile.open(fileobj=raw, mode="r|gz" if compressed else "r|") as tar:
+                    for _ in tar:
+                        pass
         except Exception as e:
             raise BackupError(f"Tar archive verification failed for '{path.name}': {e}") from e
+
+    def read_xml(self, path: Path) -> str:
+        """The config XML of a backup file: decrypted and decompressed as needed."""
+        data = self._crypto.read_bytes(path)
+        if backup_crypto.plain_name(path.name).endswith(".gz"):
+            data = compression.decompress_bytes(data)
+        return data.decode("utf-8")
 
     def delete_backup(self, record: BackupRecord) -> None:
         """Delete a backup file and remove from index.
@@ -323,16 +337,75 @@ class BackupService:
         if target_path.is_symlink():
             raise BackupError("Target path is a symlink — refusing to overwrite")
         if target_path.is_dir():
-            dest_name = record.filename.removesuffix(".gz")
+            dest_name = backup_crypto.plain_name(record.filename).removesuffix(".gz")
             target_path = target_path / dest_name
 
-        if record.compressed:
-            compression.decompress_file(source, target_path)
+        if record.compressed or backup_crypto.is_encrypted(source):
+            data = self._crypto.read_bytes(source)
+            if record.compressed:
+                data = compression.decompress_bytes(data)
+            target_path.write_bytes(data)
         else:
             shutil.copy2(source, target_path)
 
         logger.info(f"Restored {record.filename} to {target_path}")
         return target_path
+
+    def encrypt_existing(
+        self,
+        device_id: str,
+        progress: Callable[[str], None] | None = None,
+        wipe: bool = False,
+    ) -> int:
+        """Encrypt this device's plain backup files in place. Returns how many.
+
+        Each file is encrypted to ``<name>.enc`` and read back; only when the
+        decrypted bytes match the original is the index updated and the plain
+        file deleted (wiped first when secure_delete is on). The index is saved
+        after every file, so an interruption loses nothing.
+        """
+        import hashlib
+
+        if not self._crypto.enabled:
+            raise BackupError("Encryption is off. Run: pfs encryption setup")
+        retention = self._retention()
+        index = retention.load_index(device_id)
+        done = 0
+        for record in list(index.records):
+            path = self._backup_root / device_id / record.relative_path
+            if record.encrypted or backup_crypto.is_encrypted(path) or not path.is_file():
+                continue
+            if path.is_symlink():
+                logger.error(f"Refusing to encrypt symlink: {path}")
+                continue
+            plain_hash = hashlib.sha256()
+            with path.open("rb") as src, self._crypto.create(path) as (sink, final):
+                while chunk := src.read(1024 * 1024):
+                    plain_hash.update(chunk)
+                    sink.write(chunk)
+            check = hashlib.sha256()
+            with self._crypto.open_read(final) as reader:
+                while chunk := reader.read(1024 * 1024):
+                    check.update(chunk)
+            if check.digest() != plain_hash.digest():
+                final.unlink(missing_ok=True)
+                raise BackupError(f"Read-back check failed for {record.filename}; left unchanged")
+
+            record.filename = final.name
+            record.relative_path = str(Path(record.relative_path).parent / final.name).replace(
+                "\\", "/"
+            )
+            record.sha256 = checksum.sha256_file(final)
+            record.size_bytes = final.stat().st_size
+            record.encrypted = True
+            retention.save_index(index)
+            if wipe or self._config.backup_policy.secure_delete:
+                _secure_wipe(path)
+            path.unlink()
+            done += 1
+            if progress:
+                progress(record.filename)
+        return done
 
     def get_statistics(self, device_id: str | None = None) -> dict:
         """Return summary statistics for one device or all."""

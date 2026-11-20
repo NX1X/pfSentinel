@@ -11,6 +11,8 @@ from pfsentinel.models.backup import BackupRecord, BackupRun, BackupType
 from pfsentinel.models.config import AppConfig
 from pfsentinel.models.device import DeviceConfig
 from pfsentinel.models.zfs import ZfsSnapshot, ZfsSnapshotIndex
+from pfsentinel.services import backup_crypto
+from pfsentinel.services.backup_crypto import BackupCrypto
 from pfsentinel.services.connection import SSHConnector
 from pfsentinel.services.credentials import CredentialService
 from pfsentinel.services.retention import RetentionService
@@ -34,6 +36,7 @@ class ZfsBackupService:
         self._creds = credential_service
         self._backup_root = config.backup_policy.resolved_root
         self._policy = config.backup_policy.zfs
+        self._crypto = BackupCrypto(config.backup_policy.encryption, credential_service)
 
     def _get_ssh_connector(self, device: DeviceConfig) -> SSHConnector:
         password = self._creds.get(device.id)
@@ -91,18 +94,20 @@ class ZfsBackupService:
             label="zfs-full",
             extension=".zfs",
         )
-        rel_path = naming.run_relative_path(filename, timestamp, sequence)
-        dest = self._backup_root / device.id / rel_path
+        dest = (
+            self._backup_root / device.id / naming.run_relative_path(filename, timestamp, sequence)
+        )
 
         cmd = f"zfs send {shlex.quote(snapshot.name)} | gzip"
-        bytes_written = connector.stream_command_to_file(cmd, dest, timeout=1800)
+        with self._crypto.create(dest) as (sink, dest):
+            bytes_written = connector.stream_command_to_file(cmd, dest, timeout=1800, sink=sink)
 
         file_hash = checksum.sha256_file(dest)
         logger.info(f"ZFS full send complete: {bytes_written} bytes")
         return BackupRecord(
             device_id=device.id,
-            filename=filename,
-            relative_path=rel_path,
+            filename=dest.name,
+            relative_path=naming.run_relative_path(dest.name, timestamp, sequence),
             created_at=timestamp,
             size_bytes=dest.stat().st_size,
             sha256=file_hash,
@@ -113,6 +118,7 @@ class ZfsBackupService:
             sequence=sequence,
             verified=True,
             run_number=sequence,
+            encrypted=backup_crypto.is_encrypted(dest),
             zfs_snapshot_name=snapshot.name,
             zfs_incremental=False,
         )
@@ -136,21 +142,23 @@ class ZfsBackupService:
             label="zfs-incr",
             extension=".zfs",
         )
-        rel_path = naming.run_relative_path(filename, timestamp, sequence)
-        dest = self._backup_root / device.id / rel_path
+        dest = (
+            self._backup_root / device.id / naming.run_relative_path(filename, timestamp, sequence)
+        )
 
         cmd = (
             f"zfs send -i {shlex.quote(base_snapshot.name)}"
             f" {shlex.quote(current_snapshot.name)} | gzip"
         )
-        bytes_written = connector.stream_command_to_file(cmd, dest, timeout=1800)
+        with self._crypto.create(dest) as (sink, dest):
+            bytes_written = connector.stream_command_to_file(cmd, dest, timeout=1800, sink=sink)
 
         file_hash = checksum.sha256_file(dest)
         logger.info(f"ZFS incremental send complete: {bytes_written} bytes")
         return BackupRecord(
             device_id=device.id,
-            filename=filename,
-            relative_path=rel_path,
+            filename=dest.name,
+            relative_path=naming.run_relative_path(dest.name, timestamp, sequence),
             created_at=timestamp,
             size_bytes=dest.stat().st_size,
             sha256=file_hash,
@@ -161,6 +169,7 @@ class ZfsBackupService:
             sequence=sequence,
             verified=True,
             run_number=sequence,
+            encrypted=backup_crypto.is_encrypted(dest),
             zfs_snapshot_name=current_snapshot.name,
             zfs_incremental=True,
             zfs_base_snapshot=base_snapshot.name,

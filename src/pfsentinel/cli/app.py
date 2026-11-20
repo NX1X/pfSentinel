@@ -10,6 +10,7 @@ from pfsentinel import DOCS_URL, ISSUES_URL, __version__
 from pfsentinel.cli.commands.backup import app as backup_app
 from pfsentinel.cli.commands.config import app as config_app
 from pfsentinel.cli.commands.device import app as device_app
+from pfsentinel.cli.commands.encryption import app as encryption_app
 from pfsentinel.cli.commands.notify import app as notify_app
 from pfsentinel.cli.commands.schedule import app as schedule_app
 from pfsentinel.cli.commands.update import app as update_app
@@ -25,6 +26,7 @@ app = typer.Typer(
 app.add_typer(backup_app, name="backup")
 app.add_typer(config_app, name="config")
 app.add_typer(device_app, name="device")
+app.add_typer(encryption_app, name="encryption")
 app.add_typer(notify_app, name="notify")
 app.add_typer(schedule_app, name="schedule")
 app.add_typer(update_app, name="update")

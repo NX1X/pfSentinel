@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import io
 import shlex
 import tarfile
-import tempfile
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +12,8 @@ from pathlib import Path
 from pfsentinel.models.backup import BackupRecord, BackupType
 from pfsentinel.models.config import AppConfig
 from pfsentinel.models.device import DeviceConfig
+from pfsentinel.services import backup_crypto
+from pfsentinel.services.backup_crypto import BackupCrypto
 from pfsentinel.services.connection import SSHConnector
 from pfsentinel.services.credentials import CredentialService
 from pfsentinel.utils import checksum, compression, naming
@@ -48,6 +50,7 @@ class ExtraBackupService:
         self._config = config
         self._creds = credential_service
         self._backup_root = config.backup_policy.resolved_root
+        self._crypto = BackupCrypto(config.backup_policy.encryption, credential_service)
 
     def _get_ssh_connector(self, device: DeviceConfig) -> SSHConnector:
         password = self._creds.get(device.id)
@@ -92,24 +95,14 @@ class ExtraBackupService:
             rrd_files = connector.list_remote_files(RRD_DIR, "*.rrd")
             if not rrd_files:
                 raise ExtraBackupError("No RRD files found on device")
-
-            with tempfile.TemporaryDirectory() as tmpdir:
-                local_dir = Path(tmpdir)
-                downloaded = connector.download_files(rrd_files, local_dir)
-                if not downloaded:
-                    raise ExtraBackupError("Failed to download any RRD files")
-
-                if progress:
-                    progress(f"Downloaded {len(downloaded)} RRD files", 50)
-
-                return self._create_tar_record(
-                    device=device,
-                    backup_type=BackupType.RRD,
-                    local_files=downloaded,
-                    source_paths=rrd_files,
-                    timestamp=timestamp,
-                    sequence=sequence,
-                )
+            files = connector.read_files(rrd_files)
+            if not files:
+                raise ExtraBackupError("Failed to download any RRD files")
+            if progress:
+                progress(f"Downloaded {len(files)} RRD files", 50)
+            return self._create_tar_record(
+                device, BackupType.RRD, files, rrd_files, timestamp, sequence
+            )
 
     def backup_package_configs(
         self,
@@ -132,38 +125,31 @@ class ExtraBackupService:
                 timestamp=timestamp,
                 sequence=sequence,
             )
-            rel_path = naming.run_relative_path(filename, timestamp, sequence)
-            dest = self._backup_root / device.id / rel_path
-            dest.parent.mkdir(parents=True, exist_ok=True)
-
-            cmd = f"tar czf - {shlex.quote(PKG_CONFIG_DIR)}"
-            # tar exits 1 on non-fatal issues (permission denied on single files);
-            # the archive is still valid with all readable files included.
-            bytes_written = connector.stream_command_to_file(
-                cmd, dest, timeout=120, warn_exit_codes={1}
+            dest = (
+                self._backup_root
+                / device.id
+                / naming.run_relative_path(filename, timestamp, sequence)
             )
-
-            if bytes_written == 0:
-                raise ExtraBackupError("No package config data received")
+            cmd = f"tar czf - {shlex.quote(PKG_CONFIG_DIR)}"
+            with self._crypto.create(dest) as (sink, final):
+                # tar exits 1 on non-fatal issues (permission denied on single
+                # files); the archive still holds every readable file.
+                bytes_written = connector.stream_command_to_file(
+                    cmd, final, timeout=120, warn_exit_codes={1}, sink=sink
+                )
+                if bytes_written == 0:
+                    raise ExtraBackupError("No package config data received")
 
             if progress:
                 progress("Package configs downloaded", 80)
-
-            file_hash = checksum.sha256_file(dest)
-            return BackupRecord(
-                device_id=device.id,
-                filename=filename,
-                relative_path=rel_path,
-                created_at=timestamp,
-                size_bytes=dest.stat().st_size,
-                sha256=file_hash,
-                connection_method="ssh",
-                backup_type=BackupType.PACKAGE_CONFIGS,
-                source_paths=[PKG_CONFIG_DIR],
-                compressed=True,
-                sequence=sequence,
-                verified=True,
-                run_number=sequence,
+            return self._record(
+                device,
+                BackupType.PACKAGE_CONFIGS,
+                final,
+                [PKG_CONFIG_DIR],
+                True,
+                timestamp,
+                sequence,
             )
 
     def backup_dhcp_leases(
@@ -177,50 +163,34 @@ class ExtraBackupService:
         if progress:
             progress("Downloading DHCP leases...", 0)
 
+        compress = self._config.backup_policy.compress
         connector = self._get_ssh_connector(device)
         with connector:
             filename = naming.generate_backup_filename(
                 device_id=device.id,
                 backup_type="dhcp",
-                compressed=self._config.backup_policy.compress,
+                compressed=compress,
                 timestamp=timestamp,
                 sequence=sequence,
             )
-            rel_path = naming.run_relative_path(filename, timestamp, sequence)
-            dest = self._backup_root / device.id / rel_path
-            dest.parent.mkdir(parents=True, exist_ok=True)
-
-            with tempfile.TemporaryDirectory() as tmpdir:
-                local_tmp = Path(tmpdir) / "dhcpd.leases"
-                try:
-                    connector.download_file(DHCP_LEASES_PATH, local_tmp)
-                except Exception as e:
-                    raise ExtraBackupError(f"Failed to download DHCP leases: {e}") from e
-
-                if self._config.backup_policy.compress:
-                    dest.write_bytes(compression.compress_bytes(local_tmp.read_bytes()))
-                else:
-                    dest.write_bytes(local_tmp.read_bytes())
-
-            if progress:
-                progress("DHCP leases downloaded", 80)
-
-            file_hash = checksum.sha256_file(dest)
-            return BackupRecord(
-                device_id=device.id,
-                filename=filename,
-                relative_path=rel_path,
-                created_at=timestamp,
-                size_bytes=dest.stat().st_size,
-                sha256=file_hash,
-                connection_method="ssh",
-                backup_type=BackupType.DHCP_LEASES,
-                source_paths=[DHCP_LEASES_PATH],
-                compressed=self._config.backup_policy.compress,
-                sequence=sequence,
-                verified=True,
-                run_number=sequence,
+            dest = (
+                self._backup_root
+                / device.id
+                / naming.run_relative_path(filename, timestamp, sequence)
             )
+            try:
+                data = connector.read_file(DHCP_LEASES_PATH)
+            except Exception as e:
+                raise ExtraBackupError(f"Failed to download DHCP leases: {e}") from e
+            final = self._crypto.write_bytes(
+                dest, compression.compress_bytes(data) if compress else data
+            )
+
+        if progress:
+            progress("DHCP leases downloaded", 80)
+        return self._record(
+            device, BackupType.DHCP_LEASES, final, [DHCP_LEASES_PATH], compress, timestamp, sequence
+        )
 
     def backup_aliases(
         self,
@@ -235,40 +205,22 @@ class ExtraBackupService:
 
         connector = self._get_ssh_connector(device)
         with connector:
-            # Check common alias locations
             alias_files: list[str] = []
             # Which of these exist depends on the pfSense version (2.8.1 has
             # only /var/db/aliastables), so a missing one is not a warning.
-            for check_dir in [ALIAS_DIR, "/usr/local/etc/aliases"]:
-                found = connector.list_remote_files(check_dir, "*", missing_ok=True)
-                alias_files.extend(found)
-
-            # Also check for urltable files
-            urltable_files = connector.list_remote_files(
-                "/var/db/aliastables", "*", missing_ok=True
-            )
-            alias_files.extend(urltable_files)
-
+            for check_dir in [ALIAS_DIR, "/usr/local/etc/aliases", "/var/db/aliastables"]:
+                alias_files.extend(connector.list_remote_files(check_dir, "*", missing_ok=True))
             if not alias_files:
                 raise ExtraBackupError("No alias files found on device")
 
-            with tempfile.TemporaryDirectory() as tmpdir:
-                local_dir = Path(tmpdir)
-                downloaded = connector.download_files(alias_files, local_dir)
-                if not downloaded:
-                    raise ExtraBackupError("Failed to download any alias files")
-
-                if progress:
-                    progress(f"Downloaded {len(downloaded)} alias files", 50)
-
-                return self._create_tar_record(
-                    device=device,
-                    backup_type=BackupType.ALIASES,
-                    local_files=downloaded,
-                    source_paths=alias_files,
-                    timestamp=timestamp,
-                    sequence=sequence,
-                )
+            files = connector.read_files(alias_files)
+            if not files:
+                raise ExtraBackupError("Failed to download any alias files")
+            if progress:
+                progress(f"Downloaded {len(files)} alias files", 50)
+            return self._create_tar_record(
+                device, BackupType.ALIASES, files, alias_files, timestamp, sequence
+            )
 
     def backup_certificates(
         self,
@@ -287,27 +239,18 @@ class ExtraBackupService:
             for cert_dir in CERT_DIRS:
                 for pattern in ["*.pem", "*.crt", "*.key", "*.csr"]:
                     cert_files.extend(connector.list_remote_files(cert_dir, pattern))
-
             if not cert_files:
                 raise ExtraBackupError("No certificate files found on device")
 
-            with tempfile.TemporaryDirectory() as tmpdir:
-                local_dir = Path(tmpdir)
-                downloaded = connector.download_files(cert_files, local_dir)
-                if not downloaded:
-                    raise ExtraBackupError("Failed to download any certificate files")
-
-                if progress:
-                    progress(f"Downloaded {len(downloaded)} certificates", 50)
-
-                return self._create_tar_record(
-                    device=device,
-                    backup_type=BackupType.CERTIFICATES,
-                    local_files=downloaded,
-                    source_paths=cert_files,
-                    timestamp=timestamp,
-                    sequence=sequence,
-                )
+            # In memory only: these include private keys.
+            files = connector.read_files(cert_files)
+            if not files:
+                raise ExtraBackupError("Failed to download any certificate files")
+            if progress:
+                progress(f"Downloaded {len(files)} certificates", 50)
+            return self._create_tar_record(
+                device, BackupType.CERTIFICATES, files, cert_files, timestamp, sequence
+            )
 
     def backup_logs(
         self,
@@ -325,42 +268,34 @@ class ExtraBackupService:
             raise ExtraBackupError("No log files configured for backup")
 
         connector = self._get_ssh_connector(device)
-        with connector, tempfile.TemporaryDirectory() as tmpdir:
-            local_dir = Path(tmpdir)
-            downloaded = connector.download_files(log_files, local_dir)
+        with connector:
+            files = connector.read_files(log_files)
             denied = list(connector.permission_denied)
-            if not downloaded and denied:
+            if not files and denied:
                 raise NeedsRootError(
                     f"logs need root: {', '.join(denied)} "
                     f"cannot be read by SSH user '{device.username}'. Skipped."
                 )
-            if not downloaded:
+            if not files:
                 raise ExtraBackupError("Failed to download any log files")
             if denied:
                 logger.info("Skipped log files that need root: " + ", ".join(denied))
-
             if progress:
-                progress(f"Downloaded {len(downloaded)} log files", 50)
-
+                progress(f"Downloaded {len(files)} log files", 50)
             return self._create_tar_record(
-                device=device,
-                backup_type=BackupType.LOGS,
-                local_files=downloaded,
-                source_paths=log_files,
-                timestamp=timestamp,
-                sequence=sequence,
+                device, BackupType.LOGS, files, log_files, timestamp, sequence
             )
 
     def _create_tar_record(
         self,
         device: DeviceConfig,
         backup_type: BackupType,
-        local_files: list[Path],
+        files: list[tuple[str, bytes]],
         source_paths: list[str],
         timestamp: datetime,
         sequence: int,
     ) -> BackupRecord:
-        """Bundle files into tar.gz, create record, return it."""
+        """Bundle in-memory files into a tar (.gz), written (and encrypted) in one pass."""
         compress = self._config.backup_policy.compress
         filename = naming.generate_backup_filename(
             device_id=device.id,
@@ -369,29 +304,43 @@ class ExtraBackupService:
             timestamp=timestamp,
             sequence=sequence,
         )
-        rel_path = naming.run_relative_path(filename, timestamp, sequence)
-        dest = self._backup_root / device.id / rel_path
-        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest = (
+            self._backup_root / device.id / naming.run_relative_path(filename, timestamp, sequence)
+        )
+        with self._crypto.create(dest) as (sink, final):
+            # Stream mode: writes front to back, which an encrypting sink needs.
+            with tarfile.open(fileobj=sink, mode="w|gz" if compress else "w|") as tar:
+                for name, data in files:
+                    info = tarfile.TarInfo(name)
+                    info.size = len(data)
+                    info.mode = 0o600
+                    info.mtime = int(timestamp.timestamp())
+                    tar.addfile(info, io.BytesIO(data))
+        return self._record(device, backup_type, final, source_paths, compress, timestamp, sequence)
 
-        # Create tar archive (optionally compressed)
-        mode = "w:gz" if compress else "w"
-        with tarfile.open(dest, mode) as tar:
-            for f in local_files:
-                tar.add(str(f), arcname=f.name)
-
-        file_hash = checksum.sha256_file(dest)
+    def _record(
+        self,
+        device: DeviceConfig,
+        backup_type: BackupType,
+        path: Path,
+        source_paths: list[str],
+        compressed: bool,
+        timestamp: datetime,
+        sequence: int,
+    ) -> BackupRecord:
         return BackupRecord(
             device_id=device.id,
-            filename=filename,
-            relative_path=rel_path,
+            filename=path.name,
+            relative_path=naming.run_relative_path(path.name, timestamp, sequence),
             created_at=timestamp,
-            size_bytes=dest.stat().st_size,
-            sha256=file_hash,
+            size_bytes=path.stat().st_size,
+            sha256=checksum.sha256_file(path),
             connection_method="ssh",
             backup_type=backup_type,
             source_paths=source_paths,
-            compressed=compress,
+            compressed=compressed,
             sequence=sequence,
             verified=True,
             run_number=sequence,
+            encrypted=backup_crypto.is_encrypted(path),
         )

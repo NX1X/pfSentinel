@@ -86,7 +86,7 @@ class TestBackupRrd:
         mock_conn.__enter__ = MagicMock(return_value=mock_conn)
         mock_conn.__exit__ = MagicMock(return_value=False)
         mock_conn.list_remote_files.return_value = ["/var/db/rrd/cpu.rrd"]
-        mock_conn.download_files.return_value = []
+        mock_conn.read_files.return_value = []
 
         with pytest.raises(ExtraBackupError, match="Failed to download"):
             svc.backup_rrd(_make_device(), TS, 1)
@@ -101,10 +101,7 @@ class TestBackupRrd:
         mock_conn.__exit__ = MagicMock(return_value=False)
         mock_conn.list_remote_files.return_value = ["/var/db/rrd/cpu.rrd"]
 
-        # Create a real temp file so tarfile can work
-        fake_file = tmp_path / "cpu.rrd"
-        fake_file.write_bytes(b"rrd data")
-        mock_conn.download_files.return_value = [fake_file]
+        mock_conn.read_files.return_value = [("cpu.rrd", b"rrd data")]
 
         record = svc.backup_rrd(_make_device(), TS, 1)
         assert record.backup_type == BackupType.RRD
@@ -135,9 +132,8 @@ class TestBackupPackageConfigs:
         mock_conn.__enter__ = MagicMock(return_value=mock_conn)
         mock_conn.__exit__ = MagicMock(return_value=False)
 
-        def fake_stream(cmd, dest, timeout=120, warn_exit_codes=None):
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(b"pkg tar data")
+        def fake_stream(cmd, dest, timeout=120, warn_exit_codes=None, sink=None):
+            sink.write(b"pkg tar data")
             return 12
 
         mock_conn.stream_command_to_file.side_effect = fake_stream
@@ -156,7 +152,7 @@ class TestBackupDhcpLeases:
         mock_ssh_cls.return_value = mock_conn
         mock_conn.__enter__ = MagicMock(return_value=mock_conn)
         mock_conn.__exit__ = MagicMock(return_value=False)
-        mock_conn.download_file.side_effect = Exception("SFTP error")
+        mock_conn.read_file.side_effect = Exception("SFTP error")
 
         with pytest.raises(ExtraBackupError, match="Failed to download DHCP"):
             svc.backup_dhcp_leases(_make_device(), TS, 1)
@@ -171,7 +167,7 @@ class TestBackupLogs:
         mock_ssh_cls.return_value = mock_conn
         mock_conn.__enter__ = MagicMock(return_value=mock_conn)
         mock_conn.__exit__ = MagicMock(return_value=False)
-        mock_conn.download_files.return_value = []
+        mock_conn.read_files.return_value = []
 
         with pytest.raises(ExtraBackupError, match="Failed to download"):
             svc.backup_logs(_make_device(), TS, 1)

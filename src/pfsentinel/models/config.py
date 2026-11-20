@@ -8,6 +8,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -72,6 +73,18 @@ class ArchivePolicy(BaseModel):
     exclude_patterns: list[str] = Field(default_factory=lambda: ["*.core", "*.tmp"])
 
 
+class EncryptionPolicy(BaseModel):
+    """Encryption at rest for backup files. See services/backup_crypto.py.
+
+    Only the key ID and the scrypt salt live here; the key or passphrase is
+    in the OS keystore.
+    """
+
+    mode: Literal["off", "keystore", "passphrase"] = "off"
+    key_id: str | None = None  # hex, identifies the current key
+    salt: str | None = None  # hex, passphrase mode only
+
+
 class BackupPolicy(BaseModel):
     backup_root: Path | None = Field(default=None)
     max_backups_per_device: int = Field(default=30, ge=1, le=1000)
@@ -83,6 +96,7 @@ class BackupPolicy(BaseModel):
     extras: ExtraBackupTargets = Field(default_factory=ExtraBackupTargets)
     zfs: ZfsPolicy = Field(default_factory=ZfsPolicy)
     archive: ArchivePolicy = Field(default_factory=ArchivePolicy)
+    encryption: EncryptionPolicy = Field(default_factory=EncryptionPolicy)
     max_backups_per_type: dict[str, int] = Field(
         default_factory=lambda: {
             "config": 30,

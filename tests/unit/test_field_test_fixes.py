@@ -103,7 +103,7 @@ class TestNonRootUser:
         conn = MagicMock()
         conn.__enter__ = MagicMock(return_value=conn)
         conn.__exit__ = MagicMock(return_value=False)
-        conn.download_files.return_value = []
+        conn.read_files.return_value = []
         conn.permission_denied = ["/var/log/filter.log", "/var/log/system.log"]
         device = DeviceConfig(id="fw", label="fw", host="192.0.2.1", username="backup-user")
         with (

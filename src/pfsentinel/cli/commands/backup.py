@@ -408,19 +408,66 @@ def backup_restore(
         raise typer.Exit(1)
 
 
+@app.command("decrypt")
+def backup_decrypt(
+    file: Path = typer.Argument(..., help="Encrypted backup file (.enc)"),
+    output: Path | None = typer.Option(
+        None, "--output", "-o", help="Output file (default: next to it, without .enc)"
+    ),
+    recovery_key: bool = typer.Option(
+        False, "--recovery-key", help="Ask for the recovery key (keystore mode, other PC)"
+    ),
+    passphrase: bool = typer.Option(
+        False, "--passphrase", help="Ask for the passphrase (passphrase mode, other PC)"
+    ),
+    decompress: bool = typer.Option(False, "--decompress", help="Also un-gzip the result"),
+) -> None:
+    """Decrypt one backup file. Works without the backup index, for example on a new PC."""
+    from pfsentinel.services import backup_crypto
+    from pfsentinel.services.backup_crypto import BackupCrypto, BackupCryptoError
+    from pfsentinel.utils import compression
+
+    file = file.expanduser()
+    if not file.is_file() or not backup_crypto.is_encrypted(file):
+        print_error(f"Not an encrypted backup file (.enc): {file}")
+        raise typer.Exit(1)
+    key_text = typer.prompt("Recovery key", hide_input=True) if recovery_key else None
+    phrase = typer.prompt("Passphrase", hide_input=True) if passphrase else None
+
+    config = AppConfig.load()
+    try:
+        crypto = BackupCrypto(
+            config.backup_policy.encryption,
+            CredentialService(),
+            recovery_key=key_text,
+            passphrase=phrase,
+        )
+        data = crypto.read_bytes(file)
+    except BackupCryptoError as e:
+        print_error(str(e))
+        raise typer.Exit(1)
+
+    name = backup_crypto.plain_name(file.name)
+    if decompress and name.endswith(".gz"):
+        data = compression.decompress_bytes(data)
+        name = name.removesuffix(".gz")
+    target = output.expanduser() if output else file.with_name(name)
+    if target.exists():
+        print_error(f"Refusing to overwrite: {target}")
+        raise typer.Exit(1)
+    target.write_bytes(data)
+    print_success(f"Decrypted to: {target}")
+    print_warning("This copy is NOT encrypted. Delete it when you are done.")
+
+
 @app.command("diff")
 def backup_diff(
     file_a: str = typer.Argument(..., help="First backup filename"),
     file_b: str = typer.Argument(..., help="Second backup filename"),
 ) -> None:
     """Show unified diff between two backups."""
-    from pfsentinel.services.diff import DiffService
-
-    config = AppConfig.load()
-    backup_root = config.backup_policy.resolved_root
-    diff_svc = DiffService(backup_root)
-
     _, svc = _get_service()
+    diff_svc = svc.diff_service
     records = svc.list_backups()
 
     def find_record(name: str):
