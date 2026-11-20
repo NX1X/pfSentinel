@@ -207,6 +207,103 @@ def test_backup_verify_missing_record_errors(
     assert "not found" in combined
 
 
+def _mark_unverified(config: AppConfig) -> None:
+    """Clear every verified flag, as `pfs backup reindex` leaves new records."""
+    backup_root = config.backup_policy.backup_root
+    assert backup_root is not None
+    retention = RetentionService(backup_root, config.backup_policy)
+    index = retention.load_index("home-fw")
+    for record in index.records:
+        record.verified = False
+    retention.save_index(index)
+
+
+def test_backup_verify_saves_the_result(
+    cli_runner: CliRunner,
+    seeded_config: AppConfig,
+    seeded_backup: BackupRecord,
+) -> None:
+    """A passed check sets verified in the index, so the list shows OK, not ?."""
+    _mark_unverified(seeded_config)
+
+    result = cli_runner.invoke(app, ["backup", "verify", seeded_backup.filename])
+
+    assert result.exit_code == 0, result.stdout
+    assert all(r.verified for r in _load_records(seeded_config))
+
+
+def test_backup_verify_without_filename_checks_unverified(
+    cli_runner: CliRunner,
+    seeded_config: AppConfig,
+    seeded_backup: BackupRecord,
+) -> None:
+    """With no filename, every unverified backup is checked and saved."""
+    _mark_unverified(seeded_config)
+
+    result = cli_runner.invoke(app, ["backup", "verify", "-d", "home-fw"])
+
+    assert result.exit_code == 0, result.stdout
+    assert seeded_backup.filename in result.stdout
+    assert all(r.verified for r in _load_records(seeded_config))
+
+    again = cli_runner.invoke(app, ["backup", "verify"])
+    assert again.exit_code == 0, again.stdout
+    assert "nothing to check" in again.stdout
+
+
+def test_backup_verify_failure_is_saved(
+    cli_runner: CliRunner,
+    seeded_config: AppConfig,
+    seeded_backup: BackupRecord,
+) -> None:
+    """A failed check clears verified, so the list shows ? for that file."""
+    assert seeded_backup.verified
+    backup_root = seeded_config.backup_policy.backup_root
+    assert backup_root is not None
+    (backup_root / "home-fw" / seeded_backup.relative_path).unlink()
+
+    result = cli_runner.invoke(app, ["backup", "verify", seeded_backup.filename])
+
+    assert result.exit_code != 0
+    assert not any(r.verified for r in _load_records(seeded_config))
+
+
+def test_backup_verify_unreadable_file_is_a_failure(
+    cli_runner: CliRunner,
+    seeded_config: AppConfig,
+    seeded_backup: BackupRecord,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A read error counts as a failed check: saved, reported, exit 1, no traceback."""
+    from pfsentinel.utils import checksum
+
+    def _denied(*_args: object, **_kwargs: object) -> bool:
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(checksum, "verify_file", _denied)
+
+    result = cli_runner.invoke(app, ["backup", "verify"])
+    assert "nothing to check" in result.stdout  # verified after the run
+
+    result = cli_runner.invoke(app, ["backup", "verify", seeded_backup.filename])
+
+    assert result.exit_code == 1
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "Cannot read" in result.stdout + (result.stderr or "")
+    assert not any(r.verified for r in _load_records(seeded_config))
+
+
+def test_backup_verify_unknown_device_errors(
+    cli_runner: CliRunner,
+    seeded_config: AppConfig,
+) -> None:
+    """`backup verify -d` with an unknown device stops with a clear error."""
+    result = cli_runner.invoke(app, ["backup", "verify", "-d", "nope"])
+
+    assert result.exit_code != 0
+    assert "not found" in (result.stdout + (result.stderr or "")).lower()
+
+
 # ---------------------------------------------------------------------------
 # backup delete
 # ---------------------------------------------------------------------------

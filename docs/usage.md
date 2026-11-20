@@ -89,9 +89,13 @@ pfs list -d home-fw
 
 ```bash
 pfs backup verify home-fw_2026-04-30_020000_#001_initial.xml.gz
+pfs backup verify                # every backup with status ?
+pfs backup verify -d home-fw     # the same, one device only
 ```
 
-Re-computes the SHA-256 checksum and compares it to the stored value.
+Re-computes the SHA-256 checksum and compares it to the stored value. Then it decrypts and reads the file: a config backup must be valid XML, an archive must be a readable tar file.
+
+The result is saved in the backup index. `pfs backup list` shows `OK` after a passed check and `?` after a failed one. The command exits with code 1 if any check fails.
 
 ### Compare Two Backups
 
@@ -170,7 +174,7 @@ What `reindex` does:
 - Backup files are only read. They are never changed, moved or deleted.
 - It does not follow links, and it skips any path outside the device folder.
 
-Added records have the status `?` (not verified) and the description "Recovered by pfs backup reindex". For a config backup, the connection method is "unknown". Run `pfs backup verify FILE` to check a file.
+Added records have the status `?` (not verified) and the description "Recovered by pfs backup reindex". For a config backup, the connection method is "unknown". Run `pfs backup verify` to check every added file. A passed check changes the status to `OK`.
 
 Each save of the index also keeps the previous version as `backup_index.json.bak`, in the same folder. The index is written to a temp file first and then replaces the old one in one step, so a crash cannot leave a half-written index.
 
@@ -657,7 +661,8 @@ Logs are written to `~/.pfsentinel/logs/pfsentinel.log`.
 | `backup run --non-interactive` | Never prompt; use the backup policy from config (what scheduled runs use) |
 | `backup list` | List all backups |
 | `backup list -d ID` | List backups for one device |
-| `backup verify FILENAME` | Verify SHA-256 checksum |
+| `backup verify FILENAME` | Verify one file and save the result |
+| `backup verify [-d ID]` | Verify every backup with status `?` |
 | `backup diff FILE_A FILE_B` | Diff two backup configs |
 | `backup restore FILE --target PATH` | Extract backup to file |
 | `backup delete FILE --yes` | Delete a backup |

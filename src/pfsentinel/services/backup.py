@@ -297,10 +297,14 @@ class BackupService:
             raise BackupError(f"Backup file not found: {path.name}")
 
         # Checksum check (all types)
-        if record.sha256 and not checksum.verify_file(path, record.sha256):
+        try:
+            checksum_ok = not record.sha256 or checksum.verify_file(path, record.sha256)
+        except OSError as e:
+            raise BackupError(f"Cannot read '{record.filename}': {e}") from e
+        if not checksum_ok:
             raise BackupError(
-                f"Checksum mismatch for '{record.filename}'"
-                " — file may be corrupted or tampered with"
+                f"Checksum mismatch for '{record.filename}':"
+                " the file may be corrupted or tampered with"
             )
 
         # Type-specific validation
@@ -322,6 +326,23 @@ class BackupService:
         # ZFS_SNAPSHOT and DHCP_LEASES: checksum is sufficient
 
         return True
+
+    def save_verified(self, record: BackupRecord, ok: bool) -> None:
+        """Save the result of a check as the record's ``verified`` flag.
+
+        Reloads the device's index just before the save, so a backup that
+        finished in the meantime is kept. Saves nothing when the flag does not
+        change or the record is no longer in the index.
+        """
+        retention = self._retention()
+        index = retention.load_index(record.device_id)
+        for current in index.records:
+            if current.relative_path == record.relative_path:
+                if current.verified != ok:
+                    current.verified = ok
+                    retention.save_index(index)
+                record.verified = ok
+                return
 
     def _verify_tar(self, path: Path, compressed: bool) -> None:
         """Verify a tar archive is readable (decrypting it on the fly if needed)."""
