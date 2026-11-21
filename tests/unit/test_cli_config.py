@@ -184,6 +184,14 @@ class TestValidate:
         assert "SSH key file not found" in output
         assert "fix the SSH key path" in output
 
+    def test_a_stored_password_does_not_hide_a_missing_key(
+        self, cli_runner: CliRunner, saved_config: AppConfig, tmp_path: Path
+    ) -> None:
+        _add_device("both", "pw", ssh_key=tmp_path / "missing_key")
+        result = cli_runner.invoke(app, ["config", "validate"])
+
+        assert "SSH key file not found" in _out(result)
+
 
 class TestSet:
     def test_backup_dir_is_saved(

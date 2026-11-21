@@ -86,17 +86,20 @@ def config_validate() -> None:
     missing_password = False
     missing_key = False
     for device in config.devices:
-        # A device with an SSH key needs no password (SSH only, no HTTPS fallback).
-        if creds.has_password(device.id):
+        # A configured key is checked first: a stored password does not make a
+        # missing key file work. A device with a key needs no password (SSH
+        # only, no HTTPS fallback).
+        if device.ssh_key_path is not None:
+            if device.ssh_key_path.expanduser().is_file():
+                status = "[green]✓ SSH key[/]"
+            else:
+                status = f"[red]✗ SSH key file not found: {device.ssh_key_path}[/]"
+                missing_key = True
+        elif creds.has_password(device.id):
             status = "[green]✓[/]"
-        elif device.ssh_key_path is None:
+        else:
             status = "[red]✗ missing password[/]"
             missing_password = True
-        elif device.ssh_key_path.expanduser().is_file():
-            status = "[green]✓ SSH key[/]"
-        else:
-            status = f"[red]✗ SSH key file not found: {device.ssh_key_path}[/]"
-            missing_key = True
         console.print(f"  Device [cyan]{device.id}[/]: {status}")
 
     if missing_password:
