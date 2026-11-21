@@ -13,7 +13,7 @@ pfs encryption encrypt-existing    # optional: encrypt the older plain backups
 
 Store the recovery key (or the passphrase) in your password manager, away from this PC. Without it, the second copy cannot be decrypted. See [encryption.md](encryption.md).
 
-If plain backups exist, `pfs copy now` and the backup alert tell you how many files were skipped.
+If plain backups exist, `pfs copy now` tells you how many files were skipped. A backup run writes it to the log. It sends an alert only if encryption is off.
 
 ## How it works
 
@@ -47,7 +47,9 @@ pfs copy disable    # stop copying; files on the target stay
 
 ## folder
 
-Enter a path that exists, for example a mounted share or a folder that the Nextcloud desktop client syncs. Each file is written under a temporary `.part` name and then renamed.
+Enter a path that exists, for example a mounted share or a folder that the Nextcloud desktop client syncs. Each file is written under a temporary `.part` name and then renamed. A failed copy removes the `.part` file.
+
+The folder must be outside the backup folder, and must not hold it. The copy's cleanup removes old day folders, so it would delete local backups. Setup and every copy refuse such a folder.
 
 ## sftp
 
@@ -146,7 +148,7 @@ Setup asks for the folder URL, the user name, the password and, if needed, a CA 
 
 For Nextcloud and ownCloud, use an **app password**, not your login password. In Nextcloud, create it under Settings, Security, Devices and sessions.
 
-Each file is uploaded under a temporary name (`.<file>.uploading`) and then renamed with a WebDAV MOVE. So a half upload never looks like a complete backup. Missing folders are created with MKCOL. Old day folders are removed with one DELETE each.
+Each file is uploaded under a temporary name (`.<file>.uploading`) and then renamed with a WebDAV MOVE. A failed upload removes the temporary file. So a half upload never looks like a complete backup. Missing folders are created with MKCOL. Old day folders are removed with one DELETE each.
 
 **Plain http:** only for a server on your LAN. Setup asks you to allow it. With http, the password crosses the network unprotected. The files themselves stay encrypted.
 

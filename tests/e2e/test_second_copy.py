@@ -200,3 +200,51 @@ def test_old_records_outside_keep_days_are_not_copied(
 
     result = SecondCopyService(AppConfig.load(), CredentialService()).sync("home-fw")
     assert result.copied == []
+
+
+def test_older_plain_files_raise_no_alert_once_encryption_is_on(
+    cli_runner: CliRunner, seeded_config: AppConfig, with_leases, tmp_path: Path, alerts
+) -> None:
+    """Before rc.3 every run alerted 'turn on encryption' with encryption on."""
+    target = tmp_path / "share"
+    target.mkdir()
+    assert cli_runner.invoke(app, RUN).exit_code == 0  # plain backups first
+    _encrypt_and_copy_to(seeded_config, kind="folder", path=str(target))
+
+    assert cli_runner.invoke(app, RUN).exit_code == 0
+    assert alerts == []
+    assert len(list(target.rglob("*.enc"))) == 2
+
+
+def test_a_folder_target_inside_the_backup_folder_is_never_cleaned(
+    cli_runner: CliRunner, seeded_config: AppConfig, with_leases, alerts
+) -> None:
+    root = seeded_config.backup_policy.resolved_root
+    old_day = root / "home-fw" / "2020" / "01" / "02"
+    old_day.mkdir(parents=True)
+    keeper = old_day / "keep.xml.gz.enc"
+    keeper.write_bytes(b"x")
+    _encrypt_and_copy_to(seeded_config, kind="folder", path=str(root), keep_days=30)
+
+    assert cli_runner.invoke(app, RUN).exit_code == 0
+    assert keeper.exists()
+    assert [k for k, _ in alerts] == [AlertKind.SECOND_COPY_FAILED]
+    assert "overlaps the backup folder" in alerts[0][1]
+
+
+def test_a_failed_folder_copy_leaves_no_part_file(tmp_path: Path) -> None:
+    from pfsentinel.services.second_copy import FolderTarget
+
+    local = tmp_path / "a.xml.gz.enc"
+    local.write_bytes(b"data")
+    share = tmp_path / "share"
+    share.mkdir()
+
+    def half_copy(src, dst):
+        Path(dst).write_bytes(b"da")
+        raise OSError("disk full")
+
+    with patch("pfsentinel.services.second_copy.shutil.copyfile", half_copy):
+        with pytest.raises(OSError, match="disk full"):
+            FolderTarget(share).put(local, "fw/2026/11/21/a.xml.gz.enc")
+    assert [p.name for p in share.rglob("*") if p.is_file()] == []

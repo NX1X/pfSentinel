@@ -169,12 +169,62 @@ def _setup_webdav(policy: SecondCopyPolicy, creds: CredentialService) -> None:
     _prompt_ca(policy)
 
 
+_KEYPASS_NAME = "__second_copy_keypass__"  # noqa: S105 - store entry name, not a secret
+
+
+def _secret_names() -> tuple[str, ...]:
+    from pfsentinel.services.cloud_targets import (
+        AZURE_KEY_NAME,
+        AZURE_SAS_NAME,
+        S3_SECRET_NAME,
+        WEBDAV_PASSWORD_NAME,
+    )
+
+    return (_KEYPASS_NAME, S3_SECRET_NAME, AZURE_SAS_NAME, AZURE_KEY_NAME, WEBDAV_PASSWORD_NAME)
+
+
+def _restore_secrets(
+    creds: CredentialService, saved: dict[str, str | None], written: set[str]
+) -> None:
+    # Only the secrets this setup wrote: a keyring read that failed at the
+    # start reads as "absent", and must not delete a secret setup never touched.
+    for name in written:
+        value = saved.get(name)
+        if value is None:
+            creds.delete(name)
+        else:
+            creds.store_secret(name, value)
+
+
 @app.command("setup")
 def copy_setup() -> None:
     """Set up the second copy target (folder, SFTP, or experimental S3, Azure, WebDAV)."""
-    from pfsentinel.services.second_copy import SecondCopyError, open_target
-
     config, creds = _load()
+    # Setup stores a new secret as soon as it is typed. If setup then fails,
+    # config.json keeps the old target: put its secrets back too, or the
+    # next scheduled copy uses the old target with the new secret.
+    saved = {name: creds.get_secret(name) for name in _secret_names()}
+    written: set[str] = set()
+    store_secret = creds.store_secret
+
+    def tracked_store(name: str, value: str) -> None:
+        written.add(name)
+        store_secret(name, value)
+
+    setattr(creds, "store_secret", tracked_store)  # noqa: B010 - wrap one instance
+    done = False
+    try:
+        _copy_setup(config, creds)
+        done = True
+    finally:
+        setattr(creds, "store_secret", store_secret)  # noqa: B010
+        if not done:
+            _restore_secrets(creds, saved, written)
+
+
+def _copy_setup(config: AppConfig, creds: CredentialService) -> None:
+    from pfsentinel.services.second_copy import SecondCopyError, open_target, overlaps_backup_root
+
     if config.backup_policy.encryption.mode == "off":
         print_error("Turn on encryption first: only encrypted backups leave this PC.")
         print_info("Run: pfs encryption setup")
@@ -192,6 +242,13 @@ def copy_setup() -> None:
         if not path.is_dir():
             print_error(f"Folder does not exist: {path}")
             raise typer.Exit(1)
+        root = config.backup_policy.resolved_root
+        if overlaps_backup_root(path, root):
+            print_error(
+                f"{path} overlaps the backup folder {root}. The copy's cleanup would "
+                "delete local backups. Choose a folder outside it."
+            )
+            raise typer.Exit(1)
         policy.kind, policy.path = "folder", str(path)
     elif kind == "sftp":
         policy.kind = "sftp"
@@ -204,7 +261,7 @@ def copy_setup() -> None:
             "Key passphrase (blank if none)", hide_input=True, default="", show_default=False
         )
         if passphrase:
-            creds.store_secret("__second_copy_keypass__", passphrase)
+            creds.store_secret(_KEYPASS_NAME, passphrase)
         if not _trust_sftp_host(policy.host, policy.port):
             print_error("Host key not trusted; second copy not set up.")
             raise typer.Exit(1)
@@ -220,7 +277,7 @@ def copy_setup() -> None:
     policy.keep_days = int(typer.prompt("Keep copies for days", default=str(policy.keep_days)))
 
     try:
-        open_target(policy, creds).close()
+        open_target(policy, creds, config.backup_policy.resolved_root).close()
     except SecondCopyError as e:
         print_error(str(e))
         raise typer.Exit(1)

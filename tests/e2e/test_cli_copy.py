@@ -11,6 +11,7 @@ import socket
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from unittest.mock import patch
 
 import paramiko
 import pytest
@@ -132,6 +133,22 @@ def test_setup_folder_that_does_not_exist_is_refused(
     assert AppConfig.load().backup_policy.second_copy.enabled is False
 
 
+@pytest.mark.parametrize("where", ["root", "inside", "parent"])
+def test_setup_folder_that_overlaps_the_backup_folder_is_refused(
+    cli_runner: CliRunner, encrypted: AppConfig, where: str
+) -> None:
+    """The copy's cleanup removes old day folders: here it would delete local backups."""
+    root = encrypted.backup_policy.resolved_root
+    root.mkdir(parents=True, exist_ok=True)
+    folder = {"root": root, "inside": root / "copy", "parent": root.parent}[where]
+    folder.mkdir(exist_ok=True)
+    result = cli_runner.invoke(app, ["copy", "setup"], input=f"folder\n{folder}\n")
+
+    assert result.exit_code == 1
+    assert "overlaps the backup folder" in _out(result)
+    assert AppConfig.load().backup_policy.second_copy.enabled is False
+
+
 def test_setup_unknown_target_kind_is_refused(cli_runner: CliRunner, encrypted: AppConfig) -> None:
     result = cli_runner.invoke(app, ["copy", "setup"], input="dropbox\n")
 
@@ -188,12 +205,50 @@ def test_setup_sftp_stores_the_key_passphrase(
     cli_runner: CliRunner, encrypted: AppConfig, sftp_target: SftpTarget
 ) -> None:
     generated = secrets.token_urlsafe(12)
-    cli_runner.invoke(
-        app, ["copy", "setup"], input=sftp_target.answers(passphrase=generated, trust="n")
+    result = cli_runner.invoke(
+        app, ["copy", "setup"], input=sftp_target.answers(passphrase=generated)
     )
 
-    stored = CredentialService().get_secret("__second_copy_keypass__")
-    assert stored == generated
+    assert result.exit_code == 0, _out(result)
+    assert CredentialService().get_secret("__second_copy_keypass__") == generated
+
+
+def test_a_failed_setup_keeps_the_old_secret(
+    cli_runner: CliRunner, encrypted: AppConfig, sftp_target: SftpTarget
+) -> None:
+    """Before rc.3 a failed setup kept the old target but stored the new secret."""
+    old, new = secrets.token_urlsafe(12), secrets.token_urlsafe(12)
+    CredentialService().store_secret("__second_copy_keypass__", old)
+    result = cli_runner.invoke(
+        app, ["copy", "setup"], input=sftp_target.answers(passphrase=new, trust="n")
+    )
+
+    assert result.exit_code == 1
+    assert CredentialService().get_secret("__second_copy_keypass__") == old
+
+
+def test_a_failed_setup_removes_a_secret_that_was_not_there(
+    cli_runner: CliRunner, encrypted: AppConfig, sftp_target: SftpTarget
+) -> None:
+    cli_runner.invoke(
+        app,
+        ["copy", "setup"],
+        input=sftp_target.answers(passphrase=secrets.token_urlsafe(12), trust="n"),
+    )
+    assert CredentialService().get_secret("__second_copy_keypass__") is None
+
+
+def test_setup_sftp_without_the_sftp_subsystem_fails_cleanly(
+    cli_runner: CliRunner, encrypted: AppConfig, sftp_target: SftpTarget
+) -> None:
+    with patch.object(
+        paramiko.SSHClient, "open_sftp", side_effect=paramiko.SSHException("subsystem refused")
+    ):
+        result = cli_runner.invoke(app, ["copy", "setup"], input=sftp_target.answers())
+
+    assert result.exit_code == 1
+    assert "no SFTP for this account" in _out(result)
+    assert AppConfig.load().backup_policy.second_copy.enabled is False
 
 
 def test_setup_sftp_unreachable_host_is_refused(
@@ -326,3 +381,35 @@ def test_disable_turns_the_copy_off_and_keeps_copied_files(
     assert result.exit_code == 0, _out(result)
     assert AppConfig.load().backup_policy.second_copy.enabled is False
     assert len(list(share.rglob("*.enc"))) == 1
+
+
+def test_a_secret_setup_never_wrote_is_never_deleted(encrypted: AppConfig) -> None:
+    """A keyring read that failed at the start reads as 'absent'."""
+    from pfsentinel.cli.commands.copy import _restore_secrets
+
+    creds = CredentialService()
+    kept = secrets.token_urlsafe(12)
+    creds.store_secret("__second_copy_s3_secret__", kept)
+    _restore_secrets(creds, {"__second_copy_s3_secret__": None}, written=set())
+    assert creds.get_secret("__second_copy_s3_secret__") == kept
+
+
+def test_the_same_folder_under_another_name_is_an_overlap(tmp_path: Path) -> None:
+    """For example ~/pfsentinel and ~/pfSentinel on a case-insensitive disk."""
+    import os
+
+    from pfsentinel.services import second_copy
+
+    root = tmp_path / "pfSentinel"
+    other = tmp_path / "pfsentinel-alias"
+    root.mkdir()
+    other.mkdir()
+    real_samefile = os.path.samefile
+
+    def samefile(a, b):
+        names = {Path(a).name, Path(b).name}
+        return names == {"pfSentinel", "pfsentinel-alias"} or real_samefile(a, b)
+
+    with patch.object(second_copy.os.path, "samefile", samefile):
+        assert second_copy.overlaps_backup_root(other, root)
+    assert not second_copy.overlaps_backup_root(tmp_path / "elsewhere", root)
