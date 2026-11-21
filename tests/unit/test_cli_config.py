@@ -18,9 +18,11 @@ def _out(result) -> str:
     return " ".join(((result.stdout or "") + (result.stderr or "")).split())
 
 
-def _add_device(device_id: str, password: str | None) -> None:
+def _add_device(device_id: str, password: str | None, ssh_key: Path | None = None) -> None:
     config = AppConfig.load()
-    config.add_device(DeviceConfig(id=device_id, label=device_id, host="192.0.2.1"))
+    config.add_device(
+        DeviceConfig(id=device_id, label=device_id, host="192.0.2.1", ssh_key_path=ssh_key)
+    )
     config.save()
     if password:
         CredentialService().store(device_id, password)
@@ -156,6 +158,31 @@ class TestValidate:
         result = cli_runner.invoke(app, ["config", "validate"])
 
         assert "missing password" not in _out(result)
+
+    def test_a_device_with_an_ssh_key_needs_no_password(
+        self, cli_runner: CliRunner, saved_config: AppConfig, tmp_path: Path
+    ) -> None:
+        """Seen in the rc.2 field test: a key-only device was flagged as missing a password."""
+        key = tmp_path / "id_ed25519"
+        key.write_text("not a real key", encoding="utf-8")
+        _add_device("key-only", None, ssh_key=key)
+        result = cli_runner.invoke(app, ["config", "validate"])
+
+        output = _out(result)
+        assert result.exit_code == 0, output
+        assert "SSH key" in output
+        assert "missing password" not in output
+        assert "set passwords" not in output
+
+    def test_flags_a_missing_ssh_key_file(
+        self, cli_runner: CliRunner, saved_config: AppConfig, tmp_path: Path
+    ) -> None:
+        _add_device("gone-key", None, ssh_key=tmp_path / "missing_key")
+        result = cli_runner.invoke(app, ["config", "validate"])
+
+        output = _out(result)
+        assert "SSH key file not found" in output
+        assert "fix the SSH key path" in output
 
 
 class TestSet:

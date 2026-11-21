@@ -83,16 +83,26 @@ def config_validate() -> None:
         return
 
     creds = CredentialService()
-    all_ok = True
+    missing_password = False
+    missing_key = False
     for device in config.devices:
-        has_pw = creds.has_password(device.id)
-        status = "[green]✓[/]" if has_pw else "[red]✗ missing password[/]"
+        # A device with an SSH key needs no password (SSH only, no HTTPS fallback).
+        if creds.has_password(device.id):
+            status = "[green]✓[/]"
+        elif device.ssh_key_path is None:
+            status = "[red]✗ missing password[/]"
+            missing_password = True
+        elif device.ssh_key_path.expanduser().is_file():
+            status = "[green]✓ SSH key[/]"
+        else:
+            status = f"[red]✗ SSH key file not found: {device.ssh_key_path}[/]"
+            missing_key = True
         console.print(f"  Device [cyan]{device.id}[/]: {status}")
-        if not has_pw:
-            all_ok = False
 
-    if not all_ok:
+    if missing_password:
         print_info("Run: pfs device add  (or device edit) to set passwords")
+    if missing_key:
+        print_info("Run: pfs device edit  to fix the SSH key path")
 
 
 @app.command("set")
