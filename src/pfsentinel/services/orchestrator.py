@@ -72,13 +72,9 @@ class BackupOrchestrator:
         )
         records.append(config_record)
 
-        if config_only:
-            return records
-
-        # 2. Determine which extras to run
-        targets = self._resolve_targets(include_extras, all_extras)
-        if not targets:
-            return records
+        # 2. Determine which extras to run. No early return: retention and
+        # the second copy below run for every backup, config-only included.
+        targets = [] if config_only else self._resolve_targets(include_extras, all_extras)
 
         # 3. Run each enabled extra
         for target in targets:
@@ -107,7 +103,7 @@ class BackupOrchestrator:
                     on_warning(msg)
 
         # 4. ZFS snapshot (if enabled)
-        if self._config.backup_policy.zfs.enabled:
+        if not config_only and self._config.backup_policy.zfs.enabled:
             try:
                 zfs_record = self._run_zfs_snapshot(device_id, run, progress)
                 if zfs_record:
@@ -122,7 +118,7 @@ class BackupOrchestrator:
                             records.append(archive_record)
                     except Exception as e2:
                         logger.error(f"Archive fallback also failed for {device_id}: {e2}")
-        elif self._config.backup_policy.archive.enabled:
+        elif not config_only and self._config.backup_policy.archive.enabled:
             try:
                 archive_record = self._run_archive(device_id, run, progress)
                 if archive_record:
