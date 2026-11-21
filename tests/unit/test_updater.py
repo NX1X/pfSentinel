@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -1426,6 +1427,7 @@ class TestFailedInstallKeepsRevert:
             with pytest.raises(UpdateError, match="run the update as administrator"):
                 svc.install()
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="Windows has no Unix mode bits")
     @responses.activate
     def test_the_new_binary_keeps_the_mode_of_the_old_one(self, tmp_path):
         """A root update of a shared 0755 /usr/local/bin/pfs made it root-only."""
