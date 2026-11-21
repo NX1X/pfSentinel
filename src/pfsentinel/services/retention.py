@@ -15,7 +15,13 @@ from contextlib import AbstractContextManager
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from pfsentinel.models.backup import BackupIndex, BackupIndexError, BackupRecord, BackupRun
+from pfsentinel.models.backup import (
+    BackupIndex,
+    BackupIndexError,
+    BackupRecord,
+    BackupRun,
+    BackupType,
+)
 from pfsentinel.models.config import BackupPolicy
 from pfsentinel.utils.locking import file_lock
 from pfsentinel.utils.logging import get_logger
@@ -147,6 +153,9 @@ class RetentionService:
             for record in normal:
                 if record.id not in marked and record.created_at < cutoff_date:
                     to_delete.append(record)
+
+            if type_name == BackupType.ZFS_SNAPSHOT.value:
+                to_delete = whole_zfs_chains(records, to_delete)
 
             for record in to_delete:
                 if self._delete_record(device_id, record, index):
@@ -330,6 +339,27 @@ def _keep_previous(path: Path) -> None:
     finally:
         with contextlib.suppress(OSError):
             os.unlink(tmp)
+
+
+def whole_zfs_chains(
+    records: list[BackupRecord], to_delete: list[BackupRecord]
+) -> list[BackupRecord]:
+    """Delete a ZFS chain (a full send and the incrementals on it) whole, or not at all.
+
+    An incremental restores only on top of the sends before it. Deleting the
+    full send left incrementals that could not be restored.
+    """
+    marked = {r.id for r in to_delete}
+    chains: list[list[BackupRecord]] = []
+    for record in sorted(records, key=lambda r: r.created_at):
+        if not record.zfs_incremental or not chains:
+            chains.append([])
+        chains[-1].append(record)
+    keep: set[str] = set()
+    for chain in chains:
+        if any(r.id not in marked for r in chain):
+            keep.update(r.id for r in chain)
+    return [r for r in to_delete if r.id not in keep]
 
 
 def prune_empty_dirs(folder: Path, stop: Path) -> None:

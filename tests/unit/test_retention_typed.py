@@ -247,3 +247,68 @@ class TestLockedFiles:
         # The next run deletes it.
         assert [r.filename for r in retention.apply("fw1")] == ["cfg-1.xml"]
         assert not (tmp_path / "fw1" / "cfg-1.xml").exists()
+
+
+class TestZfsChains:
+    """An incremental restores only on top of the full send it is based on."""
+
+    def _chain_records(self, kinds: str) -> list[BackupRecord]:
+        records = []
+        for i, kind in enumerate(kinds):
+            r = _make_record(
+                "fw1", BackupType.ZFS_SNAPSHOT, f"z{i}.zfs.gz", age_days=len(kinds) - i
+            )
+            r.zfs_incremental = kind == "i"
+            r.zfs_snapshot_name = f"zroot/ROOT@s{i}"
+            records.append(r)
+        return records
+
+    def test_the_full_send_is_kept_while_an_incremental_on_it_is_kept(self):
+        from pfsentinel.services.retention import whole_zfs_chains
+
+        records = self._chain_records("Fiiii" + "F")
+        marked = [records[0]]  # count rule: keep the newest 5
+        assert whole_zfs_chains(records, marked) == []
+
+    def test_an_old_chain_goes_as_a_whole(self):
+        from pfsentinel.services.retention import whole_zfs_chains
+
+        records = self._chain_records("Fiiii" + "Fiiii")
+        marked = records[:5]
+        assert whole_zfs_chains(records, marked) == marked
+
+    def test_apply_never_leaves_an_incremental_without_its_full_send(self, tmp_path: Path):
+        policy = BackupPolicy(
+            backup_root=tmp_path,
+            max_backups_per_type={"zfs": 5},
+            keep_days=365,
+            long_term=LongTermRetention(enabled=False),
+        )
+        retention = RetentionService(tmp_path, policy)
+        (tmp_path / "fw1").mkdir()
+        index = BackupIndex(device_id="fw1")
+        for r in self._chain_records("Fiiiii"):  # six: one past the limit
+            (tmp_path / "fw1" / r.filename).write_bytes(b"x")
+            index.add(r)
+        retention.save_index(index)
+
+        assert retention.apply("fw1") == []
+        assert len(retention.load_index("fw1").records) == 6
+
+
+class TestCurrentChain:
+    def test_records_since_the_newest_full_send(self):
+        from pfsentinel.services.zfs_backup import current_chain
+
+        index = BackupIndex(device_id="fw1")
+        for r in TestZfsChains()._chain_records("FiiFi"):
+            index.add(r)
+        assert [r.filename for r in current_chain(index)] == ["z3.zfs.gz", "z4.zfs.gz"]
+
+    def test_no_full_send_is_no_chain(self):
+        from pfsentinel.services.zfs_backup import current_chain
+
+        index = BackupIndex(device_id="fw1")
+        for r in TestZfsChains()._chain_records("ii"):
+            index.add(r)
+        assert current_chain(index) == []

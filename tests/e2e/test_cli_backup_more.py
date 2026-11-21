@@ -115,6 +115,76 @@ def test_full_flag_forces_a_full_snapshot(
     assert "ZFS snapshot (full)" in _out(result)
 
 
+def test_a_failed_zfs_send_is_no_backup_and_its_snapshot_is_destroyed(
+    cli_runner: CliRunner, seeded_config: AppConfig, zfs_server: FakeSSHServer
+) -> None:
+    """Before rc.3, `zfs send | gzip` exited 0 on a failed send: a small file passed as a backup."""
+    zfs_server.set_exec_response("zfs send", stderr="cannot send: no such snapshot", exit_code=1)
+    result = cli_runner.invoke(app, ["backup", "snapshot", "-d", "home-fw"])
+
+    assert result.exit_code == 1
+    assert "no such snapshot" in _out(result)
+    assert _records() == []
+    assert not list(AppConfig.load().backup_policy.resolved_root.rglob("*.zfs*"))
+    assert any(cmd.startswith("zfs destroy") for cmd in zfs_server.exec_log)
+
+
+def test_an_empty_zfs_send_is_no_backup(
+    cli_runner: CliRunner, seeded_config: AppConfig, zfs_server: FakeSSHServer
+) -> None:
+    zfs_server.set_exec_response("zfs send", stdout=b"")
+    result = cli_runner.invoke(app, ["backup", "snapshot", "-d", "home-fw"])
+
+    assert result.exit_code == 1
+    assert "sent no data" in _out(result)
+    assert _records() == []
+
+
+def test_the_stream_is_gzipped_here(
+    cli_runner: CliRunner, seeded_config: AppConfig, zfs_server: FakeSSHServer
+) -> None:
+    raw = b"raw zfs stream\n" * 64
+    zfs_server.set_exec_response("zfs send", stdout=raw)
+    assert cli_runner.invoke(app, ["backup", "snapshot", "-d", "home-fw"]).exit_code == 0
+    assert not any("| gzip" in cmd for cmd in zfs_server.exec_log)
+    (record,) = _records()
+    path = AppConfig.load().backup_policy.resolved_root / "home-fw" / record.relative_path
+    assert gzip.decompress(path.read_bytes()) == raw
+
+
+def test_a_chain_at_the_zfs_limit_starts_with_a_new_full_send(
+    cli_runner: CliRunner, seeded_config: AppConfig, zfs_server: FakeSSHServer
+) -> None:
+    """Retention removes whole chains, so a chain may not outgrow the ZFS limit."""
+    config = AppConfig.load()
+    config.backup_policy.max_backups_per_type["zfs"] = 2
+    config.save()
+    labels = []
+    for _ in range(3):
+        result = cli_runner.invoke(app, ["backup", "snapshot", "-d", "home-fw"])
+        assert result.exit_code == 0, _out(result)
+        labels.append("incremental" if "incremental" in _out(result) else "full")
+        time.sleep(1.1)  # snapshot tags have one-second resolution
+    assert labels == ["full", "incremental", "full"]
+
+
+def test_an_incremental_needs_its_base_in_the_local_index(
+    cli_runner: CliRunner, seeded_config: AppConfig, zfs_server: FakeSSHServer
+) -> None:
+    """The base snapshot exists on the device, but its local file is gone: send full."""
+    assert cli_runner.invoke(app, ["backup", "snapshot", "-d", "home-fw"]).exit_code == 0
+    config = AppConfig.load()
+    retention = RetentionService(config.backup_policy.resolved_root, config.backup_policy)
+    index = retention.load_index("home-fw")
+    index.records = []
+    retention.save_index(index)
+    time.sleep(1.1)
+    result = cli_runner.invoke(app, ["backup", "snapshot", "-d", "home-fw"])
+
+    assert result.exit_code == 0, _out(result)
+    assert "ZFS snapshot (full)" in _out(result)
+
+
 def test_snapshot_list_is_empty_before_any_snapshot(
     cli_runner: CliRunner, seeded_config: AppConfig
 ) -> None:

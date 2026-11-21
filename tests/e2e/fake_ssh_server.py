@@ -192,6 +192,8 @@ class FakeSSHServer:
     password: str
     files: dict[str, bytes] = field(default_factory=dict)
     exec_responses: dict[str, ExecResponse] = field(default_factory=dict)
+    # Every exec command received, in order.
+    exec_log: list[str] = field(default_factory=list)
     # Optional: serve a writable folder over SFTP, and accept this public key.
     sftp_root: Path | None = None
     authorized_key: paramiko.PKey | None = None
@@ -316,6 +318,7 @@ class FakeSSHServer:
                 password=self.password,
                 exec_responses=self.exec_responses,
                 authorized_key=self.authorized_key,
+                exec_log=self.exec_log,
             )
             try:
                 transport.start_server(server=server_iface)
@@ -347,11 +350,13 @@ class _ServerIface(paramiko.ServerInterface):
         password: str,
         exec_responses: dict[str, ExecResponse],
         authorized_key: paramiko.PKey | None = None,
+        exec_log: list[str] | None = None,
     ) -> None:
         self._username = username
         self._password = password
         self._exec_responses = exec_responses
         self._authorized_key = authorized_key
+        self._exec_log = exec_log if exec_log is not None else []
 
     def check_channel_request(self, kind: str, chanid: int) -> int:
         if kind == "session":
@@ -377,6 +382,7 @@ class _ServerIface(paramiko.ServerInterface):
 
     def check_channel_exec_request(self, channel, command: bytes) -> bool:
         cmd = command.decode("utf-8", errors="replace")
+        self._exec_log.append(cmd)
         response = self._lookup_exec(cmd)
 
         def _run() -> None:
