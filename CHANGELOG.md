@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `pfs config set extras rrd,pkg,dhcp,aliases,certs` (or `all`, or `none`) turns on the extras for scheduled backups. Before, scheduled backups saved the config only unless you edited `config.json` by hand, and the docs did not say so. `pfs schedule status` now shows what a scheduled backup saves.
 - `pfs backup verify` without a filename checks every backup with status `?`. Add `-d DEVICE` for one device.
 
 ## [1.0.0-rc.2] - 2026-11-20

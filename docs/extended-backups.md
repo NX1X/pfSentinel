@@ -35,6 +35,20 @@ pfs backup snapshot -d home-fw
 pfs backup archive -d home-fw
 ```
 
+## Scheduled Backups
+
+A scheduled backup (Task Scheduler, systemd timer or cron) cannot answer the prompt. It backs up the config plus the extras that are turned on in the config file. In a new config, every extra is off, so scheduled backups save the config only. Your answers at the interactive prompt are not saved.
+
+Turn on the extras for scheduled backups:
+
+```bash
+pfs config set extras rrd,pkg,dhcp,aliases,certs   # these five
+pfs config set extras all                          # all six, logs included
+pfs config set extras none                         # config only
+```
+
+The command turns on exactly the targets you name and turns the others off. `pfs schedule status` shows what a scheduled backup saves, in the `Backs up` line. ZFS snapshots and filesystem archives have their own settings (see below).
+
 ## Extra Backup Targets
 
 ### RRD Data

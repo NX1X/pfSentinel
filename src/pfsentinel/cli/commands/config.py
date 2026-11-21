@@ -110,15 +110,22 @@ def config_validate() -> None:
 
 @app.command("set")
 def config_set(
-    key: str = typer.Argument(..., help="Setting key: backup-dir"),
+    key: str = typer.Argument(..., help="Setting key: backup-dir or extras"),
     value: str = typer.Argument(..., help="New value"),
 ) -> None:
     """Change a configuration setting.
 
     Supported keys:
       backup-dir   Path where backups are saved
+      extras       What scheduled backups save in addition to the config:
+                   a comma list of rrd, pkg, dhcp, aliases, certs, logs;
+                   or all; or none. Example: pfs config set extras rrd,pkg,certs
     """
     config = AppConfig.load()
+
+    if key == "extras":
+        _set_extras(config, value)
+        return
 
     if key == "backup-dir":
         new_path = Path(value).expanduser().resolve()
@@ -129,8 +136,31 @@ def config_set(
         if not new_path.exists():
             print_info("Directory will be created on next backup run")
     else:
-        print_error(f"Unknown setting '{key}'. Supported: backup-dir")
+        print_error(f"Unknown setting '{key}'. Supported: backup-dir, extras")
         raise typer.Exit(1)
+
+
+def _set_extras(config: AppConfig, value: str) -> None:
+    """Save the extra targets that runs without --include back up."""
+    from pfsentinel.models.config import EXTRA_TARGET_FIELDS
+
+    choice = value.strip().lower()
+    if choice == "all":
+        names = list(EXTRA_TARGET_FIELDS)
+    elif choice == "none":
+        names = []
+    else:
+        names = [n.strip() for n in choice.split(",") if n.strip()]
+    unknown = [n for n in names if n not in EXTRA_TARGET_FIELDS]
+    if unknown or not names and choice != "none":
+        valid = ", ".join(EXTRA_TARGET_FIELDS)
+        print_error(f"Unknown extra target: {', '.join(unknown) or value!r}")
+        print_info(f"Valid: {valid}; or all; or none")
+        raise typer.Exit(1)
+
+    config.backup_policy.extras.set_targets(names)
+    config.save()
+    print_success(f"Scheduled backups now save: {config.backup_policy.run_contents()}")
 
 
 @app.command("path")

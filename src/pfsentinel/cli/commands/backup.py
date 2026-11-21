@@ -19,7 +19,7 @@ from pfsentinel.cli.formatters import (
     print_warning,
 )
 from pfsentinel.models.backup import BackupIndexError, BackupRecord
-from pfsentinel.models.config import AppConfig
+from pfsentinel.models.config import EXTRA_TARGET_FIELDS, AppConfig
 from pfsentinel.services.backup import BackupError, BackupService
 from pfsentinel.services.credentials import CredentialService
 from pfsentinel.services.orchestrator import BackupOrchestrator
@@ -27,7 +27,7 @@ from pfsentinel.services.orchestrator import BackupOrchestrator
 app = typer.Typer(help="Backup operations", no_args_is_help=True)
 
 # Valid extra target names for --include
-_VALID_EXTRAS = ["rrd", "pkg", "dhcp", "aliases", "certs", "logs"]
+_VALID_EXTRAS = list(EXTRA_TARGET_FIELDS)
 
 
 _EXTRAS_MENU = [
