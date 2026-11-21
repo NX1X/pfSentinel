@@ -335,14 +335,15 @@ class BackupService:
         change or the record is no longer in the index.
         """
         retention = self._retention()
-        index = retention.load_index(record.device_id)
-        for current in index.records:
-            if current.relative_path == record.relative_path:
-                if current.verified != ok:
-                    current.verified = ok
-                    retention.save_index(index)
-                record.verified = ok
-                return
+        with retention.device_lock(record.device_id):
+            index = retention.load_index(record.device_id)
+            for current in index.records:
+                if current.relative_path == record.relative_path:
+                    if current.verified != ok:
+                        current.verified = ok
+                        retention.save_index(index)
+                    record.verified = ok
+                    return
 
     def _verify_tar(self, path: Path, compressed: bool) -> None:
         """Verify a tar archive is readable (decrypting it on the fly if needed)."""

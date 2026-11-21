@@ -18,6 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A backup run with no extras turned on (the default) ended right after the config. It skipped the second copy (since 0.3.0) and the ZFS snapshot or filesystem archive, even when they were turned on. A `--config-only` run also skipped the second copy. Now every run makes the second copy; `--config-only` still skips extras, ZFS and archive.
 - `pfs config validate` no longer reports "missing password" for a device that logs in with an SSH key. It shows `SSH key`, or an error if the key file is missing.
 - `pfs backup verify` now saves its result in the backup index. Before, a passed check did not change the `?` status in `pfs backup list`, so files added by `pfs backup reindex` kept `?` forever. A failed check now sets `?`.
+- Two backup runs of one device at the same time could lose records from the backup index and give two runs the same number. This happens when the PC is off at 02:00 and 03:00: the daily and the weekly task then start together at sign-in. A run, a reindex and a verify now lock the device (`.pfsentinel.lock` in its folder). The second run waits for the first, at most 15 minutes, then fails with an alert.
+- A failed extra, ZFS snapshot or filesystem archive was only logged. The run reported success, so a part that failed every night went unnoticed. A run now sends one alert, event ID 1008 "Backup partly failed", that lists the failed parts. The exit code stays 0, because the config was saved.
+- A backup folder that could not be used (for example the F: drive unplugged) failed the run with no alert. It now sends a "backup failed" alert.
+- `pfs backup run -o DIR` printed DIR, but saved the files in the configured backup folder. They now go to DIR.
+- `pfs backup run --non-interactive` asked where to save backups when no backup folder was set. A scheduled run then stopped or waited until Task Scheduler ended it. It now uses the default folder.
+- When retention could not delete a file (on Windows, for example while antivirus scans it), it removed the record anyway. The file stayed on disk, unlisted and never removed. The record now stays, and the next run tries again.
+- On Windows, saving the backup index failed when another process had it open. The save now tries again for up to 2 seconds.
 
 ### Changed
 
