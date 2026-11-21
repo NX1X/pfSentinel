@@ -253,6 +253,15 @@ class TestSystemd:
         assert shown == [us.CHECK_SERVICE, us.SERVICE_UNIT]
 
 
+def test_a_user_who_may_not_use_cron_has_no_entries(monkeypatch) -> None:
+    """cron.allow without this user: disable failed with a false error before rc.3."""
+    denied = subprocess.CompletedProcess(
+        ["crontab", "-l"], 1, "", "You (bob) are not allowed to use this program (crontab)\n"
+    )
+    monkeypatch.setattr(us.subprocess, "run", lambda *a, **k: denied)
+    assert us._read_crontab() == []
+
+
 class TestReviewHardening:
     """Fixes from the 2026-11 security review."""
 

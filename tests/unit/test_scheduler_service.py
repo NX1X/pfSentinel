@@ -638,13 +638,13 @@ class TestWindowsScheduleValidation:
 class TestStaleWindowsTasks:
     """Before rc.3 an apply only created tasks, so old ones kept running."""
 
-    def _apply(self, cfg: ScheduleConfig, elevated: bool, existing: set[str]):
+    def _apply(self, cfg: ScheduleConfig, elevated: bool, existing: set[str], created: bool = True):
         svc = SchedulerService(cfg)
         with (
             patch.object(scheduler_mod, "is_windows", return_value=True),
             patch.object(scheduler_mod, "is_elevated", return_value=elevated),
             patch.object(scheduler_mod, "get_executable_path", return_value=("pfs.exe", "")),
-            patch.object(scheduler_mod, "create_windows_task", return_value=True),
+            patch.object(scheduler_mod, "create_windows_task", return_value=created),
             patch.object(
                 scheduler_mod,
                 "query_windows_task",
@@ -662,12 +662,28 @@ class TestStaleWindowsTasks:
         assert ok is True
         assert deleted == ["pfSentinel\\WeeklyBackup"]
 
-    def test_enabling_without_admin_removes_the_other_variant(self):
+    def test_enabling_without_admin_removes_the_admin_variant(self):
+        cfg = ScheduleConfig(enabled=True, weekly_enabled=False)
+        existing = {"pfSentinel\\DailyBackup", "pfSentinel\\BackupCheck"}
+        ok, deleted = self._apply(cfg, False, existing)
+        assert ok is True
+        assert deleted == ["pfSentinel\\BackupCheck", "pfSentinel\\DailyBackup"]
+
+    def test_as_admin_the_root_tasks_are_named_not_deleted(self, caplog):
+        """The root tasks may belong to another user of the PC."""
         cfg = ScheduleConfig(enabled=True, weekly_enabled=False)
         existing = {"pfSentinel-DailyBackup", "pfSentinel-BackupCheck"}
         ok, deleted = self._apply(cfg, True, existing)
         assert ok is True
-        assert deleted == ["pfSentinel-BackupCheck", "pfSentinel-DailyBackup"]
+        assert deleted == []
+        assert 'schtasks /Delete /TN "pfSentinel-DailyBackup" /F' in caplog.text
+
+    def test_a_failed_create_keeps_the_old_tasks(self):
+        """Removing first left nothing scheduled when the create then failed."""
+        cfg = ScheduleConfig(enabled=True, weekly_enabled=False)
+        ok, deleted = self._apply(cfg, True, {"pfSentinel\\WeeklyBackup"}, created=False)
+        assert ok is False
+        assert deleted == []
 
     def test_a_wanted_task_is_never_deleted(self):
         cfg = ScheduleConfig(enabled=True, daily_enabled=True, weekly_enabled=True)
@@ -679,7 +695,8 @@ class TestStaleWindowsTasks:
         _, deleted = self._apply(cfg, True, existing)
         assert deleted == []
 
-    def test_in_process_mode_removes_the_os_tasks(self):
+    def test_in_process_mode_keeps_the_os_tasks(self):
+        """The in-process scheduler ends with the process: removing them left nothing."""
         cfg = ScheduleConfig(enabled=True, use_windows_task_scheduler=False)
         svc = SchedulerService(cfg)
         with (
@@ -687,4 +704,4 @@ class TestStaleWindowsTasks:
             patch.object(svc, "start_in_process", return_value=True),
         ):
             assert svc.apply_schedule() is True
-        remove.assert_called_once()
+        remove.assert_not_called()

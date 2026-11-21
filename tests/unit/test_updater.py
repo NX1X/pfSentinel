@@ -1411,7 +1411,7 @@ class TestFailedInstallKeepsRevert:
         ):
             mock_sys.executable = str(exe)
             svc._state["download_url"] = download_url
-            with pytest.raises(UpdateError, match="Download failed"):
+            with pytest.raises(UpdateError, match="Download from github.com failed: HTTPError"):
                 svc.install()
         assert svc._state["previous_version"] == "1.0.0rc1"
         assert exe.read_bytes() == b"rc2"
@@ -1465,3 +1465,25 @@ class TestAttestationHttpErrors:
         responses.add(responses.GET, attestation.API_URL.format(digest=sha), status=403)
         with pytest.raises(attestation.AttestationError, match="HTTP 403"):
             attestation.verify_file(f, "pfs")
+
+
+class TestUpdateErrorReporting:
+    def test_a_failed_check_inside_install_is_an_update_error(self, tmp_path):
+        import requests
+
+        svc = _make_service(tmp_path)
+        with patch.object(svc, "check", side_effect=requests.ConnectionError("down")):
+            with pytest.raises(UpdateError, match="Cannot check for updates: ConnectionError"):
+                svc.install()
+
+    def test_a_failed_restore_is_reported_with_the_backup_path(self, tmp_path):
+        svc = _make_service(tmp_path)
+        exe = tmp_path / "pfs"
+        backup = tmp_path / "pfs.bak"
+        with patch(
+            "pfsentinel.services.updater.shutil.copy2", side_effect=PermissionError("in use")
+        ):
+            with pytest.raises(UpdateError, match="putting the old one back failed") as err:
+                svc._restore_binary(backup, exe)
+        assert str(backup) in str(err.value)
+        assert svc.restore_failed is True

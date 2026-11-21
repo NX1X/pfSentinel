@@ -120,6 +120,8 @@ class UpdateService:
         self._state: dict = self._load_state()
         # The method of the last install() call: "binary", "pipx" or "pip".
         self.last_method: str | None = None
+        # True when a failed update could not put the old binary back.
+        self.restore_failed = False
         self._cleanup_old_binary()
 
     # ── State persistence ──────────────────────────────────────────────
@@ -313,7 +315,10 @@ class UpdateService:
 
         Raises UpdateError on failure.
         """
-        result = self.check(force=True, prerelease=prerelease)
+        try:
+            result = self.check(force=True, prerelease=prerelease)
+        except requests.RequestException as e:
+            raise UpdateError(f"Cannot check for updates: {type(e).__name__}") from e
         if result is None:
             return f"Already up to date (v{__version__})"
 
@@ -343,7 +348,9 @@ class UpdateService:
         except UpdateError:
             raise
         except requests.RequestException as e:
-            raise UpdateError(f"Download failed: {type(e).__name__}: {e}") from e
+            # Not the message: it can quote the signed download URL.
+            host = urlparse(getattr(e.request, "url", "") or "").hostname or "GitHub"
+            raise UpdateError(f"Download from {host} failed: {type(e).__name__}") from e
         except OSError as e:
             raise UpdateError(
                 f"Cannot write the update next to {Path(sys.executable).resolve()}: {e}. "
@@ -422,14 +429,26 @@ class UpdateService:
                     "the previous version has been restored."
                 )
         except UpdateError:
-            shutil.copy2(backup_path, current_exe)
+            self._restore_binary(backup_path, current_exe)
             raise
         except Exception as e:
             logger.warning(f"New binary verification failed: {e}")
-            shutil.copy2(backup_path, current_exe)
+            self._restore_binary(backup_path, current_exe)
             raise UpdateError(f"Update verification failed, reverted: {e}") from e
 
         return f"Updated to {tag}"
+
+    def _restore_binary(self, backup_path: Path, current_exe: Path) -> None:
+        """Put the old binary back after a failed check of the new one."""
+        try:
+            shutil.copy2(backup_path, current_exe)
+        except OSError as e:
+            self.restore_failed = True
+            raise UpdateError(
+                f"The new binary failed its check, and putting the old one back failed: {e}. "
+                f"The new binary is still at {current_exe}. Copy the old one back by hand "
+                f"from {backup_path}, or run: pfs update revert"
+            ) from e
 
     # ── Download safety ──────────────────────────────────────────────
 

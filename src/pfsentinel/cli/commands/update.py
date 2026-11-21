@@ -84,7 +84,7 @@ def update_install(
         print_info("Restart pfSentinel to use the new version.")
     except UpdateError as e:
         print_error(str(e))
-        if svc.last_method == "binary":
+        if svc.last_method == "binary" and not svc.restore_failed:
             # A failed binary update never leaves a new binary in place: it
             # stops before the swap, or puts the old one back. Revert here
             # would go back one more version.

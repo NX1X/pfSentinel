@@ -335,8 +335,10 @@ def _read_crontab() -> list[str] | None:
     except OSError:
         return None
     if result.returncode != 0:
-        # "no crontab for <user>" is the normal empty case.
-        return [] if "no crontab" in (result.stderr or "").lower() else None
+        # "no crontab for <user>" is the normal empty case. A user who may
+        # not use cron (cron.allow) has no pfSentinel entries either.
+        err = (result.stderr or "").lower()
+        return [] if "no crontab" in err or "not allowed" in err else None
     return result.stdout.splitlines()
 
 

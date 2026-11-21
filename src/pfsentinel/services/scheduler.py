@@ -124,10 +124,9 @@ class SchedulerService:
             return self.remove_schedule()
 
         if not self._config.use_windows_task_scheduler:
-            # Remove the OS tasks of an earlier `schedule enable`, or they
-            # keep running next to the in-process scheduler.
-            if not self._remove_os_schedule():
-                logger.warning("Could not remove every OS scheduled task")
+            # The OS tasks of an earlier `schedule enable` stay: the
+            # in-process scheduler ends with this process, so removing them
+            # would leave nothing scheduled.
             self.backend = "in-process"
             return self.start_in_process()
 
@@ -161,16 +160,25 @@ class SchedulerService:
                 success = False
         return success
 
-    def _remove_unwanted_windows_tasks(self, wanted: set[str]) -> bool:
+    def _remove_unwanted_windows_tasks(self, wanted: set[str], elevated: bool) -> bool:
         """Delete every pfSentinel task that this apply does not create.
 
         Turning weekly off, or enabling once as administrator and once
         without, left the other task behind: both then ran at 02:00.
+
+        As administrator, the no-admin root tasks (pfSentinel-*) are only
+        named, not deleted: they may belong to another user of this PC.
         """
         success = True
         for folder_name, root_name in _USER_TASK_NAMES.items():
             for name in (folder_name, root_name):
                 if name in wanted or not query_windows_task(name).get("exists"):
+                    continue
+                if elevated and name == root_name:
+                    logger.warning(
+                        f"An older task {name} also exists. If it is yours, remove it: "
+                        f'schtasks /Delete /TN "{name}" /F'
+                    )
                     continue
                 if delete_windows_task(name):
                     logger.info(f"Removed the scheduled task {name}")
@@ -202,9 +210,6 @@ class SchedulerService:
             wanted.add(_task_name(_DAILY_TASK_NAME, elevated))
         if self._config.weekly_enabled:
             wanted.add(_task_name(_WEEKLY_TASK_NAME, elevated))
-        # A task that cannot be removed only warns: the wanted tasks still
-        # get created, and the device lock keeps two runs apart.
-        self._remove_unwanted_windows_tasks(wanted)
 
         if self._config.daily_enabled:
             ok = create_windows_task(
@@ -253,6 +258,12 @@ class SchedulerService:
         else:
             logger.error("Failed to create the no-recent-backup check task")
             success = False
+
+        # Remove old tasks only once the new ones exist: a failed create must
+        # not leave nothing scheduled. A task that cannot be removed only
+        # warns; the device lock keeps two runs apart.
+        if success:
+            self._remove_unwanted_windows_tasks(wanted, elevated)
 
         # As administrator, this is the one moment the Event Log source can be
         # registered. Without admin it is skipped: `pfs notify eventlog enable`
