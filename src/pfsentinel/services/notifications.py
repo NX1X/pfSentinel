@@ -225,33 +225,20 @@ def describe_send_error(error: Exception) -> str:
 
 
 TELEGRAM_MAX_CHARS = 4096
-_TELEGRAM_SPECIAL = "_*`["
 _TRUNCATED = "\n... (cut: Telegram allows 4096 characters)"
 
 
-def _telegram_escape(text: str) -> str:
-    return "".join("\\" + ch if ch in _TELEGRAM_SPECIAL else ch for ch in text)
-
-
 def telegram_text(title: str, message: str) -> str:
-    """Bold title plus message, escaped for Telegram's Markdown and at most 4096 characters.
+    """Title and message as plain text, at most 4096 characters.
 
-    Unescaped, an odd number of "_" (a Windows path, a device ID) made
-    Telegram refuse the message with HTTP 400, so the alert was lost.
+    Sent without a parse mode: with Markdown, an odd number of "_" (a
+    Windows path, a device ID) made Telegram refuse the alert with HTTP
+    400, and escapes inside the bold title showed as backslashes.
     """
-    head = f"*{_telegram_escape(title)}*\n"
-    body = _telegram_escape(message)
-    if len(head) + len(body) <= TELEGRAM_MAX_CHARS:
-        return head + body
-    budget = TELEGRAM_MAX_CHARS - len(head) - len(_TRUNCATED)
-    kept, used = [], 0
-    for ch in message:
-        piece = _telegram_escape(ch)
-        if used + len(piece) > budget:
-            break
-        kept.append(piece)
-        used += len(piece)
-    return head + "".join(kept) + _TRUNCATED
+    text = f"{title}\n{message}"
+    if len(text) <= TELEGRAM_MAX_CHARS:
+        return text
+    return text[: TELEGRAM_MAX_CHARS - len(_TRUNCATED)] + _TRUNCATED
 
 
 class NotificationService:
@@ -418,7 +405,7 @@ class NotificationService:
             url = f"https://api.telegram.org/bot{token}/sendMessage"
             resp = requests.post(
                 url,
-                json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"},
+                json={"chat_id": chat_id, "text": text},
                 timeout=10,
                 allow_redirects=False,
             )
