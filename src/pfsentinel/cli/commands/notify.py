@@ -357,7 +357,7 @@ def eventlog_enable() -> None:
     print_success(f"Alerts are written to the {target}")
     print_info("Event IDs: 1000 backup OK, 1001 backup failed, 1002 risky change,")
     print_info("           1003 no recent backup, 1004 restore check failed, 1005 copy failed,")
-    print_info("           1006 update available")
+    print_info("           1006 update available, 1008 backup partly failed")
 
 
 @eventlog_app.command("disable")

@@ -90,6 +90,33 @@ class BackupService:
         no_packages: bool = False,
         run: BackupRun | None = None,
     ) -> BackupRecord:
+        """Run a full (or selective) backup for one device, holding its lock.
+
+        Every caller holds the lock this way (pfs schedule run-now, backup
+        watch, the in-process scheduler); inside an orchestrator run the lock
+        is held already, and the nested call does not wait.
+        """
+        from pfsentinel.utils.locking import LockTimeoutError
+
+        try:
+            lock = self._retention().device_lock(device_id)
+        except OSError as e:
+            raise BackupError(f"Cannot use the backup folder {self._backup_root}: {e}") from e
+        try:
+            with lock:
+                return self._run_backup(device_id, description, progress, area, no_packages, run)
+        except LockTimeoutError as e:
+            raise BackupError(str(e)) from e
+
+    def _run_backup(
+        self,
+        device_id: str,
+        description: str | None = None,
+        progress: ProgressCallback | None = None,
+        area: str = "",
+        no_packages: bool = False,
+        run: BackupRun | None = None,
+    ) -> BackupRecord:
         """Run a full (or selective) backup for one device.
 
         Args:
@@ -335,14 +362,15 @@ class BackupService:
         change or the record is no longer in the index.
         """
         retention = self._retention()
-        index = retention.load_index(record.device_id)
-        for current in index.records:
-            if current.relative_path == record.relative_path:
-                if current.verified != ok:
-                    current.verified = ok
-                    retention.save_index(index)
-                record.verified = ok
-                return
+        with retention.device_lock(record.device_id):
+            index = retention.load_index(record.device_id)
+            for current in index.records:
+                if current.relative_path == record.relative_path:
+                    if current.verified != ok:
+                        current.verified = ok
+                        retention.save_index(index)
+                    record.verified = ok
+                    return
 
     def _verify_tar(self, path: Path, compressed: bool) -> None:
         """Verify a tar archive is readable (decrypting it on the fly if needed)."""
@@ -371,18 +399,19 @@ class BackupService:
         with zeros before deletion to prevent recovery.
         """
         retention = self._retention()
-        index = retention.load_index(record.device_id)
+        with retention.device_lock(record.device_id):
+            index = retention.load_index(record.device_id)
 
-        path = self._backup_root / record.device_id / record.relative_path
-        if path.is_symlink():
-            raise BackupError(f"Refusing to delete symlink (potential attack): {path.name}")
-        if path.exists():
-            if self._config.backup_policy.secure_delete:
-                _secure_wipe(path)
-            path.unlink()
+            path = self._backup_root / record.device_id / record.relative_path
+            if path.is_symlink():
+                raise BackupError(f"Refusing to delete symlink (potential attack): {path.name}")
+            if path.exists():
+                if self._config.backup_policy.secure_delete:
+                    _secure_wipe(path)
+                path.unlink()
 
-        index.remove(record.id)
-        retention.save_index(index)
+            index.remove(record.id)
+            retention.save_index(index)
         logger.info(f"Deleted backup: {record.filename}")
 
     def restore_backup(self, record: BackupRecord, target_path: Path) -> Path:
@@ -425,11 +454,21 @@ class BackupService:
         file deleted (wiped first when secure_delete is on). The index is saved
         after every file, so an interruption loses nothing.
         """
-        import hashlib
-
         if not self._crypto.enabled:
             raise BackupError("Encryption is off. Run: pfs encryption setup")
         retention = self._retention()
+        with retention.device_lock(device_id):
+            return self._encrypt_existing(retention, device_id, progress, wipe)
+
+    def _encrypt_existing(
+        self,
+        retention: RetentionService,
+        device_id: str,
+        progress: Callable[[str], None] | None,
+        wipe: bool,
+    ) -> int:
+        import hashlib
+
         index = retention.load_index(device_id)
         done = 0
         for record in list(index.records):

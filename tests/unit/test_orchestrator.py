@@ -166,6 +166,122 @@ class TestRun:
         assert "RRD fail" in warn_cb.call_args[0][0]
 
 
+class TestRunSafety:
+    """Found in the bug hunt before rc.3."""
+
+    @patch.object(BackupOrchestrator, "_resolve_targets", return_value=["rrd", "pkg"])
+    def test_failed_parts_send_one_partial_alert(self, mock_resolve, tmp_path: Path):
+        from pfsentinel.services.notifications import AlertKind
+
+        orch = BackupOrchestrator(_make_config(tmp_path), CredentialService())
+        with (
+            patch.object(orch._backup_svc, "run_backup", return_value=_make_record()),
+            patch.object(orch._extra_svc, "backup_target", side_effect=Exception("timeout")),
+            patch.object(orch._retention, "apply"),
+            patch.object(orch._backup_svc.notifications, "alert") as alert,
+        ):
+            orch.run("fw1")
+        alert.assert_called_once()
+        kind, title, message = alert.call_args.args
+        assert kind is AlertKind.BACKUP_PARTIAL
+        assert "Extra backup 'rrd' failed: timeout" in message
+        assert "Extra backup 'pkg' failed: timeout" in message
+
+    def test_a_failed_archive_is_reported(self, tmp_path: Path):
+        config = _make_config(tmp_path)
+        config.backup_policy.archive.enabled = True
+        orch = BackupOrchestrator(config, CredentialService())
+        warn_cb = MagicMock()
+        with (
+            patch.object(orch._backup_svc, "run_backup", return_value=_make_record()),
+            patch.object(orch, "_resolve_targets", return_value=[]),
+            patch.object(orch, "_run_archive", side_effect=RuntimeError("tar failed")),
+            patch.object(orch._retention, "apply"),
+            patch.object(orch._backup_svc.notifications, "alert") as alert,
+        ):
+            orch.run("fw1", on_warning=warn_cb)
+        assert "Filesystem archive failed: tar failed" in warn_cb.call_args.args[0]
+        alert.assert_called_once()
+
+    def test_a_clean_run_sends_no_partial_alert(self, tmp_path: Path):
+        orch = BackupOrchestrator(_make_config(tmp_path), CredentialService())
+        with (
+            patch.object(orch._backup_svc, "run_backup", return_value=_make_record()),
+            patch.object(orch, "_resolve_targets", return_value=[]),
+            patch.object(orch._retention, "apply"),
+            patch.object(orch._backup_svc.notifications, "alert") as alert,
+        ):
+            orch.run("fw1")
+        alert.assert_not_called()
+
+    def test_an_unusable_backup_folder_alerts(self, tmp_path: Path):
+        """F: unplugged at 02:00: before rc.3 the run failed with no alert."""
+        blocker = tmp_path / "not-a-folder"
+        blocker.write_text("x")
+        config = _make_config(tmp_path)
+        config.backup_policy.backup_root = blocker / "backups"
+        orch = BackupOrchestrator(config, CredentialService())
+        with patch.object(orch._backup_svc.notifications, "notify_failure") as notify:
+            with pytest.raises(BackupError, match="Cannot use the backup folder"):
+                orch.run("fw1")
+        notify.assert_called_once()
+        assert "Cannot use the backup folder" in notify.call_args.args[1]
+
+    def test_a_held_lock_fails_the_run_with_an_alert(self, tmp_path: Path):
+        from pfsentinel.utils.locking import LockTimeoutError
+
+        orch = BackupOrchestrator(_make_config(tmp_path), CredentialService())
+        with (
+            patch.object(
+                orch._retention, "device_lock", side_effect=LockTimeoutError("held too long")
+            ),
+            patch.object(orch._backup_svc.notifications, "notify_failure") as notify,
+            patch.object(orch._backup_svc, "run_backup") as run_backup,
+        ):
+            with pytest.raises(BackupError, match="held too long"):
+                orch.run("fw1")
+        notify.assert_called_once()
+        run_backup.assert_not_called()
+
+
+class TestLockScope:
+    def test_the_second_copy_runs_after_the_lock_is_released(self, tmp_path: Path):
+        """An upload can take long: a waiting run must not time out on it."""
+        from pfsentinel.utils import locking
+
+        orch = BackupOrchestrator(_make_config(tmp_path), CredentialService())
+        held_during_copy: list[set] = []
+        with (
+            patch.object(orch._backup_svc, "run_backup", return_value=_make_record()),
+            patch.object(orch, "_resolve_targets", return_value=[]),
+            patch.object(orch._retention, "apply"),
+            patch.object(
+                orch,
+                "_second_copy",
+                side_effect=lambda d: held_during_copy.append(set(locking._held())),
+            ),
+        ):
+            orch.run("fw1")
+        assert held_during_copy == [set()]
+
+    def test_run_backup_alone_takes_the_lock(self, tmp_path: Path):
+        """pfs schedule run-now and backup watch call run_backup directly."""
+        from contextlib import contextmanager
+
+        from pfsentinel.utils.locking import LockTimeoutError
+
+        @contextmanager
+        def held(*args, **kwargs):
+            raise LockTimeoutError("held too long")
+            yield
+
+        orch = BackupOrchestrator(_make_config(tmp_path), CredentialService())
+        svc = orch._backup_svc
+        with patch("pfsentinel.services.retention.RetentionService.device_lock", held):
+            with pytest.raises(BackupError, match="held too long"):
+                svc.run_backup("fw1")
+
+
 class TestRunAll:
     def test_no_enabled_devices_raises(self, tmp_path: Path):
         config = _make_config(tmp_path, devices=[])
