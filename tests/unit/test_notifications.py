@@ -271,3 +271,29 @@ class TestSecretsNeverReachOutput:
         assert "AAHsecret" not in out
         assert "SECRETpart" not in out
         assert "bot<redacted>" in out
+
+
+class TestTelegramText:
+    """An odd number of '_' made Telegram refuse the alert with HTTP 400 before rc.3."""
+
+    def test_markdown_characters_are_escaped(self):
+        from pfsentinel.services.notifications import telegram_text
+
+        text = telegram_text(
+            "Index of fw_1", r"File: C:\Users\anna\pfSentinel\fw_1\backup_index.json *x* `y` [z]"
+        )
+        assert text.startswith("*Index of fw\\_1*\n")
+        assert "backup\\_index.json \\*x\\* \\`y\\` \\[z]" in text
+
+    def test_a_long_message_is_cut_to_4096_characters(self):
+        from pfsentinel.services.notifications import TELEGRAM_MAX_CHARS, telegram_text
+
+        text = telegram_text("Digest", "line_with_underscore\n" * 400)
+        assert len(text) <= TELEGRAM_MAX_CHARS
+        assert text.endswith("Telegram allows 4096 characters)")
+        assert not text.removesuffix("\n... (cut: Telegram allows 4096 characters)").endswith("\\")
+
+    def test_a_short_message_is_unchanged_apart_from_escaping(self):
+        from pfsentinel.services.notifications import telegram_text
+
+        assert telegram_text("T", "all good") == "*T*\nall good"

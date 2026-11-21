@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A backup run with no extras turned on (the default) ended right after the config. It skipped the second copy (since 0.3.0) and the ZFS snapshot or filesystem archive, even when they were turned on. A `--config-only` run also skipped the second copy. Now every run makes the second copy; `--config-only` still skips extras, ZFS and archive.
 - `pfs config validate` no longer reports "missing password" for a device that logs in with an SSH key. It shows `SSH key`, or an error if the key file is missing.
 - `pfs backup verify` now saves its result in the backup index. Before, a passed check did not change the `?` status in `pfs backup list`, so files added by `pfs backup reindex` kept `?` forever. A failed check now sets `?`.
+- Telegram refused an alert with HTTP 400 when its text had an odd number of `_`, `*`, `` ` `` or `[`, for example a Windows path or a device ID with one `_`. The alert was lost, with only a warning in the log. pfSentinel now escapes these characters, and cuts a message to Telegram's limit of 4096 characters.
+- The daily digest covered 24 hours back from the time it was sent. That time moves (sign-in, 12:00), so an alert between two digests could be in neither, or in both. A digest now covers the time since the last digest, at most 7 days. It lists at most 10 alerts per device, the newest, and says how many earlier ones it left out.
+- `pfs backup diff` crashed with a MarkupError when the config held text like `[/lan]`, and dropped text like `[b]`. Messages, errors and `pfs backup info` had the same problem. They now print square brackets as text.
+- `pfs backup list` showed `unknown` in the Changes column of every extra. Only config backups are compared, so extras now show `-`.
 
 ### Changed
 

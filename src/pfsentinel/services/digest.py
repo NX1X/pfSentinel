@@ -4,6 +4,11 @@ The daily check task (``pfs backup check-recent``, at sign-in, at 12:00 and
 at the digest time) calls ``send_digest_if_due``. The first run on a
 calendar day at or after ``notifications.digest_time`` sends it, and the
 date is kept in ``digest_state.json`` so later runs that day do not.
+
+The time of the last send is kept too: the next digest covers everything
+since then (at most 7 days), so an alert between two sends is never left
+out. A fixed 24 hours back from a send time that moves (sign-in, 12:00)
+missed or repeated alerts.
 """
 
 from __future__ import annotations
@@ -23,6 +28,10 @@ logger = get_logger(__name__)
 
 STATE_FILE = "digest_state.json"
 WINDOW = timedelta(hours=24)
+MAX_WINDOW = timedelta(days=7)
+# Alert lines per device: a long list hides the summary and passes
+# Telegram's 4096-character limit.
+MAX_ALERT_LINES = 10
 _DEFAULT_TIME = time(8, 0)
 
 
@@ -67,10 +76,32 @@ def last_sent_date() -> date | None:
         return None
 
 
-def mark_sent(day: date) -> None:
-    alert_history.write_private_json(
-        alert_history.state_dir() / STATE_FILE, {"last_sent": day.isoformat()}
-    )
+def last_sent_at() -> datetime | None:
+    data = alert_history.read_json(alert_history.state_dir() / STATE_FILE)
+    try:
+        return datetime.fromisoformat(str(data["last_sent_at"])) if isinstance(data, dict) else None
+    except (KeyError, ValueError):
+        return None
+
+
+def mark_sent(day: date, at: datetime | None = None) -> None:
+    state = {"last_sent": day.isoformat()}
+    if at is not None:
+        state["last_sent_at"] = at.isoformat(timespec="seconds")
+    alert_history.write_private_json(alert_history.state_dir() / STATE_FILE, state)
+
+
+def window_start(now: datetime, last_at: datetime | None) -> datetime:
+    """Start of the period a digest covers: the last send, at most 7 days back."""
+    if last_at is None or last_at >= now:
+        return now - WINDOW
+    return max(last_at, now - MAX_WINDOW)
+
+
+def _period(now: datetime, since: datetime) -> str:
+    if now - since == WINDOW:
+        return "the last 24 hours"
+    return f"the time since {since:%Y-%m-%d %H:%M}"
 
 
 def is_due(config: NotificationConfig, now: datetime, last_sent: date | None) -> bool:
@@ -84,8 +115,9 @@ def summarize_devices(
     list_backups: Callable[[str], list[BackupRecord]],
     alerts: list[AlertEntry],
     now: datetime,
+    since: datetime | None = None,
 ) -> list[DeviceSummary]:
-    since = now - WINDOW
+    since = since or now - WINDOW
     summaries: list[DeviceSummary] = []
     for device_id in device_ids:
         try:
@@ -126,11 +158,22 @@ def _alert_line(entry: AlertEntry) -> str:
     return f"  - {entry.at:%Y-%m-%d %H:%M} {_kind_label(entry.kind)}: {entry.summary}"
 
 
+def _alert_lines(alerts: list[AlertEntry]) -> list[str]:
+    lines = [_alert_line(a) for a in alerts[-MAX_ALERT_LINES:]]
+    if len(alerts) > MAX_ALERT_LINES:
+        lines.insert(0, f"  ({len(alerts) - MAX_ALERT_LINES} earlier, not shown)")
+    return lines
+
+
 def render_digest(
-    summaries: list[DeviceSummary], other_alerts: list[AlertEntry], now: datetime
+    summaries: list[DeviceSummary],
+    other_alerts: list[AlertEntry],
+    now: datetime,
+    since: datetime | None = None,
 ) -> Digest:
     problem_count = sum(s.problem_count for s in summaries)
-    lines = [f"Daily summary at {now:%Y-%m-%d %H:%M}, covering the last 24 hours."]
+    period = _period(now, since or now - WINDOW)
+    lines = [f"Daily summary at {now:%Y-%m-%d %H:%M}, covering {period}."]
     if not summaries:
         lines += ["", "No enabled devices."]
     for s in summaries:
@@ -145,16 +188,16 @@ def render_digest(
         else:
             lines += [
                 f"  Last successful config backup: {last}",
-                f"  Backups stored: {s.stored} ({s.recent} in the last 24 hours)",
+                f"  Backups stored: {s.stored} ({s.recent} in {period})",
             ]
         if s.problems:
-            lines.append("  Problems in the last 24 hours:")
-            lines += [_alert_line(a) for a in s.problems]
+            lines.append(f"  Problems in {period}:")
+            lines += _alert_lines(s.problems)
         else:
-            lines.append("  Problems in the last 24 hours: none")
+            lines.append(f"  Problems in {period}: none")
     if other_alerts:
-        lines += ["", "Other alerts in the last 24 hours:"]
-        lines += [_alert_line(a) for a in other_alerts]
+        lines += ["", f"Other alerts in {period}:"]
+        lines += _alert_lines(other_alerts)
     if problem_count:
         title = f"pfSentinel - Daily summary: {problem_count} problem(s)"
     else:
@@ -168,12 +211,13 @@ def build_digest(
     now: datetime | None = None,
 ) -> Digest:
     when = now or datetime.now()
-    alerts = alert_history.load_alerts(when - WINDOW)
+    since = window_start(when, last_sent_at())
+    alerts = alert_history.load_alerts(since)
     device_ids = [d.id for d in config.enabled_devices()]
-    summaries = summarize_devices(device_ids, list_backups, alerts, when)
+    summaries = summarize_devices(device_ids, list_backups, alerts, when, since)
     known = set(device_ids)
     others = [a for a in alerts if a.device not in known]
-    return render_digest(summaries, others, when)
+    return render_digest(summaries, others, when, since)
 
 
 def send_digest(
@@ -195,7 +239,7 @@ def send_digest(
     if not results:
         logger.warning("Daily digest: no notification channel is enabled")
     if remember and (not results or any(err is None for err in results.values())):
-        mark_sent(when.date())
+        mark_sent(when.date(), when)
     return digest, results
 
 
