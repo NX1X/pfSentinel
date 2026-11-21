@@ -148,10 +148,19 @@ class BackupOrchestrator:
         else:
             problems.extend(result.errors)
             if result.skipped_plain:
-                problems.append(
-                    f"{len(result.skipped_plain)} plain file(s) not copied: turn on "
-                    "encryption (pfs encryption setup)"
-                )
+                count = len(result.skipped_plain)
+                if self._config.backup_policy.encryption.mode == "off":
+                    problems.append(
+                        f"{count} plain file(s) not copied: turn on encryption "
+                        "(pfs encryption setup)"
+                    )
+                else:
+                    # Older plain files from before encryption was on: new
+                    # backups are encrypted, so this is no copy failure.
+                    logger.warning(
+                        f"Second copy: {count} older plain file(s) of {device_id} not "
+                        "copied. Encrypt them: pfs encryption encrypt-existing"
+                    )
             if result.copied:
                 logger.info(f"Second copy: {len(result.copied)} file(s) copied for {device_id}")
         if problems:
