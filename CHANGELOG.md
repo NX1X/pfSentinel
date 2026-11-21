@@ -13,6 +13,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-rc.3] - 2026-11-21
+
+The third release candidate. It fixes the bugs found in the rc.2 field test and in a code review before 1.0.0: about 30 fixes, most of them in scheduled runs, the second copy, alerts and self-update. It is a GitHub pre-release. The 14-day stability gate for 1.0.0 keeps its dates (2026-11-20 to 2026-12-04).
+
+**To try it:** `pfs update install --pre`. Then run `pfs schedule enable` once, so old Task Scheduler tasks are cleaned up.
+
+**What changes for you:**
+
+- Telegram alerts are plain text: the title is no longer bold.
+- A new alert, event ID 1008 "Backup partly failed", reports a failed extra, ZFS snapshot or archive. Before, these were only logged.
+- Each device folder gets a `.pfsentinel.lock` file. Leave it there: it keeps two runs of one device apart.
+- The daily digest covers the time since the last digest, not a fixed 24 hours.
+
 ### Fixed
 
 - A backup run with no extras turned on (the default) ended right after the config. It skipped the second copy (since 0.3.0) and the ZFS snapshot or filesystem archive, even when they were turned on. A `--config-only` run also skipped the second copy. Now every run makes the second copy; `--config-only` still skips extras, ZFS and archive.
