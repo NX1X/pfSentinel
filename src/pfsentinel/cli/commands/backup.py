@@ -862,16 +862,17 @@ def backup_snapshot(
     def progress(msg: str, pct: int) -> None:
         print_progress(msg, pct)
 
+    from pfsentinel.services.retention import RetentionService
+    from pfsentinel.utils.locking import LockTimeoutError
+
+    retention = RetentionService(config.backup_policy.resolved_root, config.backup_policy)
     try:
-        record = zfs_svc.run_snapshot_backup(device, progress=progress, force_full=full)
-
-        # Add to backup index
-        from pfsentinel.services.retention import RetentionService
-
-        retention = RetentionService(config.backup_policy.resolved_root, config.backup_policy)
-        index = retention.load_index(device)
-        index.add(record)
-        retention.save_index(index)
+        # Same lock as a backup run: both change the device's index.
+        with retention.device_lock(device):
+            record = zfs_svc.run_snapshot_backup(device, progress=progress, force_full=full)
+            index = retention.load_index(device)
+            index.add(record)
+            retention.save_index(index)
 
         label = "full" if not record.zfs_incremental else "incremental"
         print_success(f"ZFS snapshot ({label}): {record.filename}")
@@ -882,7 +883,7 @@ def backup_snapshot(
     except ZfsError as e:
         print_error(f"ZFS snapshot failed: {e}")
         raise typer.Exit(1)
-    except BackupIndexError as e:
+    except (BackupIndexError, LockTimeoutError) as e:
         print_error(str(e))
         raise typer.Exit(1)
     except Exception as e:

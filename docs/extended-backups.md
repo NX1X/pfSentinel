@@ -123,9 +123,11 @@ pfSense 2.5+ (CE) and pfSense Plus use ZFS by default. pfSentinel can create ZFS
 
 1. **Detect ZFS**: Runs `zfs list` to verify ZFS is available
 2. **Create Snapshot**: `zfs snapshot {dataset}@pfsentinel-{timestamp}`
-3. **Stream**: `zfs send [snapshot] | gzip` piped over SSH to local file
-4. **Incremental**: If a previous snapshot exists, uses `zfs send -i` for delta transfer
+3. **Stream**: `zfs send [snapshot]` over SSH, gzipped on this computer into the local file. If `zfs send` fails or sends nothing, there is no backup, and the new snapshot is destroyed on the device.
+4. **Incremental**: If the newest local ZFS backup is the previous snapshot, uses `zfs send -i` for delta transfer
 5. **Cleanup**: Removes old remote snapshots (configurable retention)
+
+An incremental backup restores only on top of every send before it, back to a full send. Such a full send and its incrementals form a chain. Retention deletes a chain only as a whole, once none of its files is kept. So a chain is never longer than the ZFS limit (`max_backups_per_type.zfs`, default 5): when it reaches the limit, the next run makes a new full send. With the default, up to 10 ZFS files can be stored while the old chain ages out.
 
 ### Usage
 
