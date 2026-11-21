@@ -217,20 +217,23 @@ def test_a_failed_setup_keeps_the_old_secret(
     cli_runner: CliRunner, encrypted: AppConfig, sftp_target: SftpTarget
 ) -> None:
     """Before rc.3 a failed setup kept the old target but stored the new secret."""
-    CredentialService().store_secret("__second_copy_keypass__", "old-value")
+    old, new = secrets.token_urlsafe(12), secrets.token_urlsafe(12)
+    CredentialService().store_secret("__second_copy_keypass__", old)
     result = cli_runner.invoke(
-        app, ["copy", "setup"], input=sftp_target.answers(passphrase="new-value", trust="n")
+        app, ["copy", "setup"], input=sftp_target.answers(passphrase=new, trust="n")
     )
 
     assert result.exit_code == 1
-    assert CredentialService().get_secret("__second_copy_keypass__") == "old-value"
+    assert CredentialService().get_secret("__second_copy_keypass__") == old
 
 
 def test_a_failed_setup_removes_a_secret_that_was_not_there(
     cli_runner: CliRunner, encrypted: AppConfig, sftp_target: SftpTarget
 ) -> None:
     cli_runner.invoke(
-        app, ["copy", "setup"], input=sftp_target.answers(passphrase="new-value", trust="n")
+        app,
+        ["copy", "setup"],
+        input=sftp_target.answers(passphrase=secrets.token_urlsafe(12), trust="n"),
     )
     assert CredentialService().get_secret("__second_copy_keypass__") is None
 
