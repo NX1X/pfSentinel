@@ -299,7 +299,9 @@ def query_systemd_timer(name: str) -> dict:
     info: dict = {"exists": True}
     try:
         timer = _systemctl("show", name, "--property=ActiveState,NextElapseUSecRealtime")
-        service = _systemctl("show", SERVICE_UNIT, "--property=Result,ExecMainStatus")
+        # The check timer starts its own service: its result, not the backup's.
+        unit = CHECK_SERVICE if name == CHECK_TIMER else SERVICE_UNIT
+        service = _systemctl("show", unit, "--property=Result,ExecMainStatus")
     except OSError:
         return info
     props: dict[str, str] = {}

@@ -219,6 +219,20 @@ def test_disable_turns_the_schedule_off_and_removes_the_os_entries(
     assert sorted(linux.removed) == ["cron", "systemd"]
 
 
+def test_disable_fails_when_a_task_cannot_be_removed(
+    cli_runner: CliRunner, saved_config: AppConfig, linux: FakeUnixScheduler
+) -> None:
+    """Before rc.3 it said "disabled" while the tasks kept running."""
+    _enable_in_config()
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(scheduler_mod.SchedulerService, "remove_schedule", lambda self: False)
+        result = cli_runner.invoke(app, ["schedule", "disable"])
+
+    assert result.exit_code == 1
+    assert "could not be removed" in _out(result)
+    assert "Scheduling disabled" not in _out(result)
+
+
 # ---------------------------------------------------------------------------
 # status
 # ---------------------------------------------------------------------------

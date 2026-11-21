@@ -110,3 +110,25 @@ class TestDeviceStatusBestMethod:
     def test_none_when_unreachable(self):
         s = DeviceStatus(device_id="fw1")
         assert s.best_method is None
+
+
+class TestCleanKeyPath:
+    """A scheduled run starts in another folder: a relative key path failed there."""
+
+    def test_blank_is_none(self):
+        from pfsentinel.models.device import clean_key_path
+
+        assert clean_key_path("   ") is None
+
+    def test_quotes_from_copy_as_path_are_removed(self, tmp_path):
+        from pfsentinel.models.device import clean_key_path
+
+        key = tmp_path / "my key"
+        assert clean_key_path(f'"{key}"') == key.resolve()
+        assert clean_key_path(f"'{key}' ") == key.resolve()
+
+    def test_a_relative_path_becomes_absolute(self, tmp_path, monkeypatch):
+        from pfsentinel.models.device import clean_key_path
+
+        monkeypatch.chdir(tmp_path)
+        assert clean_key_path("id_ed25519") == (tmp_path / "id_ed25519").resolve()

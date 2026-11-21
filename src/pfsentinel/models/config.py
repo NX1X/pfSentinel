@@ -322,7 +322,9 @@ class AppConfig(BaseModel):
         """
         p = cls.config_path()
         try:
-            text = p.read_text(encoding="utf-8")
+            # utf-8-sig: Windows PowerShell 5 (Set-Content -Encoding UTF8)
+            # writes a BOM, which plain utf-8 reports as invalid JSON.
+            text = p.read_text(encoding="utf-8-sig")
         except FileNotFoundError:
             return cls()
         except OSError as e:

@@ -237,6 +237,21 @@ class TestSystemd:
         assert info["last_result"] == "exit-code"
         assert us.query_systemd_timer(us.WEEKLY_TIMER) == {"exists": False}
 
+    def test_the_check_timer_reports_the_check_service(self, fake_systemd, monkeypatch) -> None:
+        """Before rc.3 the check timer showed the backup service's result."""
+        us.install_systemd_timers(ARGV, "02:00", None)
+        (us.systemd_user_dir() / us.CHECK_TIMER).write_text("[Timer]\n")
+        shown: list[str] = []
+
+        def systemctl(*args: str):
+            shown.extend(a for a in args if a.endswith(".service"))
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        monkeypatch.setattr(us, "_systemctl", systemctl)
+        us.query_systemd_timer(us.CHECK_TIMER)
+        us.query_systemd_timer(us.DAILY_TIMER)
+        assert shown == [us.CHECK_SERVICE, us.SERVICE_UNIT]
+
 
 class TestReviewHardening:
     """Fixes from the 2026-11 security review."""

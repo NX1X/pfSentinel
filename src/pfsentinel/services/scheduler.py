@@ -124,6 +124,10 @@ class SchedulerService:
             return self.remove_schedule()
 
         if not self._config.use_windows_task_scheduler:
+            # Remove the OS tasks of an earlier `schedule enable`, or they
+            # keep running next to the in-process scheduler.
+            if not self._remove_os_schedule():
+                logger.warning("Could not remove every OS scheduled task")
             self.backend = "in-process"
             return self.start_in_process()
 
@@ -135,6 +139,11 @@ class SchedulerService:
 
     def remove_schedule(self) -> bool:
         """Remove all scheduled tasks."""
+        success = self._remove_os_schedule()
+        self.stop_in_process()
+        return success
+
+    def _remove_os_schedule(self) -> bool:
         success = True
         if is_windows():
             # Remove both the folder tasks (admin) and the root tasks (no admin);
@@ -150,7 +159,25 @@ class SchedulerService:
                 success = False
             if not unix_schedule.remove_cron():
                 success = False
-        self.stop_in_process()
+        return success
+
+    def _remove_unwanted_windows_tasks(self, wanted: set[str]) -> bool:
+        """Delete every pfSentinel task that this apply does not create.
+
+        Turning weekly off, or enabling once as administrator and once
+        without, left the other task behind: both then ran at 02:00.
+        """
+        success = True
+        for folder_name, root_name in _USER_TASK_NAMES.items():
+            for name in (folder_name, root_name):
+                if name in wanted or not query_windows_task(name).get("exists"):
+                    continue
+                if delete_windows_task(name):
+                    logger.info(f"Removed the scheduled task {name}")
+                else:
+                    hint = " (run in an administrator shell)" if "\\" in name else ""
+                    logger.warning(f"Could not remove the old scheduled task {name}{hint}")
+                    success = False
         return success
 
     def _apply_windows_schedule(self) -> bool:
@@ -170,6 +197,14 @@ class SchedulerService:
         args = f"{prefix_args} backup run --non-interactive".strip()
         success = True
         elevated = is_elevated()
+        wanted = {_task_name(_CHECK_TASK_NAME, elevated)}
+        if self._config.daily_enabled:
+            wanted.add(_task_name(_DAILY_TASK_NAME, elevated))
+        if self._config.weekly_enabled:
+            wanted.add(_task_name(_WEEKLY_TASK_NAME, elevated))
+        # A task that cannot be removed only warns: the wanted tasks still
+        # get created, and the device lock keeps two runs apart.
+        self._remove_unwanted_windows_tasks(wanted)
 
         if self._config.daily_enabled:
             ok = create_windows_task(

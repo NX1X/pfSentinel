@@ -181,3 +181,27 @@ def test_device_edit_changes_label(
     assert reloaded.host == original.host
     assert reloaded.username == original.username
     assert reloaded.primary_method == original.primary_method
+
+
+def test_device_add_with_a_mixed_case_id_stores_the_password_under_the_saved_id(
+    cli_runner: CliRunner,
+    empty_config: AppConfig,
+) -> None:
+    """Before rc.3 the device was saved as home-fw, its password under Home-FW."""
+    import secrets
+
+    from pfsentinel.services.credentials import CredentialService
+
+    password = secrets.token_urlsafe(12)
+    result = cli_runner.invoke(
+        app,
+        [
+            "device", "add", "--id", "Home-FW", "--label", "Home", "--host", "192.0.2.11",
+            "--method", "https", "--username", "admin", "--https-port", "8443",
+        ],
+        input=f"{password}\n{password}\nn\n",
+    )  # fmt: skip
+
+    assert result.exit_code == 0, result.stdout
+    assert AppConfig.load().get_device("home-fw") is not None
+    assert CredentialService().get("home-fw") == password

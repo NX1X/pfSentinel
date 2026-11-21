@@ -134,7 +134,7 @@ def setup() -> None:
     from rich.console import Console
 
     from pfsentinel.models.config import AppConfig
-    from pfsentinel.models.device import ConnectionMethod, DeviceConfig
+    from pfsentinel.models.device import ConnectionMethod, DeviceConfig, clean_key_path
     from pfsentinel.services.credentials import CredentialService
 
     console = Console()
@@ -186,8 +186,7 @@ def setup() -> None:
         ssh_key_raw = typer.prompt(
             "SSH private key path (leave blank for password auth)", default=""
         )
-        if ssh_key_raw.strip():
-            ssh_key_path = Path(ssh_key_raw.strip()).expanduser()
+        ssh_key_path = clean_key_path(ssh_key_raw)
 
     console.print()
     if ssh_key_path:
@@ -224,6 +223,8 @@ def setup() -> None:
     except Exception as e:
         console.print(f"[red]Error: {e}[/]")
         raise typer.Exit(1)
+    # The model lowercases the ID: store secrets under the same key.
+    device_id = device.id
 
     config.save()
 

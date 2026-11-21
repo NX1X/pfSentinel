@@ -18,6 +18,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A backup run with no extras turned on (the default) ended right after the config. It skipped the second copy (since 0.3.0) and the ZFS snapshot or filesystem archive, even when they were turned on. A `--config-only` run also skipped the second copy. Now every run makes the second copy; `--config-only` still skips extras, ZFS and archive.
 - `pfs config validate` no longer reports "missing password" for a device that logs in with an SSH key. It shows `SSH key`, or an error if the key file is missing.
 - `pfs backup verify` now saves its result in the backup index. Before, a passed check did not change the `?` status in `pfs backup list`, so files added by `pfs backup reindex` kept `?` forever. A failed check now sets `?`.
+- On Windows, `pfs schedule enable` only created tasks and never removed old ones. Turning the weekly backup off left the weekly task running. Enabling once as administrator and once without left both daily tasks, so two backups started at 02:00. Enable now removes every pfSentinel task it does not want. `--no-task-scheduler` now removes the OS tasks too.
+- `pfs schedule disable` said "Scheduling disabled" even when a task could not be removed (for example a task made as administrator, removed from a normal shell). It now says which, and exits 1.
+- `pfs update revert` after a failed `pfs update install` could copy an older binary over the working one, and named the wrong version. A binary update now saves the revert details only after it backs up the current binary.
+- `pfs update install` showed a traceback for a download error, a folder it cannot write, or a GitHub rate limit on the attestation check. These are now clear errors.
+- A root update of a shared `/usr/local/bin/pfs` made it readable by root only, so the timers of other users failed. The new binary now keeps the mode of the old one.
+- A device that logs in with an SSH key, with no password, reported "No password stored ... HTTPS needs one" when SSH failed. The real SSH error was only in the log. A key-only device now tries SSH only, and reports its error.
+- An SSH key path typed as a relative path (`id_ed25519`), or pasted with quotes from Explorer's "Copy as path", was saved as typed. `pfs device test` passed, but scheduled runs start in another folder and could not find the key. `pfs setup`, `pfs device add` and `pfs device edit` now save the full path, without quotes.
+- `pfs device add --id Home-FW` saved the device as `home-fw` but its password under `Home-FW`. On Linux every backup then failed with "No password stored". Secrets now use the saved ID.
+- On Windows, a user name with letters like `ü` or `É` could crash every command that saves the config, and made `pfs schedule status` say "Not registered". The output of `whoami`, `schtasks` and `icacls` is now read in the console code page.
+- `config.json` saved with a BOM (Windows PowerShell 5 `Set-Content -Encoding UTF8`) was reported as invalid JSON. It now loads.
+- On Linux, `pfs schedule status` showed the backup service's last result for the check timer. It now shows the check service's result.
 
 ### Changed
 
