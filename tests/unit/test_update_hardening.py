@@ -231,3 +231,28 @@ def test_install_command_has_pre_option() -> None:
     out = CliRunner().invoke(app, ["update", "install", "--help"]).stdout
     # CI terminals get colored help; the color codes can split "--pre".
     assert "--pre" in re.sub(r"\x1b\[[0-9;]*m", "", out)
+
+
+def test_a_failed_binary_update_does_not_suggest_revert(tmp_path: Path) -> None:
+    """Revert after a failed binary update went back one version too many."""
+    from typer.testing import CliRunner
+
+    from pfsentinel.cli.app import app
+
+    def failing_install(self, prerelease=False):
+        self.last_method = "binary"
+        raise UpdateError("Checksum mismatch")
+
+    with (
+        patch.object(
+            UpdateService,
+            "check",
+            return_value={"current": "1", "latest": "2", "install_method": "binary"},
+        ),
+        patch.object(UpdateService, "install", failing_install),
+    ):
+        result = CliRunner().invoke(app, ["update", "install", "--yes"])
+    out = result.stdout + (result.stderr or "")
+    assert result.exit_code == 1
+    assert "not changed" in out
+    assert "update revert" not in out

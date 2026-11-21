@@ -56,6 +56,13 @@ class TestAppConfigLoad:
         with pytest.raises(ConfigError, match="did not change it"):
             AppConfig.load()
 
+    def test_a_file_with_a_bom_loads(self, tmp_path: Path, monkeypatch):
+        """Windows PowerShell 5 Set-Content -Encoding UTF8 writes a BOM."""
+        p = tmp_path / "config.json"
+        p.write_bytes(b"\xef\xbb\xbf" + AppConfig(log_level="DEBUG").model_dump_json().encode())
+        monkeypatch.setattr(AppConfig, "config_path", staticmethod(lambda: p))
+        assert AppConfig.load().log_level == "DEBUG"
+
     def test_valid_file_loads(self, tmp_path: Path, monkeypatch):
         p = tmp_path / "config.json"
         data = AppConfig(log_level="DEBUG").model_dump_json()

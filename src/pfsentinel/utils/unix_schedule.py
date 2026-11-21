@@ -299,7 +299,9 @@ def query_systemd_timer(name: str) -> dict:
     info: dict = {"exists": True}
     try:
         timer = _systemctl("show", name, "--property=ActiveState,NextElapseUSecRealtime")
-        service = _systemctl("show", SERVICE_UNIT, "--property=Result,ExecMainStatus")
+        # The check timer starts its own service: its result, not the backup's.
+        unit = CHECK_SERVICE if name == CHECK_TIMER else SERVICE_UNIT
+        service = _systemctl("show", unit, "--property=Result,ExecMainStatus")
     except OSError:
         return info
     props: dict[str, str] = {}
@@ -333,8 +335,10 @@ def _read_crontab() -> list[str] | None:
     except OSError:
         return None
     if result.returncode != 0:
-        # "no crontab for <user>" is the normal empty case.
-        return [] if "no crontab" in (result.stderr or "").lower() else None
+        # "no crontab for <user>" is the normal empty case. A user who may
+        # not use cron (cron.allow) has no pfSentinel entries either.
+        err = (result.stderr or "").lower()
+        return [] if "no crontab" in err or "not allowed" in err else None
     return result.stdout.splitlines()
 
 

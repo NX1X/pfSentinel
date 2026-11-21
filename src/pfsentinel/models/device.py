@@ -11,6 +11,19 @@ from pydantic import BaseModel, Field, field_validator
 DEVICE_ID_PATTERN = r"^[a-z0-9][a-z0-9\-]{0,62}$"
 
 
+def clean_key_path(raw: str) -> Path | None:
+    """An SSH key path as typed, made absolute; None when blank.
+
+    Quotes from Explorer's "Copy as path" are removed. A relative path is
+    made absolute against the current folder: a scheduled run starts in
+    another folder (C:\\Windows\\System32), where it would not be found.
+    """
+    text = raw.strip().strip("\"'").strip()
+    if not text:
+        return None
+    return Path(text).expanduser().resolve()
+
+
 class ConnectionMethod(StrEnum):
     SSH = "ssh"
     HTTPS = "https"

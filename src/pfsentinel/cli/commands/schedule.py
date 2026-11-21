@@ -161,7 +161,16 @@ def schedule_disable() -> None:
     config.save()
 
     scheduler = scheduler_for(config)
-    scheduler.remove_schedule()
+    if not scheduler.remove_schedule():
+        # Before rc.3 this said "disabled" while the tasks kept running.
+        from pfsentinel.utils.platform import is_windows
+
+        print_error("Some scheduled tasks could not be removed: they still run.")
+        if is_windows():
+            print_info("Tasks made as administrator need an administrator shell:")
+            print_info("run pfs schedule disable there.")
+        print_info("Check with: pfs schedule status")
+        raise typer.Exit(1)
     print_success("Scheduling disabled")
 
 

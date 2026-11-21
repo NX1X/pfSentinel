@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -1387,3 +1388,102 @@ class TestCLIRevert:
 
         assert result.exit_code == 1
         assert "No previous version info" in result.output
+
+
+class TestFailedInstallKeepsRevert:
+    """Found in the bug hunt before rc.3."""
+
+    @responses.activate
+    def test_a_failed_download_does_not_change_the_revert_state(self, tmp_path):
+        """revert after a failed install copied an older backup over the working binary."""
+        download_url = "https://github.com/nx1x/pfSentinel/releases/download/v99.0.0/pfs"
+        responses.add(responses.GET, download_url, status=500)
+        older = {"previous_version": "1.0.0rc1", "install_method": "binary"}
+        svc = _make_service(tmp_path, state=dict(older))
+        exe = tmp_path / "bin" / "pfs"
+        exe.parent.mkdir()
+        exe.write_bytes(b"rc2")
+        with (
+            patch("pfsentinel.services.updater.is_windows", return_value=False),
+            patch("pfsentinel.services.updater.sys") as mock_sys,
+            patch.object(svc, "check", return_value={"tag": "v99.0.0"}),
+            patch.object(svc, "_detect_install_method", return_value="binary"),
+        ):
+            mock_sys.executable = str(exe)
+            svc._state["download_url"] = download_url
+            with pytest.raises(UpdateError, match="Download from github.com failed: HTTPError"):
+                svc.install()
+        assert svc._state["previous_version"] == "1.0.0rc1"
+        assert exe.read_bytes() == b"rc2"
+
+    def test_a_folder_that_cannot_be_written_gives_a_clear_error(self, tmp_path):
+        svc = _make_service(tmp_path)
+        with (
+            patch.object(svc, "check", return_value={"tag": "v99.0.0"}),
+            patch.object(svc, "_detect_install_method", return_value="binary"),
+            patch.object(svc, "_install_binary", side_effect=PermissionError("denied")),
+        ):
+            svc._state["download_url"] = "https://github.com/x"
+            with pytest.raises(UpdateError, match="run the update as administrator"):
+                svc.install()
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="Windows has no Unix mode bits")
+    @responses.activate
+    def test_the_new_binary_keeps_the_mode_of_the_old_one(self, tmp_path):
+        """A root update of a shared 0755 /usr/local/bin/pfs made it root-only."""
+        download_url = "https://github.com/nx1x/pfSentinel/releases/download/v99.0.0/pfs"
+        content = b"new-binary-content"
+        responses.add(responses.GET, download_url, body=content, status=200)
+        responses.add(
+            responses.GET, CHECKSUMS_URL, body=_checksums_body(("pfs", content)), status=200
+        )
+        svc = _make_service(tmp_path)
+        svc._state["checksums_url"] = CHECKSUMS_URL
+        exe = tmp_path / "bin" / "pfs"
+        exe.parent.mkdir()
+        exe.write_bytes(b"old")
+        exe.chmod(0o755)
+        with (
+            patch("pfsentinel.services.updater.is_windows", return_value=False),
+            patch("pfsentinel.services.updater.sys") as mock_sys,
+            patch("subprocess.run", return_value=MagicMock(returncode=0)),
+        ):
+            mock_sys.executable = str(exe)
+            svc._install_binary(download_url, "v99.0.0")
+        assert exe.stat().st_mode & 0o777 == 0o755
+        assert svc._state["previous_version"] == __version__
+
+
+class TestAttestationHttpErrors:
+    @responses.activate
+    def test_a_rate_limit_is_an_attestation_error(self, tmp_path):
+        from pfsentinel.services import attestation
+
+        f = tmp_path / "pfs"
+        f.write_bytes(b"x")
+        sha = hashlib.sha256(b"x").hexdigest()
+        responses.add(responses.GET, attestation.API_URL.format(digest=sha), status=403)
+        with pytest.raises(attestation.AttestationError, match="HTTP 403"):
+            attestation.verify_file(f, "pfs")
+
+
+class TestUpdateErrorReporting:
+    def test_a_failed_check_inside_install_is_an_update_error(self, tmp_path):
+        import requests
+
+        svc = _make_service(tmp_path)
+        with patch.object(svc, "check", side_effect=requests.ConnectionError("down")):
+            with pytest.raises(UpdateError, match="Cannot check for updates: ConnectionError"):
+                svc.install()
+
+    def test_a_failed_restore_is_reported_with_the_backup_path(self, tmp_path):
+        svc = _make_service(tmp_path)
+        exe = tmp_path / "pfs"
+        backup = tmp_path / "pfs.bak"
+        with patch(
+            "pfsentinel.services.updater.shutil.copy2", side_effect=PermissionError("in use")
+        ):
+            with pytest.raises(UpdateError, match="putting the old one back failed") as err:
+                svc._restore_binary(backup, exe)
+        assert str(backup) in str(err.value)
+        assert svc.restore_failed is True

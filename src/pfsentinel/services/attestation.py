@@ -248,7 +248,9 @@ def verify_file(path: Path, asset_name: str, timeout: int = 15) -> str:
         raise AttestationError(f"cannot reach GitHub's attestation API: {type(e).__name__}") from e
     if resp.status_code == 404:
         raise AttestationError("GitHub has no attestation for this file")
-    resp.raise_for_status()
+    if resp.status_code != 200:
+        # For example 403: the hourly limit for calls without a GitHub token.
+        raise AttestationError(f"GitHub's attestation API answered HTTP {resp.status_code}")
     errors = []
     for item in resp.json().get("attestations", []):
         try:
