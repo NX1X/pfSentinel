@@ -107,7 +107,7 @@ class RetentionService:
             raise
         _sync_folder(path.parent)
 
-    def device_lock(self, device_id: str, timeout: float = 900.0) -> AbstractContextManager[None]:
+    def device_lock(self, device_id: str, timeout: float = 2400.0) -> AbstractContextManager[None]:
         """Lock the device's backups against another pfSentinel process.
 
         Hold it while a run, reindex or verify changes backup_index.json.

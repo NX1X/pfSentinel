@@ -82,3 +82,43 @@ def test_another_thread_waits_its_turn(tmp_path: Path) -> None:
         order.append("first done")
     worker.join(5)
     assert order == ["first done", "second"]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="uses fcntl")
+class TestLockErrors:
+    """Found in the review of the lock before rc.3."""
+
+    def test_a_file_system_without_locks_runs_unlocked(self, tmp_path: Path, caplog) -> None:
+        import errno
+        from unittest.mock import patch
+
+        def no_locks(fd, op):
+            raise OSError(errno.ENOLCK, "No locks available")
+
+        with patch("fcntl.flock", no_locks):
+            with file_lock(tmp_path / ".lock", timeout=0.2):
+                ran = True
+        assert ran
+        assert "running without the lock" in caplog.text
+
+    def test_another_error_is_raised_at_once(self, tmp_path: Path) -> None:
+        import errno
+        from unittest.mock import patch
+
+        def broken(fd, op):
+            raise OSError(errno.EIO, "I/O error")
+
+        start = time.monotonic()
+        with patch("fcntl.flock", broken):
+            with pytest.raises(OSError, match="I/O error"):
+                with file_lock(tmp_path / ".lock", timeout=5):
+                    pass
+        assert time.monotonic() - start < 2, "an I/O error is not a busy lock"
+
+    def test_an_unlock_error_does_not_hide_the_real_error(self, tmp_path: Path) -> None:
+        from unittest.mock import patch
+
+        with patch("pfsentinel.utils.locking._unlock", side_effect=OSError("share gone")):
+            with pytest.raises(ValueError, match="the real error"):
+                with file_lock(tmp_path / ".lock"):
+                    raise ValueError("the real error")

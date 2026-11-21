@@ -12,6 +12,8 @@ process ends, also after a crash, so a stale lock file never blocks a run.
 
 from __future__ import annotations
 
+import contextlib
+import errno
 import sys
 import threading
 import time
@@ -39,22 +41,35 @@ class LockTimeoutError(RuntimeError):
     """Another process held the lock for longer than the timeout."""
 
 
+# The lock is taken by another process: wait. Any other error is real.
+_BUSY = {errno.EACCES, errno.EAGAIN, errno.EWOULDBLOCK, getattr(errno, "EDEADLK", -1)}
+# The file system cannot lock (some NFS and SMB mounts): run without a lock,
+# as before 1.0.0, rather than fail every run.
+_UNSUPPORTED = {errno.ENOLCK, errno.EINVAL, getattr(errno, "EOPNOTSUPP", -1)}
+_UNSUPPORTED.add(getattr(errno, "ENOTSUP", -1))
+
+
+class LockUnsupportedError(OSError):
+    """The file system of the lock file does not support locks."""
+
+
 def _try_lock(fh: IO[bytes]) -> bool:
-    if sys.platform == "win32":
-        import msvcrt
-
-        fh.seek(0)
-        try:
-            msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
-        except OSError:
-            return False
-        return True
-    import fcntl
-
     try:
-        fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
-        return False
+        if sys.platform == "win32":
+            import msvcrt
+
+            fh.seek(0)
+            msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError as e:
+        if e.errno in _BUSY:
+            return False
+        if e.errno in _UNSUPPORTED:
+            raise LockUnsupportedError(e.errno, str(e)) from e
+        raise
     return True
 
 
@@ -85,7 +100,14 @@ def file_lock(path: Path, timeout: float = 900.0, poll: float = 1.0) -> Iterator
     try:
         deadline = time.monotonic() + timeout
         waited = False
-        while not _try_lock(fh):
+        while True:
+            try:
+                if _try_lock(fh):
+                    break
+            except LockUnsupportedError as e:
+                logger.warning(f"Cannot lock {path} ({e}); running without the lock")
+                yield
+                return
             if time.monotonic() >= deadline:
                 raise LockTimeoutError(
                     f"Another pfSentinel process held {path} for more than {int(timeout)} seconds"
@@ -99,6 +121,9 @@ def file_lock(path: Path, timeout: float = 900.0, poll: float = 1.0) -> Iterator
             yield
         finally:
             _held().discard(key)
-            _unlock(fh)
+            # Closing the file releases the lock too: an unlock error (the
+            # share dropped) must not hide the error of the locked work.
+            with contextlib.suppress(OSError):
+                _unlock(fh)
     finally:
         fh.close()
