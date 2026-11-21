@@ -9,14 +9,36 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 from collections import defaultdict
+from contextlib import AbstractContextManager
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from pfsentinel.models.backup import BackupIndex, BackupIndexError, BackupRecord, BackupRun
 from pfsentinel.models.config import BackupPolicy
+from pfsentinel.utils.locking import file_lock
 from pfsentinel.utils.logging import get_logger
 from pfsentinel.utils.permissions import restrict_to_owner
+
+LOCK_FILE = ".pfsentinel.lock"
+
+
+def _replace(src: str, dst: Path) -> None:
+    """os.replace, retried on Windows while another process reads the index.
+
+    Windows refuses to replace a file that another process has open, for
+    example a `pfs backup list` in a second window.
+    """
+    for attempt in range(10):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if sys.platform != "win32" or attempt == 9:
+                raise
+            time.sleep(0.2)
+
 
 logger = get_logger(__name__)
 
@@ -78,12 +100,21 @@ class RetentionService:
                 f.flush()
                 os.fsync(f.fileno())
             _keep_previous(path)
-            os.replace(tmp, path)
+            _replace(tmp, path)
         except BaseException:
             with contextlib.suppress(OSError):
                 os.unlink(tmp)
             raise
         _sync_folder(path.parent)
+
+    def device_lock(self, device_id: str, timeout: float = 2400.0) -> AbstractContextManager[None]:
+        """Lock the device's backups against another pfSentinel process.
+
+        Hold it while a run, reindex or verify changes backup_index.json.
+        """
+        folder = self._backup_root / device_id
+        folder.mkdir(parents=True, exist_ok=True)
+        return file_lock(folder / LOCK_FILE, timeout=timeout)
 
     def apply(self, device_id: str) -> list[BackupRecord]:
         """Apply retention policy per backup type. Returns list of deleted records."""
@@ -118,8 +149,8 @@ class RetentionService:
                     to_delete.append(record)
 
             for record in to_delete:
-                self._delete_record(device_id, record, index)
-                deleted.append(record)
+                if self._delete_record(device_id, record, index):
+                    deleted.append(record)
 
         if deleted:
             self.save_index(index)
@@ -155,31 +186,35 @@ class RetentionService:
                 keep.add(record.id)
         return keep
 
-    def _delete_record(self, device_id: str, record: BackupRecord, index: BackupIndex) -> None:
-        """Delete backup file and remove from index."""
+    def _delete_record(self, device_id: str, record: BackupRecord, index: BackupIndex) -> bool:
+        """Delete backup file and remove from index. False if the file could not be deleted."""
         path = self._backup_root / device_id / record.relative_path
         if path.is_symlink():
             logger.error(f"Refusing to delete symlink (potential attack): {path}")
             index.remove(record.id)
-            return
+            return True
         # Verify resolved path stays within backup root
         try:
             path.resolve().relative_to(self._backup_root.resolve())
         except ValueError:
             logger.error(f"Path escapes backup root (potential traversal): {path}")
             index.remove(record.id)
-            return
+            return True
         if path.exists():
             try:
                 path.unlink()
                 logger.debug(f"Deleted backup file: {path}")
             except OSError as e:
+                # Keep the record, so the next run tries again. Without it
+                # the file stays on disk, unlisted and never removed.
                 logger.error(f"Could not delete {path}: {e}")
+                return False
         else:
             logger.warning(f"Backup file not found during cleanup: {path}")
 
         prune_empty_dirs(path.parent, self._backup_root / device_id)
         index.remove(record.id)
+        return True
 
     def start_run(self, device_id: str) -> BackupRun:
         """Reserve the next run number for the device and return the run.

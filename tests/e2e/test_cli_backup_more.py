@@ -311,6 +311,32 @@ def test_first_run_location_can_be_used_once_without_saving(
     assert list(chosen.rglob("*.xml*"))
 
 
+def test_non_interactive_run_never_asks_for_the_location(
+    cli_runner: CliRunner, unset_root: None, tmp_path: Path
+) -> None:
+    """A scheduled run waited at this prompt (or aborted) before rc.3."""
+    result = cli_runner.invoke(app, [*RUN, "--non-interactive"], input="")
+
+    assert result.exit_code == 0, _out(result)
+    assert "not configured" not in _out(result)
+    root = AppConfig.load().backup_policy.resolved_root
+    assert list(root.rglob("*.xml*"))
+
+
+def test_output_dir_override_is_where_the_files_go(
+    cli_runner: CliRunner, seeded_config: AppConfig, tmp_path: Path
+) -> None:
+    """Before rc.3, -o was printed but the files went to the configured folder."""
+    other = tmp_path / "offsite"
+    configured = seeded_config.backup_policy.resolved_root
+    result = cli_runner.invoke(app, [*RUN, "-o", str(other)])
+
+    assert result.exit_code == 0, _out(result)
+    assert list(other.rglob("*.xml*"))
+    assert not configured.exists() or not list(configured.rglob("*.xml*"))
+    assert AppConfig.load().backup_policy.backup_root == configured
+
+
 # ---------------------------------------------------------------------------
 # Interactive "what would you like to back up?" menu
 # ---------------------------------------------------------------------------

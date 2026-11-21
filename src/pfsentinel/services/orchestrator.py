@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import ExitStack
 
 from pfsentinel.models.backup import BackupIndexError, BackupRecord, BackupRun
 from pfsentinel.models.config import AppConfig
+from pfsentinel.models.device import DeviceConfig
 from pfsentinel.services.backup import BackupService
 from pfsentinel.services.credentials import CredentialService
 from pfsentinel.services.extra_backup import ExtraBackupService, NeedsRootError
 from pfsentinel.services.retention import RetentionService
+from pfsentinel.utils.locking import LockTimeoutError
 from pfsentinel.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -44,20 +47,92 @@ class BackupOrchestrator:
 
         Returns list of all BackupRecords created.
         """
-        records: list[BackupRecord] = []
+        from pfsentinel.services.backup import BackupError
+
         device = self._config.get_device(device_id)
         if not device:
-            from pfsentinel.services.backup import BackupError
-
             raise BackupError(f"Device '{device_id}' not found in config")
+
+        # One run at a time per device: the daily and the weekly task can
+        # start together after the PC was off. A scheduled run has nobody
+        # watching the console, so every way to fail here sends an alert.
+        notify = self._backup_svc.notifications.notify_failure
+        with ExitStack() as stack:
+            try:
+                stack.enter_context(self._retention.device_lock(device_id))
+            except LockTimeoutError as e:
+                notify(device_id, str(e))
+                raise BackupError(str(e)) from e
+            except OSError as e:
+                root = self._config.backup_policy.resolved_root
+                msg = f"Cannot use the backup folder {root}: {e}"
+                notify(device_id, msg)
+                raise BackupError(msg) from e
+            records, failures = self._run_locked(
+                device,
+                include_extras,
+                all_extras,
+                config_only,
+                description,
+                progress,
+                on_warning,
+                area,
+                no_packages,
+            )
+
+        # After the lock: the second copy only reads the index, and an upload
+        # can take long. Holding the lock made a waiting run time out.
+        # 6. Second copy of the encrypted files (never fails the backup)
+        self._second_copy(device_id)
+
+        # The config is saved, so the run counts as done, but a part that
+        # failed every night went unnoticed: say so once per run.
+        if failures:
+            from pfsentinel.services.notifications import AlertKind
+
+            self._backup_svc.notifications.alert(
+                AlertKind.BACKUP_PARTIAL,
+                f"pfSentinel - Part of the backup failed for {device_id}",
+                f"Device: {device_id}\nThe config was saved. These parts failed:\n"
+                + "\n".join(f"- {f}" for f in failures[:10]),
+            )
+        return records
+
+    def _run_locked(
+        self,
+        device: DeviceConfig,
+        include_extras: list[str] | None,
+        all_extras: bool,
+        config_only: bool,
+        description: str | None,
+        progress: ProgressCallback | None,
+        on_warning: WarningCallback | None,
+        area: str,
+        no_packages: bool,
+    ) -> tuple[list[BackupRecord], list[str]]:
+        """The steps that change the index. Returns the records and the failed parts."""
+        from pfsentinel.services.backup import BackupError
+
+        device_id = device.id
+        records: list[BackupRecord] = []
+        failures: list[str] = []
+
+        def warn(msg: str) -> None:
+            failures.append(msg)
+            if on_warning:
+                on_warning(msg)
 
         # One run: the config and every extra share its folder and number.
         try:
             run = self._retention.start_run(device_id)
         except BackupIndexError as e:
-            # A scheduled run has nobody watching the console.
             self._backup_svc.notifications.notify_failure(device_id, str(e))
             raise
+        except OSError as e:
+            # For example the backup drive is gone: F: unplugged at 02:00.
+            msg = f"Cannot use the backup folder {self._config.backup_policy.resolved_root}: {e}"
+            self._backup_svc.notifications.notify_failure(device_id, msg)
+            raise BackupError(msg) from e
         timestamp = run.started_at
         sequence = run.number
 
@@ -99,8 +174,7 @@ class BackupOrchestrator:
             except Exception as e:
                 msg = f"Extra backup '{target}' failed: {e}"
                 logger.error(f"{msg} (device: {device_id})")
-                if on_warning:
-                    on_warning(msg)
+                warn(msg)
 
         # 4. ZFS snapshot (if enabled)
         if not config_only and self._config.backup_policy.zfs.enabled:
@@ -118,6 +192,9 @@ class BackupOrchestrator:
                             records.append(archive_record)
                     except Exception as e2:
                         logger.error(f"Archive fallback also failed for {device_id}: {e2}")
+                        warn(f"ZFS snapshot failed ({e}), and the archive fallback too: {e2}")
+                else:
+                    warn(f"ZFS snapshot failed: {e}")
         elif not config_only and self._config.backup_policy.archive.enabled:
             try:
                 archive_record = self._run_archive(device_id, run, progress)
@@ -125,14 +202,11 @@ class BackupOrchestrator:
                     records.append(archive_record)
             except Exception as e:
                 logger.error(f"Archive backup failed for {device_id}: {e}")
+                warn(f"Filesystem archive failed: {e}")
 
         # 5. Apply retention across all types
         self._retention.apply(device_id)
-
-        # 6. Second copy of the encrypted files (never fails the backup)
-        self._second_copy(device_id)
-
-        return records
+        return records, failures
 
     def _second_copy(self, device_id: str) -> None:
         if not self._config.backup_policy.second_copy.enabled:
@@ -148,10 +222,19 @@ class BackupOrchestrator:
         else:
             problems.extend(result.errors)
             if result.skipped_plain:
-                problems.append(
-                    f"{len(result.skipped_plain)} plain file(s) not copied: turn on "
-                    "encryption (pfs encryption setup)"
-                )
+                count = len(result.skipped_plain)
+                if self._config.backup_policy.encryption.mode == "off":
+                    problems.append(
+                        f"{count} plain file(s) not copied: turn on encryption "
+                        "(pfs encryption setup)"
+                    )
+                else:
+                    # Older plain files from before encryption was on: new
+                    # backups are encrypted, so this is no copy failure.
+                    logger.warning(
+                        f"Second copy: {count} older plain file(s) of {device_id} not "
+                        "copied. Encrypt them: pfs encryption encrypt-existing"
+                    )
             if result.copied:
                 logger.info(f"Second copy: {len(result.copied)} file(s) copied for {device_id}")
         if problems:

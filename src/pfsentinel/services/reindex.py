@@ -93,10 +93,19 @@ def reindex_device(
     folder cannot be read, save nothing, so a partial index is never kept.
     The caller sees ``result.unreadable``.
 
-    pfSentinel has no cross-process lock. So the index is read again just
-    before the save, and the found records are merged into it: a backup run
-    that finished during the scan keeps its record and its run number.
+    A real reindex holds the device lock, so no backup run changes the index
+    meanwhile. The index is still read again just before the save, and the
+    found records are merged into it.
     """
+    if dry_run or not retention.device_dir(device_id).is_dir():
+        return _reindex_device(retention, device_id, dry_run, strict)
+    with retention.device_lock(device_id):
+        return _reindex_device(retention, device_id, dry_run, strict)
+
+
+def _reindex_device(
+    retention: RetentionService, device_id: str, dry_run: bool, strict: bool
+) -> ReindexResult:
     result = ReindexResult(device_id=device_id, dry_run=dry_run)
     index_path = retention.index_path(device_id)
     try:

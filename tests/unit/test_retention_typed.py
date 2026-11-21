@@ -210,3 +210,40 @@ class TestLongTermRetention:
         retention = RetentionService(tmp_path, BackupPolicy(backup_root=tmp_path))
         rrd = [_make_record("fw1", BackupType.RRD, "r.tar", age_days=40)]
         assert retention.long_term_keep("rrd", rrd) == set()
+
+
+class TestLockedFiles:
+    def test_a_file_that_cannot_be_deleted_keeps_its_record(self, tmp_path: Path) -> None:
+        """Windows: antivirus holds the file. Before rc.3 the record was dropped anyway."""
+        from unittest.mock import patch
+
+        policy = BackupPolicy(
+            backup_root=tmp_path,
+            max_backups_per_type={"config": 1},
+            keep_days=365,
+            long_term=LongTermRetention(enabled=False),
+        )
+        retention = RetentionService(tmp_path, policy)
+        (tmp_path / "fw1").mkdir()
+        index = BackupIndex(device_id="fw1")
+        for i in range(2):
+            (tmp_path / "fw1" / f"cfg-{i}.xml").write_text("x")
+            index.add(_make_record("fw1", BackupType.CONFIG, f"cfg-{i}.xml", age_days=i))
+        retention.save_index(index)
+
+        real_unlink = Path.unlink
+
+        def locked(self, *args, **kwargs):
+            if self.name == "cfg-1.xml":
+                raise PermissionError("in use")
+            return real_unlink(self, *args, **kwargs)
+
+        with patch.object(Path, "unlink", locked):
+            assert retention.apply("fw1") == []
+        assert sorted(r.filename for r in retention.load_index("fw1").records) == [
+            "cfg-0.xml",
+            "cfg-1.xml",
+        ]
+        # The next run deletes it.
+        assert [r.filename for r in retention.apply("fw1")] == ["cfg-1.xml"]
+        assert not (tmp_path / "fw1" / "cfg-1.xml").exists()

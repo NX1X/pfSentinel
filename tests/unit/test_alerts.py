@@ -24,11 +24,13 @@ def test_event_ids_are_fixed() -> None:
         "SECOND_COPY_FAILED": 1005,
         "UPDATE_AVAILABLE": 1006,
         "DAILY_DIGEST": 1007,
+        "BACKUP_PARTIAL": 1008,
     }
     assert AlertKind.BACKUP_OK.entry_type == "Information"
     assert AlertKind.RISKY_CHANGE.entry_type == "Warning"
     assert AlertKind.NO_RECENT_BACKUP.entry_type == "Error"
     assert AlertKind.DAILY_DIGEST.entry_type == "Information"
+    assert AlertKind.BACKUP_PARTIAL.entry_type == "Warning"
 
 
 def test_windows_event_text_travels_in_environment_variables() -> None:

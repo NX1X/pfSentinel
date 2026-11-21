@@ -674,21 +674,25 @@ class WebDavTarget:
             self._mkdirs(folder)
         # Not ".part": Nextcloud refuses uploads with that ending.
         temp = f"{folder}/.{name}.uploading" if folder else f".{name}.uploading"
-        resp = self._send(
-            "PUT",
-            self._url(temp),
-            headers={"Content-Type": "application/octet-stream"},
-            body=lambda: local.open("rb"),
-        )
-        if resp.status_code not in (200, 201, 204):
-            raise self._http.status_error("PUT", resp)
-        resp = self._send(
-            "MOVE", self._url(temp), headers={"Destination": self._url(rel), "Overwrite": "T"}
-        )
-        if resp.status_code not in (201, 204):
-            with contextlib.suppress(SecondCopyError):
+        try:
+            resp = self._send(
+                "PUT",
+                self._url(temp),
+                headers={"Content-Type": "application/octet-stream"},
+                body=lambda: local.open("rb"),
+            )
+            if resp.status_code not in (200, 201, 204):
+                raise self._http.status_error("PUT", resp)
+            resp = self._send(
+                "MOVE", self._url(temp), headers={"Destination": self._url(rel), "Overwrite": "T"}
+            )
+            if resp.status_code not in (201, 204):
+                raise self._http.status_error("MOVE", resp)
+        except Exception:
+            # A failed or cut upload leaves a partial temp file: remove it.
+            with contextlib.suppress(Exception):
                 self._send("DELETE", self._url(temp))
-            raise self._http.status_error("MOVE", resp)
+            raise
 
     def _subfolders(self, rel: str) -> list[str]:
         url = self._url(rel, collection=True)

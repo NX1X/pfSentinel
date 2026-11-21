@@ -23,6 +23,7 @@ from pfsentinel.models.config import EXTRA_TARGET_FIELDS, AppConfig
 from pfsentinel.services.backup import BackupError, BackupService
 from pfsentinel.services.credentials import CredentialService
 from pfsentinel.services.orchestrator import BackupOrchestrator
+from pfsentinel.utils.locking import LockTimeoutError
 
 app = typer.Typer(help="Backup operations", no_args_is_help=True)
 
@@ -108,16 +109,27 @@ def _get_service(backup_dir: Path | None = None) -> tuple[AppConfig, BackupServi
     return config, BackupService(config, creds)
 
 
-def _resolve_backup_root(config: AppConfig, cli_override: Path | None) -> Path:
+def _resolve_backup_root(
+    config: AppConfig, cli_override: Path | None, interactive: bool = True
+) -> Path:
     """Return the backup root to use, prompting if not yet configured.
 
     If the user provides a path at the prompt, offer to save it permanently.
+    The chosen root is set on ``config`` for this run (not saved), because
+    the services read it from there. With ``interactive`` False it never
+    prompts: it uses the default root.
     """
     if cli_override:
-        return cli_override.expanduser().resolve()
+        # Before rc.3 the override was only printed; files went to the configured root.
+        chosen = cli_override.expanduser().resolve()
+        config.backup_policy.backup_root = chosen
+        return chosen
 
     if config.backup_policy.backup_root is not None:
         return config.backup_policy.backup_root.expanduser()
+
+    if not interactive:
+        return config.backup_policy.resolved_root
 
     # Not configured yet - prompt
     default = config.backup_policy.resolved_root
@@ -222,7 +234,10 @@ def backup_run(
         include_extras, enable_zfs, enable_archive = _prompt_backup_types()
 
     config = AppConfig.load()
-    backup_root = _resolve_backup_root(config, backup_dir)
+    # The location prompt also takes piped input; only --non-interactive
+    # (every scheduled run) or no stdin at all skips it.
+    may_prompt = not non_interactive and sys.stdin is not None
+    backup_root = _resolve_backup_root(config, backup_dir, may_prompt)
     creds = CredentialService()
 
     # Temporarily enable ZFS/archive if selected interactively
@@ -387,7 +402,8 @@ def backup_verify(
             ok = True
         try:
             svc.save_verified(record, ok)
-        except OSError as e:
+        except (OSError, LockTimeoutError) as e:
+            # LockTimeoutError: a long backup run holds the device's index.
             print_warning(f"  Could not save the result in the backup index: {e}")
 
     if len(records) > 1:
@@ -417,7 +433,11 @@ def backup_delete(
             print_info("Aborted.")
             return
 
-    svc.delete_backup(record)
+    try:
+        svc.delete_backup(record)
+    except (BackupError, LockTimeoutError, OSError) as e:
+        print_error(f"Could not delete {filename}: {e}")
+        raise typer.Exit(1)
     print_success(f"Deleted: {filename}")
 
 
@@ -940,13 +960,14 @@ def backup_archive(
     try:
         record = archive_svc.run_archive_backup(device, directories=directories, progress=progress)
 
-        # Add to backup index
+        # Add to backup index, under the device lock like a backup run.
         from pfsentinel.services.retention import RetentionService
 
         retention = RetentionService(config.backup_policy.resolved_root, config.backup_policy)
-        index = retention.load_index(device)
-        index.add(record)
-        retention.save_index(index)
+        with retention.device_lock(device):
+            index = retention.load_index(device)
+            index.add(record)
+            retention.save_index(index)
 
         print_success(f"Archive backup: {record.filename}")
         print_info(f"  Size: {record.size_human}")
@@ -989,7 +1010,7 @@ def backup_reindex(
             print_error(f"{device_id}: {e}")
             failed = True
             continue
-        except OSError as e:
+        except (OSError, LockTimeoutError) as e:
             print_error(f"{device_id}: reindex failed, nothing changed: {e}")
             failed = True
             continue
