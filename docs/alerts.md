@@ -111,9 +111,11 @@ commas), `--timeout` (seconds, default 20), `--ca-cert FILE` (your lab CA's cert
 The digest is one message a day. For each enabled device it shows:
 
 - The time of the last successful config backup.
-- How many backups are stored, and how many were made in the last 24 hours.
-- The problems found in the last 24 hours (failed backups, risky changes,
-  failed restore checks, no recent backup, failed second copies).
+- How many backups are stored, and how many were made since the last digest.
+- The problems found since the last digest (failed backups, risky changes,
+  failed restore checks, no recent backup, failed second copies). At most
+  10 per device are listed, the newest. The digest says how many earlier
+  ones it left out.
 
 When the digest is on, a successful backup sends no message of its own. A
 failed backup, a risky change and every other problem are still sent at
@@ -131,7 +133,7 @@ once.
 
 The daily check task runs at sign-in, at 12:00, and at the digest time. The
 first run on a day at or after the digest time sends the digest. Later runs
-on the same day do not. The date of the last digest is kept in
+on the same day do not. The date and time of the last digest are kept in
 `~/.pfsentinel/digest_state.json`.
 
 If the computer is off at the digest time, the digest goes out at the next
@@ -150,7 +152,12 @@ the next check after that time, at sign-in or at 12:00.
   out today.
 - `pfs notify digest disable` goes back to one message per backup.
 
-The digest uses the alerts of the last 24 hours. pfSentinel keeps them in
+A digest covers the time since the last scheduled digest, at most 7 days.
+The first digest, and a digest after a missing time, covers the last 24
+hours. A digest you send by hand does not move this start. After today's
+digest is out, `pfs notify digest send` and `--preview` cover the same
+period as today's digest, up to now. pfSentinel keeps
+the alerts in
 `~/.pfsentinel/alert_history.json` while the digest is on, for at most 7
 days. On Linux and macOS only your user can read the file.
 

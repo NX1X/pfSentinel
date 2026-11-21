@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 
@@ -84,12 +85,12 @@ def print_device_table(
             else:
                 status_str = "[red]Unreachable[/]"
                 if st.error:
-                    status_str += f" - {st.error}"
+                    status_str += f" - {escape(st.error)}"
 
         table.add_row(
             d.id,
-            d.label,
-            d.host,
+            escape(d.label),
+            escape(d.host),
             d.primary_method.value,
             enabled_str,
             status_str,
@@ -103,20 +104,20 @@ def print_record_detail(record: BackupRecord) -> None:
         f"[bold]ID:[/] {record.id}",
         f"[bold]Type:[/] {record.type_label}",
         f"[bold]Device:[/] {record.device_id}",
-        f"[bold]Filename:[/] {record.filename}",
+        f"[bold]Filename:[/] {escape(record.filename)}",
         f"[bold]Date:[/] {record.created_at.strftime('%Y-%m-%d %H:%M:%S')}",
         f"[bold]Size:[/] {record.size_human}",
         f"[bold]SHA256:[/] {record.sha256}",
         f"[bold]Method:[/] {record.connection_method}",
-        f"[bold]pfSense:[/] {record.pfsense_version or 'unknown'}",
-        f"[bold]Hostname:[/] {record.device_hostname or 'unknown'}",
+        f"[bold]pfSense:[/] {escape(record.pfsense_version or 'unknown')}",
+        f"[bold]Hostname:[/] {escape(record.device_hostname or 'unknown')}",
         f"[bold]Changes:[/] {record.changes_label}",
         f"[bold]Compressed:[/] {'Yes' if record.compressed else 'No'}",
         f"[bold]Verified:[/] {'Yes' if record.verified else 'No'}",
-        f"[bold]Description:[/] {record.description or '-'}",
+        f"[bold]Description:[/] {escape(record.description or '-')}",
     ]
     if record.source_paths:
-        lines.append(f"[bold]Source Paths:[/] {', '.join(record.source_paths)}")
+        lines.append(f"[bold]Source Paths:[/] {escape(', '.join(record.source_paths))}")
     if record.zfs_snapshot_name:
         lines.append(f"[bold]ZFS Snapshot:[/] {record.zfs_snapshot_name}")
         if record.zfs_incremental:
@@ -125,24 +126,33 @@ def print_record_detail(record: BackupRecord) -> None:
     console.print(Panel(content, title="Backup Record", border_style="cyan"))
 
 
-def print_success(msg: str) -> None:
+# The message is escaped by default: it often carries text from pfSense, a
+# path or an exception, and Rich reads "[b]" as markup ("[/lan]" even
+# raised MarkupError). Pass markup=True only for a message you wrote.
+
+
+def _text(msg: str, markup: bool) -> str:
+    return msg if markup else escape(msg)
+
+
+def print_success(msg: str, *, markup: bool = False) -> None:
     end_progress_line()
-    console.print(f"[green]✓[/] {msg}")
+    console.print(f"[green]✓[/] {_text(msg, markup)}")
 
 
-def print_error(msg: str) -> None:
+def print_error(msg: str, *, markup: bool = False) -> None:
     end_progress_line()
-    err_console.print(f"[red]✗ Error:[/] {msg}")
+    err_console.print(f"[red]✗ Error:[/] {_text(msg, markup)}")
 
 
-def print_warning(msg: str) -> None:
+def print_warning(msg: str, *, markup: bool = False) -> None:
     end_progress_line()
-    console.print(f"[yellow]![/] {msg}")
+    console.print(f"[yellow]![/] {_text(msg, markup)}")
 
 
-def print_info(msg: str) -> None:
+def print_info(msg: str, *, markup: bool = False) -> None:
     end_progress_line()
-    console.print(f"[blue]ℹ[/] {msg}")
+    console.print(f"[blue]ℹ[/] {_text(msg, markup)}")
 
 
 def _progress_enabled() -> bool:

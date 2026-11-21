@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `pfs backup run --non-interactive` asked where to save backups when no backup folder was set. A scheduled run then stopped or waited until Task Scheduler ended it. It now uses the default folder.
 - When retention could not delete a file (on Windows, for example while antivirus scans it), it removed the record anyway. The file stayed on disk, unlisted and never removed. The record now stays, and the next run tries again.
 - On Windows, saving the backup index failed when another process had it open. The save now tries again for up to 2 seconds.
+- Telegram refused an alert with HTTP 400 when its text had an odd number of `_`, `*`, `` ` `` or `[`, for example a Windows path or a device ID with one `_`. The alert was lost, with only a warning in the log. Telegram alerts are now plain text (the title is no longer bold), cut to Telegram's limit of 4096 characters.
+- The daily digest covered 24 hours back from the time it was sent. That time moves (sign-in, 12:00), so an alert between two digests could be in neither, or in both. A digest now covers the time since the last digest, at most 7 days. It lists at most 10 alerts per device, the newest, and says how many earlier ones it left out.
+- `pfs backup diff` crashed with a MarkupError when the config held text like `[/lan]`, and dropped text like `[b]`. Messages, errors and `pfs backup info` had the same problem. They now print square brackets as text.
+- `pfs backup list` showed `unknown` in the Changes column of every extra. Only config backups are compared, so extras now show `-`.
 
 ### Changed
 

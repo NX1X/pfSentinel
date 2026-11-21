@@ -709,7 +709,8 @@ def backup_diff(
     if not diff:
         print_info("No differences found between the two backups.")
     else:
-        console.print(diff)
+        # Plain text: XML descriptions may hold "[...]", which Rich reads as markup.
+        console.print(diff, markup=False, highlight=False)
 
 
 @app.command("info")
