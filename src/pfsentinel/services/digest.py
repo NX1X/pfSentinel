@@ -76,19 +76,40 @@ def last_sent_date() -> date | None:
         return None
 
 
-def last_sent_at() -> datetime | None:
+def _state_time(key: str) -> datetime | None:
     data = alert_history.read_json(alert_history.state_dir() / STATE_FILE)
     try:
-        return datetime.fromisoformat(str(data["last_sent_at"])) if isinstance(data, dict) else None
+        return datetime.fromisoformat(str(data[key])) if isinstance(data, dict) else None
     except (KeyError, ValueError):
         return None
 
 
-def mark_sent(day: date, at: datetime | None = None) -> None:
+def last_sent_at() -> datetime | None:
+    return _state_time("last_sent_at")
+
+
+def mark_sent(day: date, at: datetime | None = None, covered_from: datetime | None = None) -> None:
     state = {"last_sent": day.isoformat()}
     if at is not None:
-        state["last_sent_at"] = at.isoformat(timespec="seconds")
+        state["last_sent_at"] = at.isoformat()
+    if covered_from is not None:
+        state["covered_from"] = covered_from.isoformat()
     alert_history.write_private_json(alert_history.state_dir() / STATE_FILE, state)
+
+
+def digest_since(now: datetime, scheduled: bool) -> datetime:
+    """Start of the period the digest built at ``now`` covers.
+
+    The scheduled digest covers the time since the last one. A preview or a
+    manual send after today's digest covers what today's digest covered, up
+    to now, so it shows the same problems again.
+    """
+    last_at = last_sent_at()
+    if not scheduled and last_at is not None and last_at.date() == now.date():
+        covered_from = _state_time("covered_from")
+        if covered_from is not None and covered_from <= now:
+            return covered_from
+    return window_start(now, last_at)
 
 
 def window_start(now: datetime, last_at: datetime | None) -> datetime:
@@ -209,9 +230,10 @@ def build_digest(
     config: AppConfig,
     list_backups: Callable[[str], list[BackupRecord]],
     now: datetime | None = None,
+    scheduled: bool = False,
 ) -> Digest:
     when = now or datetime.now()
-    since = window_start(when, last_sent_at())
+    since = digest_since(when, scheduled)
     alerts = alert_history.load_alerts(since)
     device_ids = [d.id for d in config.enabled_devices()]
     summaries = summarize_devices(device_ids, list_backups, alerts, when, since)
@@ -234,12 +256,13 @@ def send_digest(
     so the scheduled digest still goes out that day.
     """
     when = now or datetime.now()
-    digest = build_digest(config, list_backups, when)
+    since = digest_since(when, remember)
+    digest = build_digest(config, list_backups, when, scheduled=remember)
     results = notifications.send_digest(digest.title, digest.body, digest.problem_count > 0)
     if not results:
         logger.warning("Daily digest: no notification channel is enabled")
     if remember and (not results or any(err is None for err in results.values())):
-        mark_sent(when.date(), when)
+        mark_sent(when.date(), when, since)
     return digest, results
 
 

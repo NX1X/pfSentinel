@@ -153,7 +153,9 @@ the next check after that time, at sign-in or at 12:00.
 
 A digest covers the time since the last scheduled digest, at most 7 days.
 The first digest, and a digest after a missing time, covers the last 24
-hours. A digest you send by hand does not move this start. pfSentinel keeps
+hours. A digest you send by hand does not move this start. After today's
+digest is out, `pfs notify digest send` and `--preview` cover the same
+period as today's digest, up to now. pfSentinel keeps
 the alerts in
 `~/.pfsentinel/alert_history.json` while the digest is on, for at most 7
 days. On Linux and macOS only your user can read the file.

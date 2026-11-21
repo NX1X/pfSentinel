@@ -242,6 +242,23 @@ class TestWindow:
         assert digest.window_start(now, None) == now - digest.WINDOW
         assert digest.window_start(now, now + timedelta(hours=1)) == now - digest.WINDOW
 
+    def test_a_preview_after_todays_digest_shows_the_same_problems(self) -> None:
+        config = _app_config("fw1", digest_enabled=True, digest_time="08:00")
+        svc = MagicMock(spec=NotificationService)
+        svc.send_digest.return_value = {"Email": None}
+        alert_history.record_alert(AlertKind.BACKUP_FAILED, "t", "Device: fw1\nx", NOW)
+        sent = NOW + timedelta(minutes=1)
+        digest.send_digest_if_due(config, lambda _: [], svc, sent)
+        assert "1 problem(s)" in svc.send_digest.call_args.args[0]
+
+        preview = digest.build_digest(config, lambda _: [], sent + timedelta(hours=2))
+        assert preview.problem_count == 1
+        # Tomorrow's scheduled digest starts at today's send.
+        tomorrow = digest.build_digest(
+            config, lambda _: [], sent + timedelta(days=1), scheduled=True
+        )
+        assert tomorrow.problem_count == 0
+
     def test_a_manual_send_keeps_the_window(self) -> None:
         config = _app_config("fw1", digest_enabled=True)
         svc = MagicMock(spec=NotificationService)
