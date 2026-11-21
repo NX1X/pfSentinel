@@ -236,6 +236,20 @@ class TestStatusOnLinux:
         assert result.exit_code == 0, _out(result)
         assert "04:30" in _out(result)
 
+    def test_shows_what_a_scheduled_run_backs_up(
+        self, cli_runner: CliRunner, saved_config: AppConfig, linux: FakeUnixScheduler
+    ) -> None:
+        result = cli_runner.invoke(app, ["schedule", "status"])
+        assert "Backs up: config" in _out(result)
+        assert "pfs config set extras" in _out(result)
+
+        config = AppConfig.load()
+        config.backup_policy.extras.set_targets(["rrd", "certs"])
+        config.save()
+        result = cli_runner.invoke(app, ["schedule", "status"])
+        assert "Backs up: config, rrd, certs" in _out(result)
+        assert "pfs config set extras" not in _out(result)
+
     def test_shows_active_timers_and_their_last_result(
         self, cli_runner: CliRunner, saved_config: AppConfig, linux: FakeUnixScheduler
     ) -> None:

@@ -73,6 +73,55 @@ class TestRun:
         assert len(records) == 1
         assert records[0].backup_type == BackupType.CONFIG
 
+    @pytest.mark.parametrize("config_only", [False, True])
+    @patch.object(BackupOrchestrator, "_resolve_targets", return_value=[])
+    def test_second_copy_runs_without_extras(self, mock_resolve, tmp_path: Path, config_only):
+        """Before 1.0 a run with no extras (the default) returned before the second copy."""
+        config = _make_config(tmp_path)
+        orch = BackupOrchestrator(config, CredentialService())
+        with (
+            patch.object(orch._backup_svc, "run_backup", return_value=_make_record()),
+            patch.object(orch._retention, "start_run"),
+            patch.object(orch._retention, "apply") as apply,
+            patch.object(orch, "_second_copy") as second_copy,
+        ):
+            orch.run("fw1", config_only=config_only)
+        apply.assert_called_once_with("fw1")
+        second_copy.assert_called_once_with("fw1")
+
+    @patch.object(BackupOrchestrator, "_resolve_targets", return_value=[])
+    def test_zfs_snapshot_runs_without_extras(self, mock_resolve, tmp_path: Path):
+        config = _make_config(tmp_path)
+        config.backup_policy.zfs.enabled = True
+        orch = BackupOrchestrator(config, CredentialService())
+        zfs = _make_record(backup_type=BackupType.ZFS_SNAPSHOT)
+        with (
+            patch.object(orch._backup_svc, "run_backup", return_value=_make_record()),
+            patch.object(orch._retention, "start_run"),
+            patch.object(orch._retention, "apply"),
+            patch.object(orch, "_run_zfs_snapshot", return_value=zfs) as run_zfs,
+        ):
+            records = orch.run("fw1")
+        run_zfs.assert_called_once()
+        assert records[-1] is zfs
+
+    def test_config_only_skips_zfs_and_archive(self, tmp_path: Path):
+        config = _make_config(tmp_path)
+        config.backup_policy.zfs.enabled = True
+        config.backup_policy.archive.enabled = True
+        orch = BackupOrchestrator(config, CredentialService())
+        with (
+            patch.object(orch._backup_svc, "run_backup", return_value=_make_record()),
+            patch.object(orch._retention, "start_run"),
+            patch.object(orch._retention, "apply"),
+            patch.object(orch, "_run_zfs_snapshot") as run_zfs,
+            patch.object(orch, "_run_archive") as run_archive,
+        ):
+            records = orch.run("fw1", config_only=True)
+        assert len(records) == 1
+        run_zfs.assert_not_called()
+        run_archive.assert_not_called()
+
     def test_device_not_found_raises(self, tmp_path: Path):
         config = _make_config(tmp_path)
         orch = BackupOrchestrator(config, CredentialService())

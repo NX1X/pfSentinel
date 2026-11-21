@@ -14,6 +14,16 @@ from pydantic import BaseModel, Field
 
 from .device import DeviceConfig
 
+# Extra target name (as in `pfs backup run --include`) -> ExtraBackupTargets field.
+EXTRA_TARGET_FIELDS: dict[str, str] = {
+    "rrd": "rrd",
+    "pkg": "package_configs",
+    "dhcp": "dhcp_leases",
+    "aliases": "aliases",
+    "certs": "certificates",
+    "logs": "logs",
+}
+
 
 class ExtraBackupTargets(BaseModel):
     """Which additional files to back up via SSH alongside config."""
@@ -45,6 +55,14 @@ class ExtraBackupTargets(BaseModel):
         if self.logs:
             targets.append("logs")
         return targets
+
+    def set_targets(self, names: list[str]) -> None:
+        """Turn on exactly these targets (names as in --include); all others off."""
+        unknown = [n for n in names if n not in EXTRA_TARGET_FIELDS]
+        if unknown:
+            raise ValueError(f"unknown extra target(s): {', '.join(unknown)}")
+        for name, field in EXTRA_TARGET_FIELDS.items():
+            setattr(self, field, name in names)
 
 
 class ZfsPolicy(BaseModel):
@@ -175,6 +193,17 @@ class BackupPolicy(BaseModel):
     )
 
     model_config = {"arbitrary_types_allowed": True}
+
+    def run_contents(self) -> str:
+        """What a run without --include or --all-extras backs up (scheduled runs)."""
+        parts = ["config", *self.extras.enabled_targets()]
+        if self.zfs.enabled:
+            parts.append("ZFS snapshot")
+            if self.archive.enabled:
+                parts.append("filesystem archive if the snapshot fails")
+        elif self.archive.enabled:
+            parts.append("filesystem archive")
+        return ", ".join(parts)
 
     @property
     def resolved_root(self) -> Path:

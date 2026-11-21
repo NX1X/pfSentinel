@@ -226,6 +226,42 @@ class TestSet:
         assert json.loads(cli_config_path.read_text(encoding="utf-8")) == before
 
 
+class TestSetExtras:
+    """Scheduled runs use the saved extras; before 1.0 no command could set them."""
+
+    def test_a_list_turns_on_exactly_those_extras(
+        self, cli_runner: CliRunner, saved_config: AppConfig
+    ) -> None:
+        result = cli_runner.invoke(app, ["config", "set", "extras", "rrd, pkg,CERTS"])
+
+        assert result.exit_code == 0, _out(result)
+        assert "config, rrd, pkg, certs" in _out(result)
+        extras = AppConfig.load().backup_policy.extras
+        assert extras.enabled_targets() == ["rrd", "pkg", "certs"]
+
+    def test_all_and_none(self, cli_runner: CliRunner, saved_config: AppConfig) -> None:
+        cli_runner.invoke(app, ["config", "set", "extras", "all"])
+        assert AppConfig.load().backup_policy.extras.enabled_targets() == [
+            "rrd", "pkg", "dhcp", "aliases", "certs", "logs",
+        ]  # fmt: skip
+
+        result = cli_runner.invoke(app, ["config", "set", "extras", "none"])
+        assert result.exit_code == 0, _out(result)
+        assert AppConfig.load().backup_policy.extras.enabled_targets() == []
+        assert "save: config" in _out(result)
+
+    @pytest.mark.parametrize("value", ["rrd,zfs", "", ",,"])
+    def test_an_unknown_or_empty_value_changes_nothing(
+        self, cli_runner: CliRunner, saved_config: AppConfig, cli_config_path: Path, value: str
+    ) -> None:
+        before = json.loads(cli_config_path.read_text(encoding="utf-8"))
+        result = cli_runner.invoke(app, ["config", "set", "extras", value])
+
+        assert result.exit_code == 1
+        assert "Valid: rrd, pkg, dhcp, aliases, certs, logs" in _out(result)
+        assert json.loads(cli_config_path.read_text(encoding="utf-8")) == before
+
+
 def test_path_prints_the_config_file_location(cli_runner: CliRunner, cli_config_path: Path) -> None:
     result = cli_runner.invoke(app, ["config", "path"])
 

@@ -249,6 +249,7 @@ def schedule_status(
     """Show scheduling status."""
     config, scheduler = _get_scheduler()
     status = scheduler.get_status()
+    status["backs_up"] = config.backup_policy.run_contents()
     if output_json:
         import json
 
@@ -263,7 +264,10 @@ def schedule_status(
             f" - {status['weekly_day']} at {status['weekly_time']}"
         ),
         f"[bold]In-process running:[/] {'Yes' if status['in_process_running'] else 'No'}",
+        f"[bold]Backs up:[/] {status['backs_up']}",
     ]
+    if not config.backup_policy.extras.enabled_targets():
+        lines.append("  [dim]Add extras: pfs config set extras rrd,pkg,dhcp,aliases,certs[/]")
 
     if "windows_daily" in status:
         lines.append("")

@@ -311,6 +311,14 @@ pfs config validate
 pfs config set backup-dir /path/to/backups
 ```
 
+### Extras for Scheduled Backups
+
+```bash
+pfs config set extras rrd,pkg,dhcp,aliases,certs
+```
+
+Scheduled backups save the config plus these extras. Valid names: `rrd`, `pkg`, `dhcp`, `aliases`, `certs` and `logs`, or `all`, or `none`. In a new config, scheduled backups save the config only. See [Scheduled Backups](extended-backups.md#scheduled-backups).
+
 ### Key Config Fields
 
 ```json
@@ -700,6 +708,7 @@ Logs are written to `~/.pfsentinel/logs/pfsentinel.log`.
 | `config validate` | Validate config file |
 | `config path` | Print config file path |
 | `config set backup-dir PATH` | Change backup directory |
+| `config set extras LIST` | Extras for scheduled backups (`rrd,pkg,...`, `all` or `none`) |
 
 ### `pfs schedule`
 
