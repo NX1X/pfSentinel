@@ -21,7 +21,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from pfsentinel.utils.logging import get_logger
-from pfsentinel.utils.platform import is_windows
+from pfsentinel.utils.platform import CONSOLE_ENCODING, is_windows
 
 logger = get_logger(__name__)
 
@@ -43,6 +43,8 @@ def _current_user_sid() -> str:
         [_system32("whoami.exe"), "/user", "/fo", "csv", "/nh"],
         capture_output=True,
         text=True,
+        encoding=CONSOLE_ENCODING,
+        errors="replace",
         timeout=15,
         check=True,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
@@ -85,11 +87,13 @@ def restrict_to_owner(path: Path) -> bool:
             icacls_args(path, _current_user_sid()),
             capture_output=True,
             text=True,
+            encoding=CONSOLE_ENCODING,
+            errors="replace",
             timeout=60,
             check=False,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
-    except (OSError, subprocess.SubprocessError, RuntimeError) as e:
+    except (OSError, subprocess.SubprocessError, RuntimeError, ValueError) as e:
         logger.warning(f"Could not make {path} owner-only: {e}")
         return False
     if result.returncode != 0:

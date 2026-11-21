@@ -60,12 +60,20 @@ def default_backup_dir() -> Path:
     return Path.home() / "Documents" / "pfSentinel"
 
 
+# Windows console tools (schtasks, whoami) write the OEM code page when
+# their output is piped. Decoded as the ANSI code page, a user name like
+# "Jürgen" raised UnicodeDecodeError. "oem" exists only on Windows.
+CONSOLE_ENCODING = "oem" if sys.platform == "win32" else None
+
+
 def run_command(args: list[str], check: bool = True) -> subprocess.CompletedProcess:
     """Run a subprocess command and return the result."""
     return subprocess.run(
         args,
         capture_output=True,
         text=True,
+        encoding=CONSOLE_ENCODING,
+        errors="replace",
         check=check,
     )
 

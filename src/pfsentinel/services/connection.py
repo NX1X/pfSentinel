@@ -698,6 +698,13 @@ class ConnectionManager:
             and self.device.fallback_method != self.device.primary_method
         ):
             methods_to_try.append(self.device.fallback_method)
+        if password is None:
+            # SSH key only: HTTPS and HTTP cannot log in. Trying them only
+            # replaced the real SSH error with "No password stored".
+            usable: list[ConnectionMethod] = [
+                m for m in methods_to_try if m == ConnectionMethod.SSH
+            ]
+            methods_to_try = usable or methods_to_try
 
         last_error: Exception | None = None
 

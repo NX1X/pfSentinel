@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -117,6 +118,10 @@ class UpdateService:
         self._state_path = self._config_dir / "update_check.json"
         self._backup_dir = self._config_dir / "update_backup"
         self._state: dict = self._load_state()
+        # The method of the last install() call: "binary", "pipx" or "pip".
+        self.last_method: str | None = None
+        # True when a failed update could not put the old binary back.
+        self.restore_failed = False
         self._cleanup_old_binary()
 
     # ── State persistence ──────────────────────────────────────────────
@@ -310,27 +315,47 @@ class UpdateService:
 
         Raises UpdateError on failure.
         """
-        result = self.check(force=True, prerelease=prerelease)
+        try:
+            result = self.check(force=True, prerelease=prerelease)
+        except requests.RequestException as e:
+            raise UpdateError(f"Cannot check for updates: {type(e).__name__}") from e
         if result is None:
             return f"Already up to date (v{__version__})"
 
         method = self._detect_install_method()
-        self._state["previous_version"] = __version__
-        self._state["install_method"] = method
-        self._save_state()
+        self.last_method = method
+        if method != "binary":
+            # A binary install saves these only once it has backed up the
+            # current binary: a download that fails must not point revert
+            # at the backup of an older update.
+            self._state["previous_version"] = __version__
+            self._state["install_method"] = method
+            self._save_state()
 
-        if method == "binary":
-            download_url = self._state.get("download_url", "")
-            if not download_url:
-                raise UpdateError(
-                    "No binary download URL found for this platform. "
-                    "Try installing via pip: pip install --upgrade pfsentinel"
-                )
-            return self._install_binary(download_url, result["tag"])
-        elif method == "pipx":
-            return self._install_pipx(prerelease)
-        else:
-            return self._install_pip(prerelease)
+        try:
+            if method == "binary":
+                download_url = self._state.get("download_url", "")
+                if not download_url:
+                    raise UpdateError(
+                        "No binary download URL found for this platform. "
+                        "Try installing via pip: pip install --upgrade pfsentinel"
+                    )
+                return self._install_binary(download_url, result["tag"])
+            elif method == "pipx":
+                return self._install_pipx(prerelease)
+            else:
+                return self._install_pip(prerelease)
+        except UpdateError:
+            raise
+        except requests.RequestException as e:
+            # Not the message: it can quote the signed download URL.
+            host = urlparse(getattr(e.request, "url", "") or "").hostname or "GitHub"
+            raise UpdateError(f"Download from {host} failed: {type(e).__name__}") from e
+        except OSError as e:
+            raise UpdateError(
+                f"Cannot write the update next to {Path(sys.executable).resolve()}: {e}. "
+                "If pfs is in a protected folder, run the update as administrator."
+            ) from e
 
     def _install_binary(self, download_url: str, tag: str) -> str:
         current_exe = Path(sys.executable).resolve()
@@ -358,6 +383,8 @@ class UpdateService:
             backup_path = self._binary_backup_path(current_exe)
             shutil.copy2(current_exe, backup_path)
             self._state["previous_binary_backup"] = str(backup_path)
+            self._state["previous_version"] = __version__
+            self._state["install_method"] = "binary"
             self._save_state()
 
             if is_windows():
@@ -373,8 +400,10 @@ class UpdateService:
                         os.rename(old_path, current_exe)
                     raise UpdateError(f"Failed to replace binary: {e}") from e
             else:
-                # Owner-only rwx (rwx------); no group or world access.
-                os.chmod(temp_path, 0o700)
+                # Keep the mode of the binary it replaces (a shared
+                # /usr/local/bin/pfs is 0755); owner rwx at least.
+                old_mode = stat.S_IMODE(current_exe.stat().st_mode)
+                os.chmod(temp_path, (old_mode & 0o755) | 0o700)
                 os.replace(temp_path, current_exe)
         finally:
             with contextlib.suppress(OSError):
@@ -400,14 +429,26 @@ class UpdateService:
                     "the previous version has been restored."
                 )
         except UpdateError:
-            shutil.copy2(backup_path, current_exe)
+            self._restore_binary(backup_path, current_exe)
             raise
         except Exception as e:
             logger.warning(f"New binary verification failed: {e}")
-            shutil.copy2(backup_path, current_exe)
+            self._restore_binary(backup_path, current_exe)
             raise UpdateError(f"Update verification failed, reverted: {e}") from e
 
         return f"Updated to {tag}"
+
+    def _restore_binary(self, backup_path: Path, current_exe: Path) -> None:
+        """Put the old binary back after a failed check of the new one."""
+        try:
+            shutil.copy2(backup_path, current_exe)
+        except OSError as e:
+            self.restore_failed = True
+            raise UpdateError(
+                f"The new binary failed its check, and putting the old one back failed: {e}. "
+                f"The new binary is still at {current_exe}. Copy the old one back by hand "
+                f"from {backup_path}, or run: pfs update revert"
+            ) from e
 
     # ── Download safety ──────────────────────────────────────────────
 

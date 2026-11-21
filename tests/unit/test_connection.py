@@ -144,6 +144,33 @@ class TestConnectionManagerFallback:
             xml, method = cm.download_config()
         assert method == "https"
 
+    def test_a_key_only_device_reports_the_ssh_error(self, tmp_path):
+        """Before rc.3 the HTTPS fallback replaced it with "No password stored"."""
+        key = tmp_path / "id_ed25519"
+        key.write_text("k")
+        device = _make_device(
+            primary_method=ConnectionMethod.SSH,
+            fallback_method=ConnectionMethod.HTTPS,
+            ssh_key_path=key,
+        )
+        cm = ConnectionManager(device, CredentialService())
+        ssh = MagicMock(spec=SSHConnector)
+        ssh.__enter__ = MagicMock(return_value=ssh)
+        ssh.__exit__ = MagicMock(return_value=False)
+        ssh.download_config.side_effect = ConnectionError("SSH timed out")
+        tried: list[ConnectionMethod] = []
+
+        def make(method, password):
+            tried.append(method)
+            return ssh
+
+        with (
+            patch.object(cm, "_make_connector", side_effect=make),
+            pytest.raises(ConnectionError, match="SSH timed out"),
+        ):
+            cm.download_config()
+        assert tried == [ConnectionMethod.SSH]
+
     def test_all_methods_fail(self):
         device = _make_device(
             primary_method=ConnectionMethod.SSH,

@@ -16,7 +16,12 @@ from pfsentinel.cli.formatters import (
     print_warning,
 )
 from pfsentinel.models.config import AppConfig
-from pfsentinel.models.device import DEVICE_ID_PATTERN, ConnectionMethod, DeviceConfig
+from pfsentinel.models.device import (
+    DEVICE_ID_PATTERN,
+    ConnectionMethod,
+    DeviceConfig,
+    clean_key_path,
+)
 from pfsentinel.services.credentials import CredentialService
 
 app = typer.Typer(help="Device management", no_args_is_help=True)
@@ -155,9 +160,9 @@ def device_add(
         console.print("[dim]  Key-based auth is more secure than password auth.[/]")
         console.print("[dim]  Leave blank to use password authentication (default).[/]")
         ssh_key_raw = typer.prompt("SSH private key path (optional)", default="")
-        if ssh_key_raw.strip():
-            ssh_key_path_str = ssh_key_raw.strip()
-            key_path = Path(ssh_key_path_str).expanduser()
+        key_path = clean_key_path(ssh_key_raw)
+        if key_path is not None:
+            ssh_key_path_str = str(key_path)
             if not key_path.exists():
                 print_warning(f"Key file not found: {key_path} (proceeding anyway)")
 
@@ -203,6 +208,8 @@ def device_add(
     except Exception as e:
         print_error(str(e))
         raise typer.Exit(1)
+    # The model lowercases the ID: store secrets under the same key.
+    device_id = device.id
 
     if password:
         creds.store(device_id, password)
@@ -475,7 +482,7 @@ def device_edit(
         )
         if change_key:
             new_key_raw = typer.prompt("New SSH private key path (blank to clear)", default="")
-            device.ssh_key_path = Path(new_key_raw).expanduser() if new_key_raw.strip() else None
+            device.ssh_key_path = clean_key_path(new_key_raw)
 
         # Offer passphrase prompt whenever an SSH key is configured
         if device.ssh_key_path:
