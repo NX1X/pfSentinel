@@ -18,8 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A backup run with no extras turned on (the default) ended right after the config. It skipped the second copy (since 0.3.0) and the ZFS snapshot or filesystem archive, even when they were turned on. A `--config-only` run also skipped the second copy. Now every run makes the second copy; `--config-only` still skips extras, ZFS and archive.
 - `pfs config validate` no longer reports "missing password" for a device that logs in with an SSH key. It shows `SSH key`, or an error if the key file is missing.
 - `pfs backup verify` now saves its result in the backup index. Before, a passed check did not change the `?` status in `pfs backup list`, so files added by `pfs backup reindex` kept `?` forever. A failed check now sets `?`.
-- A second copy folder that was the backup folder, inside it, or held it, let the copy's cleanup delete local backups, monthly keepers too. `pfs copy setup` and every copy now refuse such a folder.
-- A failed `pfs copy setup` kept the old target in config.json but stored the new secret, so the next copy failed. Setup now puts the old secrets back when it fails.
+- A second copy folder that was the backup folder, inside it, or held it, let the copy's cleanup delete local backups, monthly keepers too. `pfs copy setup` and every copy now refuse such a folder, also when it is the same folder under another name (a case-insensitive disk, a bind mount).
+- A failed `pfs copy setup` kept the old target in config.json but stored the new secret, so the next copy failed. Setup now puts back the old value of each secret it wrote when it fails.
 - An SFTP server without SFTP for the account (no `Subsystem sftp`) crashed `pfs copy setup` and `pfs copy now` with a traceback. It now gives a clear error.
 - With encryption on, older plain backups made every run send a "second copy failed: turn on encryption" alert. A run now only logs them, with the hint `pfs encryption encrypt-existing`. With encryption off, the alert stays.
 - A failed upload to a folder, SFTP or WebDAV target left a partial temporary file. It is now removed.

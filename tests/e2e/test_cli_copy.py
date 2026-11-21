@@ -381,3 +381,35 @@ def test_disable_turns_the_copy_off_and_keeps_copied_files(
     assert result.exit_code == 0, _out(result)
     assert AppConfig.load().backup_policy.second_copy.enabled is False
     assert len(list(share.rglob("*.enc"))) == 1
+
+
+def test_a_secret_setup_never_wrote_is_never_deleted(encrypted: AppConfig) -> None:
+    """A keyring read that failed at the start reads as 'absent'."""
+    from pfsentinel.cli.commands.copy import _restore_secrets
+
+    creds = CredentialService()
+    kept = secrets.token_urlsafe(12)
+    creds.store_secret("__second_copy_s3_secret__", kept)
+    _restore_secrets(creds, {"__second_copy_s3_secret__": None}, written=set())
+    assert creds.get_secret("__second_copy_s3_secret__") == kept
+
+
+def test_the_same_folder_under_another_name_is_an_overlap(tmp_path: Path) -> None:
+    """For example ~/pfsentinel and ~/pfSentinel on a case-insensitive disk."""
+    import os
+
+    from pfsentinel.services import second_copy
+
+    root = tmp_path / "pfSentinel"
+    other = tmp_path / "pfsentinel-alias"
+    root.mkdir()
+    other.mkdir()
+    real_samefile = os.path.samefile
+
+    def samefile(a, b):
+        names = {Path(a).name, Path(b).name}
+        return names == {"pfSentinel", "pfsentinel-alias"} or real_samefile(a, b)
+
+    with patch.object(second_copy.os.path, "samefile", samefile):
+        assert second_copy.overlaps_backup_root(other, root)
+    assert not second_copy.overlaps_backup_root(tmp_path / "elsewhere", root)

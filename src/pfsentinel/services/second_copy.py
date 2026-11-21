@@ -19,6 +19,7 @@ The target keeps its own retention: run folders whose day is older than
 from __future__ import annotations
 
 import contextlib
+import os
 import posixpath
 import shutil
 import stat
@@ -85,7 +86,8 @@ class FolderTarget:
             tmp.replace(dest)
         except Exception:
             # A failed copy (disk full, share gone) leaves a partial file.
-            tmp.unlink(missing_ok=True)
+            with contextlib.suppress(Exception):
+                tmp.unlink(missing_ok=True)
             raise
 
     def day_folders(self, device_id: str) -> list[str]:
@@ -180,7 +182,8 @@ class SftpTarget:
             self._sftp.put(str(local), tmp, confirm=True)
             self._sftp.posix_rename(tmp, dest)
         except Exception:
-            with contextlib.suppress(OSError):
+            # A dropped link raises SSHException here: keep the upload error.
+            with contextlib.suppress(Exception):
                 self._sftp.remove(tmp)
             raise
 
@@ -229,7 +232,24 @@ def overlaps_backup_root(folder: Path, backup_root: Path) -> bool:
     """
     target = folder.expanduser().resolve()
     root = backup_root.expanduser().resolve()
-    return target == root or target.is_relative_to(root) or root.is_relative_to(target)
+    if target == root or target.is_relative_to(root) or root.is_relative_to(target):
+        return True
+    # The same folder under another name: a case-insensitive disk (macOS,
+    # exFAT, SMB), a bind mount or a second share name. Compare identity.
+    return _is_within(target, root) or _is_within(root, target)
+
+
+def _is_within(path: Path, folder: Path) -> bool:
+    """True if ``path`` or one of its parents is the same folder as ``folder``."""
+    if not folder.exists():
+        return False
+    for candidate in (path, *path.parents):
+        try:
+            if candidate.exists() and os.path.samefile(candidate, folder):
+                return True
+        except OSError:
+            continue
+    return False
 
 
 def open_target(

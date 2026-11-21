@@ -183,10 +183,13 @@ def _secret_names() -> tuple[str, ...]:
     return (_KEYPASS_NAME, S3_SECRET_NAME, AZURE_SAS_NAME, AZURE_KEY_NAME, WEBDAV_PASSWORD_NAME)
 
 
-def _restore_secrets(creds: CredentialService, saved: dict[str, str | None]) -> None:
-    for name, value in saved.items():
-        if creds.get_secret(name) == value:
-            continue
+def _restore_secrets(
+    creds: CredentialService, saved: dict[str, str | None], written: set[str]
+) -> None:
+    # Only the secrets this setup wrote: a keyring read that failed at the
+    # start reads as "absent", and must not delete a secret setup never touched.
+    for name in written:
+        value = saved.get(name)
         if value is None:
             creds.delete(name)
         else:
@@ -201,13 +204,22 @@ def copy_setup() -> None:
     # config.json keeps the old target: put its secrets back too, or the
     # next scheduled copy uses the old target with the new secret.
     saved = {name: creds.get_secret(name) for name in _secret_names()}
+    written: set[str] = set()
+    store_secret = creds.store_secret
+
+    def tracked_store(name: str, value: str) -> None:
+        written.add(name)
+        store_secret(name, value)
+
+    setattr(creds, "store_secret", tracked_store)  # noqa: B010 - wrap one instance
     done = False
     try:
         _copy_setup(config, creds)
         done = True
     finally:
+        setattr(creds, "store_secret", store_secret)  # noqa: B010
         if not done:
-            _restore_secrets(creds, saved)
+            _restore_secrets(creds, saved, written)
 
 
 def _copy_setup(config: AppConfig, creds: CredentialService) -> None:
