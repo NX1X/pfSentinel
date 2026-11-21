@@ -224,6 +224,23 @@ def describe_send_error(error: Exception) -> str:
     return redact_secrets(str(error))
 
 
+TELEGRAM_MAX_CHARS = 4096
+_TRUNCATED = "\n... (cut: Telegram allows 4096 characters)"
+
+
+def telegram_text(title: str, message: str) -> str:
+    """Title and message as plain text, at most 4096 characters.
+
+    Sent without a parse mode: with Markdown, an odd number of "_" (a
+    Windows path, a device ID) made Telegram refuse the alert with HTTP
+    400, and escapes inside the bold title showed as backslashes.
+    """
+    text = f"{title}\n{message}"
+    if len(text) <= TELEGRAM_MAX_CHARS:
+        return text
+    return text[: TELEGRAM_MAX_CHARS - len(_TRUNCATED)] + _TRUNCATED
+
+
 class NotificationService:
     """Dispatches notifications to configured channels."""
 
@@ -384,11 +401,11 @@ class NotificationService:
         prev_level = urllib3_logger.level
         urllib3_logger.setLevel(logging.WARNING)
         try:
-            text = f"*{title}*\n{message}"
+            text = telegram_text(title, message)
             url = f"https://api.telegram.org/bot{token}/sendMessage"
             resp = requests.post(
                 url,
-                json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"},
+                json={"chat_id": chat_id, "text": text},
                 timeout=10,
                 allow_redirects=False,
             )

@@ -97,9 +97,13 @@ class BackupRecord(BaseModel):
 
     @property
     def changes_label(self) -> str:
-        """Short label of changes for display."""
+        """Short label of changes for display.
+
+        Only config backups are compared with the previous run, so an extra
+        (rrd, pkg, ...) has no changes to show.
+        """
         if not self.changes:
-            return "unknown"
+            return "unknown" if self.backup_type == BackupType.CONFIG else "-"
         return "+".join(c.value for c in self.changes[:3])
 
     @property
