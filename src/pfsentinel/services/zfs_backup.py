@@ -207,6 +207,12 @@ class ZfsBackupService:
                 raise ZfsError(f"'{cmd}' sent no data")
         return written, final
 
+    def _snapshot_exists(self, connector: SSHConnector, name: str) -> bool:
+        _, _, code = connector.exec_command(
+            f"zfs list -H -t snapshot -o name {shlex.quote(name)}", timeout=30
+        )
+        return code == 0
+
     def cleanup_remote(
         self, connector: SSHConnector, snapshots_to_remove: list[ZfsSnapshot]
     ) -> None:
@@ -280,6 +286,10 @@ class ZfsBackupService:
                 and bool(chain)
                 and chain[-1].zfs_snapshot_name == base.name
                 and len(chain) < max_chain
+                # A changed dataset, or a base destroyed on the device, made
+                # every later incremental fail until a manual --full.
+                and base.dataset == self._policy.dataset
+                and self._snapshot_exists(connector, base.name)
             )
 
             # Transfer. On failure, destroy the new snapshot: it is in no
@@ -298,7 +308,14 @@ class ZfsBackupService:
                         connector, snapshot, device, timestamp, sequence=run.number
                     )
             except Exception:
-                self.cleanup_remote(connector, [snapshot])
+                # A dead session also fails the cleanup: keep the send error.
+                try:
+                    self.cleanup_remote(connector, [snapshot])
+                except Exception as cleanup_error:
+                    logger.warning(
+                        f"Could not destroy snapshot {snapshot.name} on the device: "
+                        f"{cleanup_error}. Remove it there: zfs destroy {snapshot.name}"
+                    )
                 raise
 
             # Update snapshot index

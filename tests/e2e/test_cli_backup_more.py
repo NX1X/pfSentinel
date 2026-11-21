@@ -185,6 +185,37 @@ def test_an_incremental_needs_its_base_in_the_local_index(
     assert "ZFS snapshot (full)" in _out(result)
 
 
+def test_a_base_destroyed_on_the_device_gives_a_full_send(
+    cli_runner: CliRunner, seeded_config: AppConfig, zfs_server: FakeSSHServer
+) -> None:
+    """Before, every later incremental failed until a manual --full."""
+    assert cli_runner.invoke(app, ["backup", "snapshot", "-d", "home-fw"]).exit_code == 0
+    detect = zfs_server.exec_responses.pop("zfs list")
+    zfs_server.set_exec_response(
+        "zfs list -H -t snapshot", stderr="dataset does not exist", exit_code=1
+    )
+    zfs_server.exec_responses["zfs list"] = detect
+    time.sleep(1.1)
+    result = cli_runner.invoke(app, ["backup", "snapshot", "-d", "home-fw"])
+
+    assert result.exit_code == 0, _out(result)
+    assert "ZFS snapshot (full)" in _out(result)
+
+
+def test_a_changed_dataset_gives_a_full_send(
+    cli_runner: CliRunner, seeded_config: AppConfig, zfs_server: FakeSSHServer
+) -> None:
+    assert cli_runner.invoke(app, ["backup", "snapshot", "-d", "home-fw"]).exit_code == 0
+    config = AppConfig.load()
+    config.backup_policy.zfs.dataset = "zroot/ROOT/default"
+    config.save()
+    time.sleep(1.1)
+    result = cli_runner.invoke(app, ["backup", "snapshot", "-d", "home-fw"])
+
+    assert result.exit_code == 0, _out(result)
+    assert "ZFS snapshot (full)" in _out(result)
+
+
 def test_snapshot_list_is_empty_before_any_snapshot(
     cli_runner: CliRunner, seeded_config: AppConfig
 ) -> None:
