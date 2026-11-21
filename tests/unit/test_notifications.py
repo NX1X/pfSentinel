@@ -271,3 +271,34 @@ class TestSecretsNeverReachOutput:
         assert "AAHsecret" not in out
         assert "SECRETpart" not in out
         assert "bot<redacted>" in out
+
+
+class TestTelegramText:
+    """An odd number of '_' made Telegram refuse the alert with HTTP 400 before rc.3."""
+
+    def test_text_is_plain_and_unchanged(self):
+        from pfsentinel.services.notifications import telegram_text
+
+        message = r"File: C:\Users\anna\pfSentinel\fw_1\backup_index.json *x* `y` [z]"
+        assert telegram_text("Index of fw_1", message) == f"Index of fw_1\n{message}"
+
+    def test_a_long_message_is_cut_to_4096_characters(self):
+        from pfsentinel.services.notifications import TELEGRAM_MAX_CHARS, telegram_text
+
+        text = telegram_text("Digest", "line_with_underscore\n" * 400)
+        assert len(text) == TELEGRAM_MAX_CHARS
+        assert text.endswith("Telegram allows 4096 characters)")
+
+    def test_a_very_long_title_is_cut_too(self):
+        from pfsentinel.services.notifications import TELEGRAM_MAX_CHARS, telegram_text
+
+        assert len(telegram_text("t" * 5000, "body")) == TELEGRAM_MAX_CHARS
+
+    @patch("pfsentinel.services.notifications.requests")
+    def test_alerts_are_sent_without_a_parse_mode(self, mock_requests):
+        svc = _make_service(telegram_enabled=True, telegram_chat_id="123")
+        svc._creds.store_telegram_token("tok")
+        svc._send_telegram("Index of fw_1", "odd _ count")
+        payload = mock_requests.post.call_args.kwargs["json"]
+        assert "parse_mode" not in payload
+        assert payload["text"] == "Index of fw_1\nodd _ count"

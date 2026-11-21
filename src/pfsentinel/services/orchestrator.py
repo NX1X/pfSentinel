@@ -68,7 +68,7 @@ class BackupOrchestrator:
                 msg = f"Cannot use the backup folder {root}: {e}"
                 notify(device_id, msg)
                 raise BackupError(msg) from e
-            return self._run_locked(
+            records, failures = self._run_locked(
                 device,
                 include_extras,
                 all_extras,
@@ -79,6 +79,24 @@ class BackupOrchestrator:
                 area,
                 no_packages,
             )
+
+        # After the lock: the second copy only reads the index, and an upload
+        # can take long. Holding the lock made a waiting run time out.
+        # 6. Second copy of the encrypted files (never fails the backup)
+        self._second_copy(device_id)
+
+        # The config is saved, so the run counts as done, but a part that
+        # failed every night went unnoticed: say so once per run.
+        if failures:
+            from pfsentinel.services.notifications import AlertKind
+
+            self._backup_svc.notifications.alert(
+                AlertKind.BACKUP_PARTIAL,
+                f"pfSentinel - Part of the backup failed for {device_id}",
+                f"Device: {device_id}\nThe config was saved. These parts failed:\n"
+                + "\n".join(f"- {f}" for f in failures[:10]),
+            )
+        return records
 
     def _run_locked(
         self,
@@ -91,7 +109,8 @@ class BackupOrchestrator:
         on_warning: WarningCallback | None,
         area: str,
         no_packages: bool,
-    ) -> list[BackupRecord]:
+    ) -> tuple[list[BackupRecord], list[str]]:
+        """The steps that change the index. Returns the records and the failed parts."""
         from pfsentinel.services.backup import BackupError
 
         device_id = device.id
@@ -187,23 +206,7 @@ class BackupOrchestrator:
 
         # 5. Apply retention across all types
         self._retention.apply(device_id)
-
-        # 6. Second copy of the encrypted files (never fails the backup)
-        self._second_copy(device_id)
-
-        # The config is saved, so the run counts as done, but a part that
-        # failed every night went unnoticed: say so once per run.
-        if failures:
-            from pfsentinel.services.notifications import AlertKind
-
-            self._backup_svc.notifications.alert(
-                AlertKind.BACKUP_PARTIAL,
-                f"pfSentinel - Part of the backup failed for {device_id}",
-                f"Device: {device_id}\nThe config was saved. These parts failed:\n"
-                + "\n".join(f"- {f}" for f in failures[:10]),
-            )
-
-        return records
+        return records, failures
 
     def _second_copy(self, device_id: str) -> None:
         if not self._config.backup_policy.second_copy.enabled:

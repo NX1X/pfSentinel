@@ -244,6 +244,44 @@ class TestRunSafety:
         run_backup.assert_not_called()
 
 
+class TestLockScope:
+    def test_the_second_copy_runs_after_the_lock_is_released(self, tmp_path: Path):
+        """An upload can take long: a waiting run must not time out on it."""
+        from pfsentinel.utils import locking
+
+        orch = BackupOrchestrator(_make_config(tmp_path), CredentialService())
+        held_during_copy: list[set] = []
+        with (
+            patch.object(orch._backup_svc, "run_backup", return_value=_make_record()),
+            patch.object(orch, "_resolve_targets", return_value=[]),
+            patch.object(orch._retention, "apply"),
+            patch.object(
+                orch,
+                "_second_copy",
+                side_effect=lambda d: held_during_copy.append(set(locking._held())),
+            ),
+        ):
+            orch.run("fw1")
+        assert held_during_copy == [set()]
+
+    def test_run_backup_alone_takes_the_lock(self, tmp_path: Path):
+        """pfs schedule run-now and backup watch call run_backup directly."""
+        from contextlib import contextmanager
+
+        from pfsentinel.utils.locking import LockTimeoutError
+
+        @contextmanager
+        def held(*args, **kwargs):
+            raise LockTimeoutError("held too long")
+            yield
+
+        orch = BackupOrchestrator(_make_config(tmp_path), CredentialService())
+        svc = orch._backup_svc
+        with patch("pfsentinel.services.retention.RetentionService.device_lock", held):
+            with pytest.raises(BackupError, match="held too long"):
+                svc.run_backup("fw1")
+
+
 class TestRunAll:
     def test_no_enabled_devices_raises(self, tmp_path: Path):
         config = _make_config(tmp_path, devices=[])

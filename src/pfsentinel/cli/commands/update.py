@@ -39,7 +39,7 @@ def update_check(
     console.print(f"  [bold]Install method:[/]   {result['install_method']}")
     console.print(f"  [bold]Release notes:[/]    {result['release_url']}")
     console.print()
-    print_info("Run [bold]pfs update install[/] to update")
+    print_info("Run [bold]pfs update install[/] to update", markup=True)
 
 
 @app.command("install")
@@ -84,7 +84,7 @@ def update_install(
         print_info("Restart pfSentinel to use the new version.")
     except UpdateError as e:
         print_error(str(e))
-        print_info("Run [bold]pfs update revert[/] to roll back.")
+        print_info("Run [bold]pfs update revert[/] to roll back.", markup=True)
         raise typer.Exit(1)
 
 

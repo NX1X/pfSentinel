@@ -23,13 +23,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ZFS: a failed transfer left its new snapshot on the device, where no cleanup removed it. It is now destroyed.
 - ZFS: an incremental send was based on the newest snapshot on the device, even when its local file was gone. It now needs the newest local ZFS backup as its base, or it makes a full send.
 - `pfs backup snapshot` now holds the device lock, like a backup run.
-- Two backup runs of one device at the same time could lose records from the backup index and give two runs the same number. This happens when the PC is off at 02:00 and 03:00: the daily and the weekly task then start together at sign-in. A run, a reindex and a verify now lock the device (`.pfsentinel.lock` in its folder). The second run waits for the first, at most 15 minutes, then fails with an alert.
+- Two backup runs of one device at the same time could lose records from the backup index and give two runs the same number. This happens when the PC is off at 02:00 and 03:00: the daily and the weekly task then start together at sign-in. Every command that changes the index now locks the device (`.pfsentinel.lock` in its folder): a backup run, `pfs schedule run-now`, reindex, verify, delete, `encrypt-existing`, snapshot and archive. The second run waits for the first, at most 40 minutes, then fails with an alert. The second copy runs after the lock is released, so a long upload does not hold it. On a file system without lock support (some NFS and SMB mounts), a run warns and goes on without the lock.
 - A failed extra, ZFS snapshot or filesystem archive was only logged. The run reported success, so a part that failed every night went unnoticed. A run now sends one alert, event ID 1008 "Backup partly failed", that lists the failed parts. The exit code stays 0, because the config was saved.
 - A backup folder that could not be used (for example the F: drive unplugged) failed the run with no alert. It now sends a "backup failed" alert.
 - `pfs backup run -o DIR` printed DIR, but saved the files in the configured backup folder. They now go to DIR.
 - `pfs backup run --non-interactive` asked where to save backups when no backup folder was set. A scheduled run then stopped or waited until Task Scheduler ended it. It now uses the default folder.
 - When retention could not delete a file (on Windows, for example while antivirus scans it), it removed the record anyway. The file stayed on disk, unlisted and never removed. The record now stays, and the next run tries again.
 - On Windows, saving the backup index failed when another process had it open. The save now tries again for up to 2 seconds.
+- Telegram refused an alert with HTTP 400 when its text had an odd number of `_`, `*`, `` ` `` or `[`, for example a Windows path or a device ID with one `_`. The alert was lost, with only a warning in the log. Telegram alerts are now plain text (the title is no longer bold), cut to Telegram's limit of 4096 characters.
+- The daily digest covered 24 hours back from the time it was sent. That time moves (sign-in, 12:00), so an alert between two digests could be in neither, or in both. A digest now covers the time since the last digest, at most 7 days. It lists at most 10 alerts per device, the newest, and says how many earlier ones it left out.
+- `pfs backup diff` crashed with a MarkupError when the config held text like `[/lan]`, and dropped text like `[b]`. Messages, errors and `pfs backup info` had the same problem. They now print square brackets as text.
+- `pfs backup list` showed `unknown` in the Changes column of every extra. Only config backups are compared, so extras now show `-`.
 
 ### Changed
 

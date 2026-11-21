@@ -90,6 +90,22 @@ class TestBackupRecordExtensions:
         record = BackupRecord(device_id="fw1", filename="test.xml", relative_path="test.xml")
         assert record.type_label == "config"
 
+    def test_an_extra_without_changes_shows_a_dash(self):
+        """Seen in the rc.2 field test: every extra row said 'unknown'."""
+        record = BackupRecord(
+            device_id="fw1",
+            filename="t.tar.gz",
+            relative_path="t.tar.gz",
+            backup_type=BackupType.RRD,
+        )
+        assert record.changes_label == "-"
+
+    def test_a_config_without_changes_stays_unknown(self):
+        record = BackupRecord(device_id="fw1", filename="t.xml", relative_path="t.xml")
+        assert record.changes_label == "unknown"
+        record.changes = [ChangeCategory.FIREWALL, ChangeCategory.ROUTES]
+        assert record.changes_label == "firewall+routes"
+
     def test_backward_compatible_serialization(self):
         """Records without new fields should deserialize with defaults."""
         old_data = {
