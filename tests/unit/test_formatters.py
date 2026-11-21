@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import re
 
 from rich.console import Console
 
@@ -15,6 +16,11 @@ def _capture_console():
     """Create a Console that writes to a StringIO buffer."""
     buf = io.StringIO()
     return Console(file=buf, force_terminal=True, width=120), buf
+
+
+def _plain(buf) -> str:
+    """Output without the ANSI color codes a terminal console adds."""
+    return re.sub(r"\x1b\[[0-9;]*m", "", buf.getvalue())
 
 
 def _make_record(**overrides):
@@ -146,3 +152,23 @@ class TestPrintHelpers:
         monkeypatch.setattr(formatters, "console", con)
         formatters.print_info("FYI")
         assert "FYI" in buf.getvalue()
+
+    def test_brackets_in_a_message_are_printed_as_text(self, monkeypatch):
+        """'[/lan]' raised MarkupError and '[b]' vanished before rc.3."""
+        con, buf = _capture_console()
+        monkeypatch.setattr(formatters, "err_console", con)
+        formatters.print_error("Cannot read F:\\backups\\[old]\\x: rule [/lan] [b]")
+        assert "[old]" in _plain(buf)
+        assert "[/lan] [b]" in _plain(buf)
+
+    def test_markup_true_keeps_styles(self, monkeypatch):
+        con, buf = _capture_console()
+        monkeypatch.setattr(formatters, "console", con)
+        formatters.print_info("Run [bold]pfs update[/] now", markup=True)
+        assert "Run pfs update now" in _plain(buf)
+
+    def test_record_detail_shows_a_description_with_brackets(self, monkeypatch):
+        con, buf = _capture_console()
+        monkeypatch.setattr(formatters, "console", con)
+        formatters.print_record_detail(_make_record(description="before [b]upgrade[/b]"))
+        assert "before [b]upgrade[/b]" in _plain(buf)

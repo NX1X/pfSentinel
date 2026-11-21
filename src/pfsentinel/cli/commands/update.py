@@ -39,7 +39,7 @@ def update_check(
     console.print(f"  [bold]Install method:[/]   {result['install_method']}")
     console.print(f"  [bold]Release notes:[/]    {result['release_url']}")
     console.print()
-    print_info("Run [bold]pfs update install[/] to update")
+    print_info("Run [bold]pfs update install[/] to update", markup=True)
 
 
 @app.command("install")
@@ -84,7 +84,13 @@ def update_install(
         print_info("Restart pfSentinel to use the new version.")
     except UpdateError as e:
         print_error(str(e))
-        print_info("Run [bold]pfs update revert[/] to roll back.")
+        if svc.last_method == "binary":
+            # A failed binary update never leaves a new binary in place: it
+            # stops before the swap, or puts the old one back. Revert here
+            # would go back one more version.
+            print_info("The installed version was not changed.")
+        else:
+            print_info("Run [bold]pfs update revert[/] to roll back.", markup=True)
         raise typer.Exit(1)
 
 

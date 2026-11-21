@@ -29,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - On Windows, a user name with letters like `ü` or `É` could crash every command that saves the config, and made `pfs schedule status` say "Not registered". The output of `whoami`, `schtasks` and `icacls` is now read in the console code page.
 - `config.json` saved with a BOM (Windows PowerShell 5 `Set-Content -Encoding UTF8`) was reported as invalid JSON. It now loads.
 - On Linux, `pfs schedule status` showed the backup service's last result for the check timer. It now shows the check service's result.
+- Telegram refused an alert with HTTP 400 when its text had an odd number of `_`, `*`, `` ` `` or `[`, for example a Windows path or a device ID with one `_`. The alert was lost, with only a warning in the log. Telegram alerts are now plain text (the title is no longer bold), cut to Telegram's limit of 4096 characters.
+- The daily digest covered 24 hours back from the time it was sent. That time moves (sign-in, 12:00), so an alert between two digests could be in neither, or in both. A digest now covers the time since the last digest, at most 7 days. It lists at most 10 alerts per device, the newest, and says how many earlier ones it left out.
+- `pfs backup diff` crashed with a MarkupError when the config held text like `[/lan]`, and dropped text like `[b]`. Messages, errors and `pfs backup info` had the same problem. They now print square brackets as text.
+- `pfs backup list` showed `unknown` in the Changes column of every extra. Only config backups are compared, so extras now show `-`.
 
 ### Changed
 

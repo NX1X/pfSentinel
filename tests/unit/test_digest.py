@@ -219,6 +219,68 @@ class TestSending:
         assert digest.last_sent_date() == date(2026, 1, 2)
 
 
+class TestWindow:
+    """Before rc.3 each digest covered 24 hours back from a send time that moves."""
+
+    def test_the_next_digest_starts_at_the_last_send(self) -> None:
+        config = _app_config("fw1", digest_enabled=True, digest_time="08:00")
+        svc = MagicMock(spec=NotificationService)
+        svc.send_digest.return_value = {"Email": None}
+        monday = datetime(2026, 11, 16, 8, 0)
+        digest.send_digest_if_due(config, lambda _: [], svc, monday)
+        alert_history.record_alert(
+            AlertKind.SECOND_COPY_FAILED, "t", "Device: fw1\nx", monday + timedelta(hours=1)
+        )
+        # Tuesday the PC signs in late: a 24-hour window from 10:00 missed the 09:00 alert.
+        result = digest.build_digest(config, lambda _: [], monday + timedelta(days=1, hours=2))
+        assert result.problem_count == 1
+        assert "covering the time since 2026-11-16 08:00" in result.body
+
+    def test_the_window_is_at_most_7_days(self) -> None:
+        now = datetime(2026, 11, 20, 8, 0)
+        assert digest.window_start(now, now - timedelta(days=30)) == now - digest.MAX_WINDOW
+        assert digest.window_start(now, None) == now - digest.WINDOW
+        assert digest.window_start(now, now + timedelta(hours=1)) == now - digest.WINDOW
+
+    def test_a_preview_after_todays_digest_shows_the_same_problems(self) -> None:
+        config = _app_config("fw1", digest_enabled=True, digest_time="08:00")
+        svc = MagicMock(spec=NotificationService)
+        svc.send_digest.return_value = {"Email": None}
+        alert_history.record_alert(AlertKind.BACKUP_FAILED, "t", "Device: fw1\nx", NOW)
+        sent = NOW + timedelta(minutes=1)
+        digest.send_digest_if_due(config, lambda _: [], svc, sent)
+        assert "1 problem(s)" in svc.send_digest.call_args.args[0]
+
+        preview = digest.build_digest(config, lambda _: [], sent + timedelta(hours=2))
+        assert preview.problem_count == 1
+        # Tomorrow's scheduled digest starts at today's send.
+        tomorrow = digest.build_digest(
+            config, lambda _: [], sent + timedelta(days=1), scheduled=True
+        )
+        assert tomorrow.problem_count == 0
+
+    def test_a_manual_send_keeps_the_window(self) -> None:
+        config = _app_config("fw1", digest_enabled=True)
+        svc = MagicMock(spec=NotificationService)
+        svc.send_digest.return_value = {"Email": None}
+        digest.send_digest(config, lambda _: [], svc, NOW, remember=False)
+        assert digest.last_sent_at() is None
+
+
+class TestAlertLineCap:
+    def test_only_the_newest_alerts_are_listed(self) -> None:
+        alerts = [
+            AlertEntry(NOW - timedelta(minutes=i), AlertKind.SECOND_COPY_FAILED, "fw1", f"n{i}")
+            for i in range(30, 0, -1)
+        ]
+        summary = digest.DeviceSummary("fw1", NOW, 1, 1, problems=alerts)
+        body = digest.render_digest([summary], [], NOW).body
+        assert "(20 earlier, not shown)" in body
+        assert body.count("Second copy failed") == digest.MAX_ALERT_LINES
+        assert "n1" in body and "n30" not in body
+        assert "30 problem(s)" in body
+
+
 class TestNotificationServiceWithDigest:
     def _service(self, **config) -> NotificationService:
         cfg = NotificationConfig(windows_toast_enabled=False, linux_desktop_enabled=False, **config)
