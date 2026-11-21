@@ -419,6 +419,28 @@ def test_backup_diff_between_two_records_shows_changes(
     assert "opt1" in result.stdout or "DMZ" in result.stdout
 
 
+def test_backup_diff_prints_brackets_in_the_xml_as_text(
+    cli_runner: CliRunner,
+    seeded_config: AppConfig,
+    ssh_server: FakeSSHServer,
+    sample_xml: str,
+) -> None:
+    """A rule description with '[/lan]' crashed the diff with MarkupError before rc.3."""
+    _seed_one(cli_runner)
+    changed = sample_xml.replace(
+        "</filter>", "<rule><descr>allow [/lan] [b]x</descr></rule></filter>"
+    )
+    assert changed != sample_xml
+    ssh_server.set_file("/cf/conf/config.xml", changed)
+    _seed_one(cli_runner)
+    older, newer = sorted(_load_records(seeded_config), key=lambda r: r.created_at)
+
+    result = cli_runner.invoke(app, ["backup", "diff", older.filename, newer.filename])
+
+    assert result.exit_code == 0, result.stdout
+    assert "allow [/lan] [b]x" in result.stdout
+
+
 def test_backup_diff_missing_file_a_errors(
     cli_runner: CliRunner,
     seeded_backup: BackupRecord,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import typer
+from rich.markup import escape
 from rich.panel import Panel
 
 from pfsentinel.cli.formatters import (
@@ -121,7 +122,10 @@ def _print_backend_notes(backend: str | None) -> None:
         print_info("  Missed runs (machine off) start at next boot. Logs: journalctl --user -u")
         print_info("  pfsentinel-backup.service")
         if unix_schedule.linger_enabled() is False:
-            print_info("  [yellow]Timers only fire while you are logged in.[/] To back up while")
+            print_info(
+                "  [yellow]Timers only fire while you are logged in.[/] To back up while",
+                markup=True,
+            )
             print_info("  logged out, run once:  loginctl enable-linger $USER")
         _warn_if_desktop_keyring()
     elif backend == "cron":
@@ -142,7 +146,10 @@ def _warn_if_desktop_keyring() -> None:
     name = CredentialService().backend_name()
     if "file store" in name or "in-memory" in name:
         return
-    print_info(f"  [yellow]Passwords are in your desktop keyring ({name}).[/] It stays locked")
+    print_info(
+        f"  [yellow]Passwords are in your desktop keyring ({escape(name)}).[/] It stays locked",
+        markup=True,
+    )
     print_info("  until you log in, so a backup that runs before login cannot read them.")
 
 

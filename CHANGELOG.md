@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An SFTP server without SFTP for the account (no `Subsystem sftp`) crashed `pfs copy setup` and `pfs copy now` with a traceback. It now gives a clear error.
 - With encryption on, older plain backups made every run send a "second copy failed: turn on encryption" alert. A run now only logs them, with the hint `pfs encryption encrypt-existing`. With encryption off, the alert stays.
 - A failed upload to a folder, SFTP or WebDAV target left a partial temporary file. It is now removed.
+- Telegram refused an alert with HTTP 400 when its text had an odd number of `_`, `*`, `` ` `` or `[`, for example a Windows path or a device ID with one `_`. The alert was lost, with only a warning in the log. Telegram alerts are now plain text (the title is no longer bold), cut to Telegram's limit of 4096 characters.
+- The daily digest covered 24 hours back from the time it was sent. That time moves (sign-in, 12:00), so an alert between two digests could be in neither, or in both. A digest now covers the time since the last digest, at most 7 days. It lists at most 10 alerts per device, the newest, and says how many earlier ones it left out.
+- `pfs backup diff` crashed with a MarkupError when the config held text like `[/lan]`, and dropped text like `[b]`. Messages, errors and `pfs backup info` had the same problem. They now print square brackets as text.
+- `pfs backup list` showed `unknown` in the Changes column of every extra. Only config backups are compared, so extras now show `-`.
 
 ### Changed
 
