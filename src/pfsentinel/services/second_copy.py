@@ -18,6 +18,8 @@ The target keeps its own retention: run folders whose day is older than
 
 from __future__ import annotations
 
+import contextlib
+import os
 import posixpath
 import shutil
 import stat
@@ -79,8 +81,14 @@ class FolderTarget:
         dest = self._path(rel)
         dest.parent.mkdir(parents=True, exist_ok=True)
         tmp = dest.with_name(dest.name + ".part")
-        shutil.copyfile(local, tmp)
-        tmp.replace(dest)
+        try:
+            shutil.copyfile(local, tmp)
+            tmp.replace(dest)
+        except Exception:
+            # A failed copy (disk full, share gone) leaves a partial file.
+            with contextlib.suppress(Exception):
+                tmp.unlink(missing_ok=True)
+            raise
 
     def day_folders(self, device_id: str) -> list[str]:
         base = self._path(device_id)
@@ -132,8 +140,15 @@ class SftpTarget:
             ) from e
         except Exception as e:
             raise SecondCopyError(f"Cannot connect to {policy.host}: {e}") from e
+        try:
+            self._sftp = client.open_sftp()
+        except Exception as e:
+            client.close()
+            raise SecondCopyError(
+                f"{policy.host} has no SFTP for this account (check 'Subsystem sftp' "
+                f"in sshd_config): {e}"
+            ) from e
         self._client = client
-        self._sftp = client.open_sftp()
         self._root = policy.path.rstrip("/") or "/"
 
     def _path(self, rel: str) -> str:
@@ -163,8 +178,14 @@ class SftpTarget:
         dest = self._path(rel)
         self._mkdirs(posixpath.dirname(dest))
         tmp = dest + ".part"
-        self._sftp.put(str(local), tmp, confirm=True)
-        self._sftp.posix_rename(tmp, dest)
+        try:
+            self._sftp.put(str(local), tmp, confirm=True)
+            self._sftp.posix_rename(tmp, dest)
+        except Exception:
+            # A dropped link raises SSHException here: keep the upload error.
+            with contextlib.suppress(Exception):
+                self._sftp.remove(tmp)
+            raise
 
     def day_folders(self, device_id: str) -> list[str]:
         out = []
@@ -203,7 +224,37 @@ class SftpTarget:
         self._client.close()
 
 
-def open_target(policy: SecondCopyPolicy, creds: CredentialService) -> CopyTarget:
+def overlaps_backup_root(folder: Path, backup_root: Path) -> bool:
+    """True if a folder target is the backup folder, inside it, or holds it.
+
+    The target's retention removes old day folders, so such a target would
+    delete local backups, the monthly keepers too.
+    """
+    target = folder.expanduser().resolve()
+    root = backup_root.expanduser().resolve()
+    if target == root or target.is_relative_to(root) or root.is_relative_to(target):
+        return True
+    # The same folder under another name: a case-insensitive disk (macOS,
+    # exFAT, SMB), a bind mount or a second share name. Compare identity.
+    return _is_within(target, root) or _is_within(root, target)
+
+
+def _is_within(path: Path, folder: Path) -> bool:
+    """True if ``path`` or one of its parents is the same folder as ``folder``."""
+    if not folder.exists():
+        return False
+    for candidate in (path, *path.parents):
+        try:
+            if candidate.exists() and os.path.samefile(candidate, folder):
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def open_target(
+    policy: SecondCopyPolicy, creds: CredentialService, backup_root: Path | None = None
+) -> CopyTarget:
     if policy.kind == "sftp":
         return SftpTarget(policy, creds)
     if policy.kind in ("s3", "azure", "webdav"):
@@ -212,6 +263,11 @@ def open_target(policy: SecondCopyPolicy, creds: CredentialService) -> CopyTarge
         return open_cloud_target(policy, creds)
     if not policy.path:
         raise SecondCopyError("No second copy folder set. Run: pfs copy setup")
+    if backup_root is not None and overlaps_backup_root(Path(policy.path), backup_root):
+        raise SecondCopyError(
+            f"The second copy folder {policy.path} overlaps the backup folder "
+            f"{backup_root}. Choose another folder: pfs copy setup"
+        )
     return FolderTarget(Path(policy.path))
 
 
@@ -241,9 +297,9 @@ class SecondCopyService:
             r for r in index.records if r.run_number is not None and r.created_at >= cutoff
         ]
         try:
-            target = open_target(self._policy, self._creds)
-        except SecondCopyError as e:
-            result.errors.append(str(e))
+            target = open_target(self._policy, self._creds, self._root)
+        except Exception as e:
+            result.errors.append(redact_secrets(str(e)))
             return result
         try:
             for record in wanted:
