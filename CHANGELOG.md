@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `pfs backup restore` and `pfs backup decrypt` read the whole file into memory. A ZFS stream can be several GB, so both now copy in 1 MiB steps. A file that fails half way (wrong key, cut short) leaves no partial copy.
+- docs/second-copy.md: the provider table was checked against each provider's documentation. The Linode endpoint is an endpoint ID, which is not always the region. DigitalOcean also accepts `us-east-1`. Scaleway has `it-mil`. The Nextcloud app password is under Personal settings, Security.
 - ZFS snapshots used the dataset `zroot/ROOT` by default. On a pfSense 2.8.1 firewall the pool is `pfSense`, so that dataset does not exist. Also, `<pool>/ROOT` is only an empty container for the boot environments. Now an empty `dataset` (the new default) means the dataset mounted at `/`, for example `pfSense/ROOT/default`. A saved `"zroot/ROOT"` is read as empty, so you do not need to change `config.json`.
 
 ## [1.0.0-rc.3] - 2026-11-21

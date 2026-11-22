@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import gzip
 import os
 import shutil
 from collections.abc import Callable
 from pathlib import Path
+from typing import IO, cast
 
 from pfsentinel.models.backup import BackupRecord, BackupRun
 from pfsentinel.models.config import AppConfig
@@ -21,6 +23,9 @@ from pfsentinel.utils import checksum, compression, naming, xml_parser
 from pfsentinel.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+# Restore copies in 1 MiB steps, so a large file never sits in memory.
+_COPY_CHUNK = 1024 * 1024
 
 ProgressCallback = Callable[[str, int], None]
 
@@ -438,10 +443,16 @@ class BackupService:
             target_path = target_path / dest_name
 
         if record.compressed or backup_crypto.is_encrypted(source):
-            data = self._crypto.read_bytes(source)
-            if record.compressed:
-                data = compression.decompress_bytes(data)
-            target_path.write_bytes(data)
+            # Streamed: a ZFS send stream can be several GB. A file that
+            # fails to decrypt or unzip half way leaves no partial copy.
+            with self._crypto.open_read(source) as raw:
+                stream = cast(IO[bytes], gzip.GzipFile(fileobj=raw)) if record.compressed else raw
+                try:
+                    with target_path.open("wb") as out:
+                        shutil.copyfileobj(stream, out, _COPY_CHUNK)
+                except BaseException:
+                    target_path.unlink(missing_ok=True)
+                    raise
         else:
             shutil.copy2(source, target_path)
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import gzip
+import os
 import sys
 import tarfile
 from pathlib import Path
@@ -162,3 +163,32 @@ class TestRestoreBackup:
         result = svc.restore_backup(record, output_dir)
         assert result.exists()
         assert "<pfsense" in result.read_text(encoding="utf-8")
+
+    def test_large_file_is_streamed_not_read_whole(self, tmp_path: Path):
+        """A ZFS stream can be several GB: restore must not read it in one go."""
+        config = _make_config(tmp_path)
+        svc = BackupService(config, CredentialService())
+        payload = os.urandom(3 * 1024 * 1024)
+        dest = tmp_path / "backups" / "fw1" / "2025" / "03" / "05" / "snap.zfs.gz"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(gzip.compress(payload, compresslevel=1))
+        record = _make_record(relative_path="2025/03/05/snap.zfs.gz", compressed=True)
+
+        with patch.object(svc._crypto, "read_bytes", side_effect=AssertionError("read whole")):
+            result = svc.restore_backup(record, tmp_path / "snap.zfs")
+
+        assert result.read_bytes() == payload
+
+    def test_a_broken_file_leaves_no_partial_copy(self, tmp_path: Path):
+        config = _make_config(tmp_path)
+        svc = BackupService(config, CredentialService())
+        dest = tmp_path / "backups" / "fw1" / "2025" / "03" / "05" / "cut.xml.gz"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(gzip.compress(b"<pfsense>" * 50_000)[:-200])  # cut short
+        record = _make_record(relative_path="2025/03/05/cut.xml.gz", compressed=True)
+        target = tmp_path / "cut.xml"
+
+        with pytest.raises(EOFError):
+            svc.restore_backup(record, target)
+
+        assert not target.exists()

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import gzip
 import json
+import shutil
 import sys
 from pathlib import Path
+from typing import IO, cast
 
 import typer
 
@@ -641,7 +644,6 @@ def backup_decrypt(
     """Decrypt one backup file. Works without the backup index, for example on a new PC."""
     from pfsentinel.services import backup_crypto
     from pfsentinel.services.backup_crypto import BackupCrypto, BackupCryptoError
-    from pfsentinel.utils import compression
 
     file = file.expanduser()
     if not file.is_file() or not backup_crypto.is_encrypted(file):
@@ -667,20 +669,32 @@ def backup_decrypt(
             passphrase=phrase,
             identities=identities,
         )
-        data = crypto.read_bytes(file)
     except BackupCryptoError as e:
         print_error(str(e))
         raise typer.Exit(1)
 
     name = backup_crypto.plain_name(file.name)
-    if decompress and name.endswith(".gz"):
-        data = compression.decompress_bytes(data)
+    unzip = decompress and name.endswith(".gz")
+    if unzip:
         name = name.removesuffix(".gz")
     target = output.expanduser() if output else file.with_name(name)
     if target.exists():
         print_error(f"Refusing to overwrite: {target}")
         raise typer.Exit(1)
-    target.write_bytes(data)
+    # Streamed in 1 MiB steps: a ZFS send stream can be several GB. A file
+    # that fails half way (wrong key, cut short) leaves no partial copy.
+    try:
+        with crypto.open_read(file) as raw:
+            stream = cast(IO[bytes], gzip.GzipFile(fileobj=raw)) if unzip else raw
+            try:
+                with target.open("xb") as out:
+                    shutil.copyfileobj(stream, out, 1024 * 1024)
+            except BaseException:
+                target.unlink(missing_ok=True)
+                raise
+    except (BackupCryptoError, OSError, EOFError) as e:
+        print_error(f"Could not decrypt {file.name}: {e}")
+        raise typer.Exit(1)
     print_success(f"Decrypted to: {target}")
     print_warning("This copy is NOT encrypted. Delete it when you are done.")
 
