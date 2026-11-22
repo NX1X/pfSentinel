@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import gzip
 import json
-import shutil
 import sys
 from pathlib import Path
 from typing import IO, cast
@@ -683,15 +682,12 @@ def backup_decrypt(
         raise typer.Exit(1)
     # Streamed in 1 MiB steps: a ZFS send stream can be several GB. A file
     # that fails half way (wrong key, cut short) leaves no partial copy.
+    from pfsentinel.services.backup import write_plain_copy
+
     try:
         with crypto.open_read(file) as raw:
             stream = cast(IO[bytes], gzip.GzipFile(fileobj=raw)) if unzip else raw
-            try:
-                with target.open("xb") as out:
-                    shutil.copyfileobj(stream, out, 1024 * 1024)
-            except BaseException:
-                target.unlink(missing_ok=True)
-                raise
+            write_plain_copy(stream, target)
     except (BackupCryptoError, OSError, EOFError) as e:
         print_error(f"Could not decrypt {file.name}: {e}")
         raise typer.Exit(1)

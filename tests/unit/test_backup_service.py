@@ -188,7 +188,40 @@ class TestRestoreBackup:
         record = _make_record(relative_path="2025/03/05/cut.xml.gz", compressed=True)
         target = tmp_path / "cut.xml"
 
+        target.write_text("keep me")
+
         with pytest.raises(EOFError):
             svc.restore_backup(record, target)
 
-        assert not target.exists()
+        assert target.read_text() == "keep me"  # an existing file stays as it was
+        assert not list(tmp_path.glob(".*.part"))
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX file modes")
+    def test_plain_copy_is_owner_only(self, tmp_path: Path, sample_xml: str):
+        config = _make_config(tmp_path)
+        svc = BackupService(config, CredentialService())
+        dest = tmp_path / "backups" / "fw1" / "2025" / "03" / "05" / "backup.xml.gz"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(gzip.compress(sample_xml.encode("utf-8")))
+        record = _make_record(relative_path="2025/03/05/backup.xml.gz", compressed=True)
+
+        result = svc.restore_backup(record, tmp_path / "plain.xml")
+
+        assert result.stat().st_mode & 0o777 == 0o600
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="symlinks need admin on Windows")
+    def test_a_symlink_target_is_refused(self, tmp_path: Path, sample_xml: str):
+        config = _make_config(tmp_path)
+        svc = BackupService(config, CredentialService())
+        dest = tmp_path / "backups" / "fw1" / "2025" / "03" / "05" / "backup.xml.gz"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(gzip.compress(sample_xml.encode("utf-8")))
+        record = _make_record(relative_path="2025/03/05/backup.xml.gz", compressed=True)
+        elsewhere = tmp_path / "elsewhere.xml"
+        link = tmp_path / "link.xml"
+        link.symlink_to(elsewhere)
+
+        with pytest.raises(BackupError, match="symlink"):
+            svc.restore_backup(record, link)
+
+        assert not elsewhere.exists()
