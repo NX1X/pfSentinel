@@ -457,6 +457,26 @@ Writes every alert to the Application log with source `pfSentinel` (Linux: syslo
 
 Every alert goes to every enabled channel (Slack, Telegram, Windows toast, Event Log). `notify_on_failure` turns all of them on or off; `notify_on_success` controls only the "backup OK" message.
 
+**Backup OK.** With `notify_on_success` on and the daily digest off, each run sends one message for all of its files. For example:
+
+```text
+pfSentinel - 6 Backups Complete
+Device: Home firewall (home-fw)
+Host: pfsense.home.arpa
+pfSense: 2.8.1-RELEASE
+Run: #11 at 2026-11-22 03:00
+Files: 6, 4.3 MB in total, encrypted
+- config: 289.1 KB, changes: minor
+- rrd: 3.0 MB
+- pkg: 10.1 KB
+- dhcp: 0.5 KB
+- aliases: 458.7 KB
+- certs: 519.0 KB
+pfSentinel: 1.0.0
+```
+
+Before 1.0.0 this message named only the config file, even when the run also saved extras. The host name and the pfSense version come from the config backup. A line is left out when its value is unknown.
+
 **Risky change.** After each config backup, pfSentinel compares the config with the previous one and sends one alert per security-relevant change:
 
 - a sharp drop in firewall rules, port forwards, users, certificates, CAs or interfaces: 20% or more and at least two items, or down to zero

@@ -89,6 +89,7 @@ class BackupService:
         area: str = "",
         no_packages: bool = False,
         run: BackupRun | None = None,
+        notify: bool = True,
     ) -> BackupRecord:
         """Run a full (or selective) backup for one device, holding its lock.
 
@@ -104,7 +105,9 @@ class BackupService:
             raise BackupError(f"Cannot use the backup folder {self._backup_root}: {e}") from e
         try:
             with lock:
-                return self._run_backup(device_id, description, progress, area, no_packages, run)
+                return self._run_backup(
+                    device_id, description, progress, area, no_packages, run, notify
+                )
         except LockTimeoutError as e:
             raise BackupError(str(e)) from e
 
@@ -116,12 +119,15 @@ class BackupService:
         area: str = "",
         no_packages: bool = False,
         run: BackupRun | None = None,
+        notify: bool = True,
     ) -> BackupRecord:
         """Run a full (or selective) backup for one device.
 
         Args:
             run: The run this backup belongs to (the orchestrator passes it,
                 so config and extras share one folder). None starts a new run.
+            notify: Send the success alert. The orchestrator sends one alert
+                for the whole run instead, with every file in it.
             area: Specific config section (HTTPS only; empty = full backup).
             no_packages: Exclude package config from backup (HTTPS only).
         """
@@ -245,7 +251,8 @@ class BackupService:
 
             # --- Notify ---
             _p("Sending notifications...", 95)
-            self._notifications.notify_success(record)
+            if notify:
+                self._notifications.notify_success(record, label=device.label)
             for change in risky:
                 self._notifications.alert(
                     AlertKind.RISKY_CHANGE,

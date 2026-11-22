@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The "backup OK" alert covers the whole run: one message with every file, its size and, for the config, its changes. It also shows the pfSense host name and version, the run number, the total size, whether the files are encrypted, and the pfSentinel version. Before, it named only the config file. See docs/usage.md (Alerts).
+
 ### Fixed
 
 - ZFS snapshots used the dataset `zroot/ROOT` by default. On a pfSense 2.8.1 firewall the pool is `pfSense`, so that dataset does not exist. Also, `<pool>/ROOT` is only an empty container for the boot environments. Now an empty `dataset` (the new default) means the dataset mounted at `/`, for example `pfSense/ROOT/default`. A saved `"zroot/ROOT"` is read as empty, so you do not need to change `config.json`.
