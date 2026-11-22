@@ -111,7 +111,7 @@ Shows a unified diff of the XML configuration, highlighting changed sections.
 pfs backup restore FILENAME --target ~/Desktop/config-restored.xml
 ```
 
-Extracts the backup to a plain XML file. To restore to pfSense, upload via **Diagnostics > Backup & Restore** in the pfSense web UI.
+Extracts the backup to a plain XML file. To restore to pfSense, upload via **Diagnostics > Backup & Restore** in the pfSense web UI. The [restore guide](restore.md) has every step, also for another PC, extras and ZFS.
 
 ### Search Backups
 
@@ -360,14 +360,15 @@ pfs schedule enable --daily-time 02:00
 
 `pfs schedule enable` hands the schedule to your operating system, so backups keep running after the command exits and after reboots.
 
-**Windows:** registers `pfSentinel\DailyBackup` (and `WeeklyBackup`) in Task Scheduler. Run it from an Administrator PowerShell. Tasks run while you are signed in (a locked screen counts). A run missed while you were signed out or the machine was off starts at your next sign-in.
+**Windows:** registers the daily (and weekly) backup task in Task Scheduler. Run it in a normal PowerShell: it creates `pfSentinel-DailyBackup` and `pfSentinel-WeeklyBackup` in the Task Scheduler root and needs no administrator. In an Administrator PowerShell it creates them in the `pfSentinel` folder (`pfSentinel\DailyBackup`) instead. A normal run removes the `pfSentinel\` folder tasks. A run as administrator does not remove the root tasks; it names them and gives the `schtasks /Delete` command. So pick one kind of shell and keep it. Tasks run while you are signed in (a locked screen counts). A run missed while you were signed out or the machine was off starts at your next sign-in. [Windows and Linux](platforms.md) has a table for a PC that is off, asleep or signed out.
 
-It also registers `pfSentinel\BackupCheck`, which runs `pfs backup check-recent` 5 minutes after each sign-in and daily at 12:00 (see [No recent backup](#no-recent-backup)), and the Windows Event Log source `pfSentinel`.
+It also registers the check task (`pfSentinel-BackupCheck`, or `pfSentinel\BackupCheck` as administrator), which runs `pfs backup check-recent` 5 minutes after each sign-in and daily at 12:00 (see [No recent backup](#no-recent-backup)), and the Windows Event Log source `pfSentinel`.
 
 To check a task, use `schtasks` (on some PCs `Get-ScheduledTask` fails with "The system cannot find the file specified"):
 
 ```powershell
-schtasks /Query /TN "pfSentinel\DailyBackup" /V /FO LIST
+schtasks /Query /TN "pfSentinel-DailyBackup" /V /FO LIST     # normal shell
+schtasks /Query /TN "pfSentinel\DailyBackup" /V /FO LIST     # administrator
 ```
 
 **Linux:** installs systemd user timers (`pfsentinel-daily.timer`, `pfsentinel-weekly.timer`, and `pfsentinel-check.timer` for the no-recent-backup check). A run missed while the machine was off starts at the next boot. By default, user timers only fire while you are logged in. To back up while logged out (servers, headless boxes), enable lingering once:

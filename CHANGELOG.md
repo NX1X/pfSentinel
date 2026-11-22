@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- docs/restore.md: how to open an encrypted backup and put a config back on pfSense, on the same PC or another one, with notes on extras and ZFS streams.
+- docs/platforms.md: what runs when the PC is off, asleep or signed out, and a table of every command group on Windows and Linux. A new test fails when a command group is missing from the table or works on one system only.
+
 ### Changed
 
 - The "backup OK" alert covers the whole run: one message with every file, its size and, for the config, its changes. It also shows the pfSense host name and version, the run number, the total size, whether the files are encrypted, and the pfSentinel version. Before, it named only the config file. See docs/usage.md (Alerts).
