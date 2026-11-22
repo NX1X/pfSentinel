@@ -74,6 +74,6 @@ pfSentinel does not copy extras back to the device. Take the files you need from
 
 A ZFS file is a `zfs send` stream. `pfs backup restore` gives you the plain stream. To restore an incremental stream, you need the full stream of its chain first, then every incremental after it, in order. See [extended backups](extended-backups.md#zfs-snapshot-backups).
 
-`pfs backup restore` reads the whole file into memory. A ZFS stream can be several GB, so the PC needs that much free memory.
+`pfs backup restore` copies the file in 1 MiB steps, so a stream of several GB does not need that much free memory. It does need that much free disk space at the target.
 
 Restoring a ZFS stream on pfSense (`zfs receive`) was not tested with pfSentinel. Try it on a test system first, and receive into a new dataset name, never over the dataset that is running.
