@@ -13,6 +13,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-rc.4] - 2026-11-22
+
+The fourth release candidate. It fixes the ZFS snapshot default for pfSense 2.8.1, makes restore and decrypt work on large files, and adds the lock alert and a richer "backup OK" message. It is a GitHub pre-release. The 14-day stability gate for 1.0.0 keeps its dates (2026-11-20 to 2026-12-04).
+
+**To try it:** `pfs update install --pre`.
+
+**What changes for you:**
+
+- ZFS snapshots now use the dataset mounted at `/` (for example `pfSense/ROOT/default`). A saved `"zroot/ROOT"` is read as empty, so you do not need to change `config.json`.
+- With success messages on, you get one "backup OK" message per run, with every file, its size and the config changes.
+- A new alert, event ID 1009 "Backup folder cannot be locked", for network shares that cannot lock. It goes out at most once in 7 days per device.
+- `pfs backup restore` and `pfs backup decrypt` copy in 1 MiB steps, so a ZFS stream of several GB no longer needs that much memory.
+- New guides: docs/restore.md and docs/platforms.md.
+
 ### Added
 
 - A new alert, event ID 1009 "Backup folder cannot be locked" (Warning). Some network shares (SMB, NFS) cannot lock the `.pfsentinel.lock` file. The run then goes on without the lock, as before, but two runs at once can lose records of the backup index. Before, only the log said so. The alert goes out at most once in 7 days per device, and a manual run also shows it on screen.
