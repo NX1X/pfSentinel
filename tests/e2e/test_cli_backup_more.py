@@ -30,6 +30,15 @@ from .fake_ssh_server import FakeSSHServer
 pytestmark = pytest.mark.e2e
 
 STREAM = gzip.compress(b"stream bytes from the firewall\n" * 64)
+# As on pfSense 2.8: the pool is "pfSense", "/" is ROOT/default, and an
+# inactive boot environment also has the mountpoint "/" but is not mounted.
+ZFS_FILESYSTEMS = (
+    "pfSense\tnone\tno\n"
+    "pfSense/ROOT\tnone\tno\n"
+    "pfSense/ROOT/old-be\t/\tno\n"
+    "pfSense/ROOT/default\t/\tyes\n"
+    "pfSense/ROOT/default/cf\t/cf\tyes\n"
+)
 
 
 def _out(result) -> str:
@@ -52,7 +61,12 @@ def _closed_port() -> int:
 
 @pytest.fixture
 def zfs_server(ssh_server: FakeSSHServer) -> FakeSSHServer:
-    ssh_server.set_exec_response("zfs list", stdout="zroot/ROOT\n")
+    # The more exact prefix first: the fake server takes the first match.
+    ssh_server.set_exec_response(
+        "zfs list -H -t filesystem -o name,mountpoint,mounted",
+        stdout=ZFS_FILESYSTEMS,
+    )
+    ssh_server.set_exec_response("zfs list", stdout="pfSense/ROOT/default\n")
     ssh_server.set_exec_response("zfs snapshot", stdout="")
     ssh_server.set_exec_response("zfs send", stdout=STREAM)
     ssh_server.set_exec_response("zfs destroy", stdout="")
@@ -232,7 +246,7 @@ def test_snapshot_list_shows_transferred_snapshots(
     result = cli_runner.invoke(app, ["backup", "snapshot-list", "-d", "home-fw"])
 
     assert result.exit_code == 0, _out(result)
-    assert "zroot/ROOT@pfsentinel-" in _out(result)
+    assert "pfSense/ROOT/default@pfsentinel-" in _out(result)
     assert "Yes" in _out(result)
 
 

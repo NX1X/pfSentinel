@@ -22,7 +22,7 @@ def _make_config(tmp_path: Path) -> AppConfig:
         devices=[DeviceConfig(id="fw1", label="FW", host="10.0.0.1")],
         backup_policy=BackupPolicy(
             backup_root=tmp_path / "backups",
-            zfs=ZfsPolicy(enabled=True, dataset="zroot/ROOT"),
+            zfs=ZfsPolicy(enabled=True),
         ),
     )
 
@@ -175,3 +175,46 @@ class TestRunSnapshotBackup:
 
         with pytest.raises(ZfsError, match="not available"):
             svc.run_snapshot_backup("fw1")
+
+
+class TestResolveDataset:
+    LISTING = (
+        "pfSense\tnone\tno\n"
+        "pfSense/ROOT\tnone\tno\n"
+        "pfSense/ROOT/old-be\t/\tno\n"
+        "pfSense/ROOT/default\t/\tyes\n"
+        "pfSense/ROOT/default/cf\t/cf\tyes\n"
+    )
+
+    def test_finds_the_mounted_root(self, tmp_path: Path):
+        svc = ZfsBackupService(_make_config(tmp_path), MagicMock())
+        conn = MagicMock()
+        conn.exec_command.return_value = (self.LISTING, "", 0)
+
+        assert svc.resolve_dataset(conn) == "pfSense/ROOT/default"
+        assert "mounted" in conn.exec_command.call_args[0][0]
+
+    def test_configured_dataset_wins(self, tmp_path: Path):
+        config = _make_config(tmp_path)
+        config.backup_policy.zfs.dataset = "tank/data"
+        svc = ZfsBackupService(config, MagicMock())
+        conn = MagicMock()
+
+        assert svc.resolve_dataset(conn) == "tank/data"
+        conn.exec_command.assert_not_called()
+
+    def test_no_mounted_root_raises(self, tmp_path: Path):
+        svc = ZfsBackupService(_make_config(tmp_path), MagicMock())
+        conn = MagicMock()
+        conn.exec_command.return_value = ("pfSense/ROOT/old-be\t/\tno\n", "", 0)
+
+        with pytest.raises(ZfsError, match="No ZFS dataset is mounted at /"):
+            svc.resolve_dataset(conn)
+
+    def test_list_failure_raises(self, tmp_path: Path):
+        svc = ZfsBackupService(_make_config(tmp_path), MagicMock())
+        conn = MagicMock()
+        conn.exec_command.return_value = ("", "permission denied", 1)
+
+        with pytest.raises(ZfsError, match="permission denied"):
+            svc.resolve_dataset(conn)

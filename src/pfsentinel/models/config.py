@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from .device import DeviceConfig
 
@@ -69,10 +69,24 @@ class ZfsPolicy(BaseModel):
     """ZFS snapshot backup settings."""
 
     enabled: bool = False
-    dataset: str = "zroot/ROOT"
+    # Empty: the file system mounted at "/", found on the device at each run
+    # (pfSense/ROOT/default on pfSense 2.8.1). Before 1.0.0 the default
+    # was "zroot/ROOT": pfSense 2.8.1 names its pool "pfSense", and
+    # <pool>/ROOT is only an empty container for the boot environments.
+    dataset: str = ""
     incremental: bool = True
     cleanup_remote: bool = True
     max_snapshots_remote: int = Field(default=3, ge=1, le=50)
+
+    @field_validator("dataset", mode="before")
+    @classmethod
+    def _old_default_means_auto(cls, value: object) -> object:
+        """The old default was saved to config.json: read it as "find it"."""
+        if isinstance(value, str):
+            value = value.strip()
+            if value in ("zroot/ROOT", "auto"):
+                return ""
+        return value
 
 
 class ArchivePolicy(BaseModel):

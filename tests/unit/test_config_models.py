@@ -57,10 +57,16 @@ class TestZfsPolicy:
     def test_defaults(self):
         policy = ZfsPolicy()
         assert policy.enabled is False
-        assert policy.dataset == "zroot/ROOT"
+        assert policy.dataset == ""  # empty: the dataset mounted at "/"
         assert policy.incremental is True
         assert policy.cleanup_remote is True
         assert policy.max_snapshots_remote == 3
+
+    def test_old_default_reads_as_auto(self):
+        # Before 1.0.0 every config.json saved "zroot/ROOT", which pfSense does not have.
+        assert ZfsPolicy(dataset="zroot/ROOT").dataset == ""
+        assert ZfsPolicy(dataset=" auto ").dataset == ""
+        assert ZfsPolicy(dataset=" pfSense/ROOT/default ").dataset == "pfSense/ROOT/default"
 
     def test_custom_values(self):
         policy = ZfsPolicy(

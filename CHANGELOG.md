@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- ZFS snapshots used the dataset `zroot/ROOT` by default. On a pfSense 2.8.1 firewall the pool is `pfSense`, so that dataset does not exist. Also, `<pool>/ROOT` is only an empty container for the boot environments. Now an empty `dataset` (the new default) means the dataset mounted at `/`, for example `pfSense/ROOT/default`. A saved `"zroot/ROOT"` is read as empty, so you do not need to change `config.json`.
+
 ## [1.0.0-rc.3] - 2026-11-21
 
 The third release candidate. It fixes the bugs found in the rc.2 field test and in a code review before 1.0.0: about 30 fixes, most of them in scheduled runs, the second copy, alerts and self-update. It is a GitHub pre-release. The 14-day stability gate for 1.0.0 keeps its dates (2026-11-20 to 2026-12-04).

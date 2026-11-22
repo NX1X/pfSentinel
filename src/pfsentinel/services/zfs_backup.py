@@ -83,6 +83,29 @@ class ZfsBackupService:
         stdout, _, code = connector.exec_command("zfs list -H -o name 2>/dev/null", timeout=10)
         return code == 0 and bool(stdout.strip())
 
+    def resolve_dataset(self, connector: SSHConnector) -> str:
+        """The dataset to snapshot: the configured one, else the one mounted at "/".
+
+        Only a mounted dataset counts: an inactive boot environment also has
+        the mountpoint "/", but it is not mounted.
+        """
+        if self._policy.dataset:
+            return self._policy.dataset
+        stdout, stderr, code = connector.exec_command(
+            "zfs list -H -t filesystem -o name,mountpoint,mounted", timeout=30
+        )
+        if code != 0:
+            raise ZfsError(f"Could not list the ZFS datasets: {stderr.strip()}")
+        for line in stdout.splitlines():
+            parts = line.split("\t")
+            if len(parts) == 3 and parts[1] == "/" and parts[2] == "yes":
+                logger.info(f"ZFS dataset mounted at /: {parts[0]}")
+                return parts[0]
+        raise ZfsError(
+            "No ZFS dataset is mounted at /. Set backup_policy.zfs.dataset in config.json "
+            "(run `zfs list -o name,mountpoint` on the device to see the names)"
+        )
+
     def create_snapshot(self, connector: SSHConnector, dataset: str, tag: str) -> ZfsSnapshot:
         """Create a ZFS snapshot on the remote device."""
         snap_name = f"{dataset}@{tag}"
@@ -265,7 +288,8 @@ class ZfsBackupService:
             # Create snapshot
             if progress:
                 progress("Creating ZFS snapshot...", 15)
-            snapshot = self.create_snapshot(connector, self._policy.dataset, tag)
+            dataset = self.resolve_dataset(connector)
+            snapshot = self.create_snapshot(connector, dataset, tag)
 
             # Full or incremental. An incremental needs the newest local send
             # as its base, and a chain may be at most as long as retention
@@ -286,9 +310,10 @@ class ZfsBackupService:
                 and bool(chain)
                 and chain[-1].zfs_snapshot_name == base.name
                 and len(chain) < max_chain
-                # A changed dataset, or a base destroyed on the device, made
+                # A changed dataset (also a new boot environment after a
+                # pfSense upgrade), or a base destroyed on the device, made
                 # every later incremental fail until a manual --full.
-                and base.dataset == self._policy.dataset
+                and base.dataset == dataset
                 and self._snapshot_exists(connector, base.name)
             )
 
