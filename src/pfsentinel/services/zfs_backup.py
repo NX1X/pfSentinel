@@ -86,25 +86,24 @@ class ZfsBackupService:
     def resolve_dataset(self, connector: SSHConnector) -> str:
         """The dataset to snapshot: the configured one, else the one mounted at "/".
 
-        Only a mounted dataset counts: an inactive boot environment also has
-        the mountpoint "/", but it is not mounted.
+        Given a path, ``zfs list`` names the dataset that is really mounted
+        there (OpenZFS looks it up with statfs). The ``mountpoint`` property
+        is not enough: an inactive boot environment also has the mountpoint
+        "/", and ``bectl mount`` can mount it somewhere else.
         """
         if self._policy.dataset:
             return self._policy.dataset
-        stdout, stderr, code = connector.exec_command(
-            "zfs list -H -t filesystem -o name,mountpoint,mounted", timeout=30
-        )
-        if code != 0:
-            raise ZfsError(f"Could not list the ZFS datasets: {stderr.strip()}")
-        for line in stdout.splitlines():
-            parts = line.split("\t")
-            if len(parts) == 3 and parts[1] == "/" and parts[2] == "yes":
-                logger.info(f"ZFS dataset mounted at /: {parts[0]}")
-                return parts[0]
-        raise ZfsError(
-            "No ZFS dataset is mounted at /. Set backup_policy.zfs.dataset in config.json "
-            "(run `zfs list -o name,mountpoint` on the device to see the names)"
-        )
+        stdout, stderr, code = connector.exec_command("zfs list -H -o name /", timeout=30)
+        names = stdout.split()
+        if code != 0 or len(names) != 1:
+            detail = stderr.strip() or stdout.strip() or f"exit code {code}"
+            raise ZfsError(
+                f"Could not find the ZFS dataset mounted at / ({detail}). Is / on ZFS? "
+                "Set backup_policy.zfs.dataset in config.json "
+                "(run `zfs list -o name,mountpoint` on the device to see the names)"
+            )
+        logger.info(f"ZFS dataset mounted at /: {names[0]}")
+        return names[0]
 
     def create_snapshot(self, connector: SSHConnector, dataset: str, tag: str) -> ZfsSnapshot:
         """Create a ZFS snapshot on the remote device."""

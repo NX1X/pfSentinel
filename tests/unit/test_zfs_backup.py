@@ -178,21 +178,15 @@ class TestRunSnapshotBackup:
 
 
 class TestResolveDataset:
-    LISTING = (
-        "pfSense\tnone\tno\n"
-        "pfSense/ROOT\tnone\tno\n"
-        "pfSense/ROOT/old-be\t/\tno\n"
-        "pfSense/ROOT/default\t/\tyes\n"
-        "pfSense/ROOT/default/cf\t/cf\tyes\n"
-    )
-
-    def test_finds_the_mounted_root(self, tmp_path: Path):
+    def test_asks_zfs_for_the_dataset_mounted_at_root(self, tmp_path: Path):
         svc = ZfsBackupService(_make_config(tmp_path), MagicMock())
         conn = MagicMock()
-        conn.exec_command.return_value = (self.LISTING, "", 0)
+        conn.exec_command.return_value = ("pfSense/ROOT/default\n", "", 0)
 
         assert svc.resolve_dataset(conn) == "pfSense/ROOT/default"
-        assert "mounted" in conn.exec_command.call_args[0][0]
+        # A path, not the mountpoint property: an inactive boot environment
+        # mounted elsewhere also has the property "/".
+        assert conn.exec_command.call_args[0][0] == "zfs list -H -o name /"
 
     def test_configured_dataset_wins(self, tmp_path: Path):
         config = _make_config(tmp_path)
@@ -203,18 +197,18 @@ class TestResolveDataset:
         assert svc.resolve_dataset(conn) == "tank/data"
         conn.exec_command.assert_not_called()
 
-    def test_no_mounted_root_raises(self, tmp_path: Path):
+    def test_root_not_on_zfs_raises(self, tmp_path: Path):
         svc = ZfsBackupService(_make_config(tmp_path), MagicMock())
         conn = MagicMock()
-        conn.exec_command.return_value = ("pfSense/ROOT/old-be\t/\tno\n", "", 0)
+        conn.exec_command.return_value = ("", "cannot open '/': not a ZFS filesystem", 1)
 
-        with pytest.raises(ZfsError, match="No ZFS dataset is mounted at /"):
+        with pytest.raises(ZfsError, match="not a ZFS filesystem"):
             svc.resolve_dataset(conn)
 
-    def test_list_failure_raises(self, tmp_path: Path):
+    def test_unexpected_output_raises(self, tmp_path: Path):
         svc = ZfsBackupService(_make_config(tmp_path), MagicMock())
         conn = MagicMock()
-        conn.exec_command.return_value = ("", "permission denied", 1)
+        conn.exec_command.return_value = ("a/b\nc/d\n", "", 0)
 
-        with pytest.raises(ZfsError, match="permission denied"):
+        with pytest.raises(ZfsError, match="Could not find the ZFS dataset"):
             svc.resolve_dataset(conn)

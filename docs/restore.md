@@ -8,7 +8,7 @@ The commands are for PowerShell on Windows. On Linux, use the same commands with
 
 1. Run `pfs backup list`. Each row shows the run number, the type, the file name and the changes.
 2. Pick the run you want. For a config, the `Changes` column helps: `minor` means only small changes since the previous backup.
-3. Optional: run `pfs backup verify`. It checks every file against its SHA-256 checksum.
+3. Optional: check the file you want, with its name in quotes: `pfs backup verify "<file name>"`. It checks the SHA-256 checksum, then decrypts and reads the file. Without a file name, `pfs backup verify` checks only the backups whose Status is `?`.
 4. Optional: compare two configs before you restore:
 
    ```powershell

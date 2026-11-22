@@ -122,7 +122,7 @@ pfSense 2.5+ (CE) and pfSense Plus use ZFS by default. pfSentinel can create ZFS
 ### How It Works
 
 1. **Detect ZFS**: Runs `zfs list` to verify ZFS is available
-2. **Find the dataset**: With `dataset` empty (the default), uses the dataset mounted at `/`. On pfSense 2.8.1 this is `pfSense/ROOT/default`. An inactive boot environment is not mounted, so it is never picked.
+2. **Find the dataset**: With `dataset` empty (the default), runs `zfs list -H -o name /` and uses the ZFS dataset that is mounted at `/`. On pfSense 2.8.1 this is `pfSense/ROOT/default`. An inactive boot environment is never picked, also when it is mounted somewhere else.
 3. **Create Snapshot**: `zfs snapshot {dataset}@pfsentinel-{timestamp}`
 4. **Stream**: `zfs send [snapshot]` over SSH, gzipped on this computer into the local file. If `zfs send` fails or sends nothing, there is no backup, and the new snapshot is destroyed on the device.
 5. **Incremental**: If the newest local ZFS backup is the previous snapshot, uses `zfs send -i` for delta transfer
