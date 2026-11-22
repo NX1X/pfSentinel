@@ -22,7 +22,7 @@ def _make_config(tmp_path: Path) -> AppConfig:
         devices=[DeviceConfig(id="fw1", label="FW", host="10.0.0.1")],
         backup_policy=BackupPolicy(
             backup_root=tmp_path / "backups",
-            zfs=ZfsPolicy(enabled=True, dataset="zroot/ROOT"),
+            zfs=ZfsPolicy(enabled=True),
         ),
     )
 
@@ -175,3 +175,40 @@ class TestRunSnapshotBackup:
 
         with pytest.raises(ZfsError, match="not available"):
             svc.run_snapshot_backup("fw1")
+
+
+class TestResolveDataset:
+    def test_asks_zfs_for_the_dataset_mounted_at_root(self, tmp_path: Path):
+        svc = ZfsBackupService(_make_config(tmp_path), MagicMock())
+        conn = MagicMock()
+        conn.exec_command.return_value = ("pfSense/ROOT/default\n", "", 0)
+
+        assert svc.resolve_dataset(conn) == "pfSense/ROOT/default"
+        # A path, not the mountpoint property: an inactive boot environment
+        # mounted elsewhere also has the property "/".
+        assert conn.exec_command.call_args[0][0] == "zfs list -H -o name /"
+
+    def test_configured_dataset_wins(self, tmp_path: Path):
+        config = _make_config(tmp_path)
+        config.backup_policy.zfs.dataset = "tank/data"
+        svc = ZfsBackupService(config, MagicMock())
+        conn = MagicMock()
+
+        assert svc.resolve_dataset(conn) == "tank/data"
+        conn.exec_command.assert_not_called()
+
+    def test_root_not_on_zfs_raises(self, tmp_path: Path):
+        svc = ZfsBackupService(_make_config(tmp_path), MagicMock())
+        conn = MagicMock()
+        conn.exec_command.return_value = ("", "cannot open '/': not a ZFS filesystem", 1)
+
+        with pytest.raises(ZfsError, match="not a ZFS filesystem"):
+            svc.resolve_dataset(conn)
+
+    def test_unexpected_output_raises(self, tmp_path: Path):
+        svc = ZfsBackupService(_make_config(tmp_path), MagicMock())
+        conn = MagicMock()
+        conn.exec_command.return_value = ("a/b\nc/d\n", "", 0)
+
+        with pytest.raises(ZfsError, match="Could not find the ZFS dataset"):
+            svc.resolve_dataset(conn)

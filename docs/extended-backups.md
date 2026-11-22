@@ -122,10 +122,15 @@ pfSense 2.5+ (CE) and pfSense Plus use ZFS by default. pfSentinel can create ZFS
 ### How It Works
 
 1. **Detect ZFS**: Runs `zfs list` to verify ZFS is available
-2. **Create Snapshot**: `zfs snapshot {dataset}@pfsentinel-{timestamp}`
-3. **Stream**: `zfs send [snapshot]` over SSH, gzipped on this computer into the local file. If `zfs send` fails or sends nothing, there is no backup, and the new snapshot is destroyed on the device.
-4. **Incremental**: If the newest local ZFS backup is the previous snapshot, uses `zfs send -i` for delta transfer
-5. **Cleanup**: Removes old remote snapshots (configurable retention)
+2. **Find the dataset**: With `dataset` empty (the default), runs `zfs list -H -o name /` and uses the ZFS dataset that is mounted at `/`. On pfSense 2.8.1 this is `pfSense/ROOT/default`. An inactive boot environment is never picked, also when it is mounted somewhere else.
+3. **Create Snapshot**: `zfs snapshot {dataset}@pfsentinel-{timestamp}`
+4. **Stream**: `zfs send [snapshot]` over SSH, gzipped on this computer into the local file. If `zfs send` fails or sends nothing, there is no backup, and the new snapshot is destroyed on the device.
+5. **Incremental**: If the newest local ZFS backup is the previous snapshot, uses `zfs send -i` for delta transfer
+6. **Cleanup**: Removes old remote snapshots (configurable retention)
+
+The snapshot is of one dataset only. Child datasets have their own snapshots, so they are not in the file. On pfSense 2.8.1 these include `/cf` (the config), `/var`, `/tmp` and `/home`. The config backup and the extras still cover the config and the files under `/var`.
+
+After a pfSense upgrade, `/` can be on a new boot environment. The next run then makes a full send of the new dataset.
 
 An incremental backup restores only on top of every send before it, back to a full send. Such a full send and its incrementals form a chain. Retention deletes a chain only as a whole, once none of its files is kept. So a chain is never longer than the ZFS limit (`max_backups_per_type.zfs`, default 5): when it reaches the limit, the next run makes a new full send. With the default, up to 10 ZFS files can be stored while the old chain ages out.
 
@@ -149,7 +154,7 @@ pfs backup snapshot-list -d home-fw
   "backup_policy": {
     "zfs": {
       "enabled": true,
-      "dataset": "zroot/ROOT",
+      "dataset": "",
       "incremental": true,
       "cleanup_remote": true,
       "max_snapshots_remote": 3
@@ -161,7 +166,7 @@ pfs backup snapshot-list -d home-fw
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `enabled` | `false` | Enable ZFS snapshots in orchestrated runs |
-| `dataset` | `"zroot/ROOT"` | ZFS dataset to snapshot |
+| `dataset` | `""` | ZFS dataset to snapshot. Empty: the dataset mounted at `/`. Before 1.0.0 the default was `"zroot/ROOT"`, which pfSense 2.8.1 does not have; pfSentinel now reads that old value as empty. To see the names, run `zfs list -o name,mountpoint` on the device. |
 | `incremental` | `true` | Use incremental send when possible |
 | `cleanup_remote` | `true` | Delete old snapshots on device after transfer |
 | `max_snapshots_remote` | `3` | Max snapshots to keep on the device |

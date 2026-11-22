@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import gzip
 import os
 import shutil
 from collections.abc import Callable
 from pathlib import Path
+from typing import IO, cast
 
 from pfsentinel.models.backup import BackupRecord, BackupRun
 from pfsentinel.models.config import AppConfig
@@ -21,6 +23,31 @@ from pfsentinel.utils import checksum, compression, naming, xml_parser
 from pfsentinel.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+# Restore copies in 1 MiB steps, so a large file never sits in memory.
+_COPY_CHUNK = 1024 * 1024
+
+
+def write_plain_copy(stream: IO[bytes], target: Path) -> None:
+    """Copy a decrypted backup to ``target``, readable by the owner only.
+
+    The bytes go to a temporary file next to ``target`` first. Only a full
+    copy replaces ``target``, so a wrong key or a cut file leaves an
+    existing file as it was. The copy is created 0600 (Linux, macOS); on
+    Windows it gets the access list of its folder, as any new file does.
+    """
+    part = target.with_name(f".{target.name}.part")
+    part.unlink(missing_ok=True)  # left by a crash; O_EXCL below needs it gone
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+    fd = os.open(part, flags, 0o600)
+    try:
+        with os.fdopen(fd, "wb") as out:
+            shutil.copyfileobj(stream, out, _COPY_CHUNK)
+        os.replace(part, target)
+    except BaseException:
+        part.unlink(missing_ok=True)
+        raise
+
 
 ProgressCallback = Callable[[str, int], None]
 
@@ -89,6 +116,7 @@ class BackupService:
         area: str = "",
         no_packages: bool = False,
         run: BackupRun | None = None,
+        notify: bool = True,
     ) -> BackupRecord:
         """Run a full (or selective) backup for one device, holding its lock.
 
@@ -104,7 +132,9 @@ class BackupService:
             raise BackupError(f"Cannot use the backup folder {self._backup_root}: {e}") from e
         try:
             with lock:
-                return self._run_backup(device_id, description, progress, area, no_packages, run)
+                return self._run_backup(
+                    device_id, description, progress, area, no_packages, run, notify
+                )
         except LockTimeoutError as e:
             raise BackupError(str(e)) from e
 
@@ -116,12 +146,15 @@ class BackupService:
         area: str = "",
         no_packages: bool = False,
         run: BackupRun | None = None,
+        notify: bool = True,
     ) -> BackupRecord:
         """Run a full (or selective) backup for one device.
 
         Args:
             run: The run this backup belongs to (the orchestrator passes it,
                 so config and extras share one folder). None starts a new run.
+            notify: Send the success alert. The orchestrator sends one alert
+                for the whole run instead, with every file in it.
             area: Specific config section (HTTPS only; empty = full backup).
             no_packages: Exclude package config from backup (HTTPS only).
         """
@@ -245,7 +278,8 @@ class BackupService:
 
             # --- Notify ---
             _p("Sending notifications...", 95)
-            self._notifications.notify_success(record)
+            if notify:
+                self._notifications.notify_success(record, label=device.label)
             for change in risky:
                 self._notifications.alert(
                     AlertKind.RISKY_CHANGE,
@@ -422,19 +456,22 @@ class BackupService:
         if not source.exists():
             raise BackupError(f"Backup file not found: {source}")
 
-        # Resolve target and guard against path traversal
-        target_path = Path(target_path).expanduser().resolve()
-        if target_path.is_symlink():
-            raise BackupError("Target path is a symlink — refusing to overwrite")
+        # A symlink as the target file would send the plain config elsewhere.
+        # Checked before resolve(), which follows the link. A linked folder
+        # is fine: the file inside it is checked.
+        target_path = Path(target_path).expanduser()
         if target_path.is_dir():
             dest_name = backup_crypto.plain_name(record.filename).removesuffix(".gz")
             target_path = target_path / dest_name
+        if target_path.is_symlink():
+            raise BackupError("Target path is a symlink - refusing to overwrite")
+        target_path = target_path.resolve()
 
         if record.compressed or backup_crypto.is_encrypted(source):
-            data = self._crypto.read_bytes(source)
-            if record.compressed:
-                data = compression.decompress_bytes(data)
-            target_path.write_bytes(data)
+            # Streamed: a ZFS send stream can be several GB.
+            with self._crypto.open_read(source) as raw:
+                stream = cast(IO[bytes], gzip.GzipFile(fileobj=raw)) if record.compressed else raw
+                write_plain_copy(stream, target_path)
         else:
             shutil.copy2(source, target_path)
 

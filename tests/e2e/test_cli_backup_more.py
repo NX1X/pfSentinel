@@ -52,7 +52,9 @@ def _closed_port() -> int:
 
 @pytest.fixture
 def zfs_server(ssh_server: FakeSSHServer) -> FakeSSHServer:
-    ssh_server.set_exec_response("zfs list", stdout="zroot/ROOT\n")
+    # The more exact prefix first: the fake server takes the first match.
+    ssh_server.set_exec_response("zfs list -H -o name /", stdout="pfSense/ROOT/default\n")
+    ssh_server.set_exec_response("zfs list", stdout="pfSense/ROOT/default\n")
     ssh_server.set_exec_response("zfs snapshot", stdout="")
     ssh_server.set_exec_response("zfs send", stdout=STREAM)
     ssh_server.set_exec_response("zfs destroy", stdout="")
@@ -232,7 +234,7 @@ def test_snapshot_list_shows_transferred_snapshots(
     result = cli_runner.invoke(app, ["backup", "snapshot-list", "-d", "home-fw"])
 
     assert result.exit_code == 0, _out(result)
-    assert "zroot/ROOT@pfsentinel-" in _out(result)
+    assert "pfSense/ROOT/default@pfsentinel-" in _out(result)
     assert "Yes" in _out(result)
 
 

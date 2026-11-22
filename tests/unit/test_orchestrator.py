@@ -90,6 +90,23 @@ class TestRun:
         second_copy.assert_called_once_with("fw1")
 
     @patch.object(BackupOrchestrator, "_resolve_targets", return_value=[])
+    def test_one_success_alert_for_the_whole_run(self, mock_resolve, tmp_path: Path):
+        """Before 1.0 the success alert named only the config, not the extras."""
+        config = _make_config(tmp_path)
+        orch = BackupOrchestrator(config, CredentialService())
+        notifications = orch._backup_svc.notifications
+        with (
+            patch.object(orch._backup_svc, "run_backup", return_value=_make_record()) as run,
+            patch.object(orch._retention, "start_run"),
+            patch.object(orch._retention, "apply"),
+            patch.object(orch, "_second_copy"),
+            patch.object(notifications, "notify_success") as notify,
+        ):
+            records = orch.run("fw1", config_only=True)
+        assert run.call_args.kwargs["notify"] is False
+        notify.assert_called_once_with(records, label=config.devices[0].label)
+
+    @patch.object(BackupOrchestrator, "_resolve_targets", return_value=[])
     def test_zfs_snapshot_runs_without_extras(self, mock_resolve, tmp_path: Path):
         config = _make_config(tmp_path)
         config.backup_policy.zfs.enabled = True

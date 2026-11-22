@@ -90,18 +90,18 @@ The key needs these permissions on the bucket: put object, get object (for the s
 
 ### Providers
 
-These values come from each provider's documentation. Check that documentation for the current list of regions.
+These values come from each provider's documentation, checked on 2026-11-22. Check that documentation for the current list of regions.
 
 | Provider | Endpoint | Region | Path-style |
 |----------|----------|--------|------------|
 | AWS S3 | `https://s3.<region>.amazonaws.com` | The bucket region, for example `eu-central-1` | no |
 | Backblaze B2 (S3 API) | `https://s3.<region>.backblazeb2.com` | The region in the endpoint, for example `us-west-004` | yes |
-| Linode / Akamai Object Storage | `https://<region>.linodeobjects.com` | The region in the endpoint, for example `us-east-1` or `nl-ams-1` | yes |
+| Linode / Akamai Object Storage | `https://<endpoint-id>.linodeobjects.com` | The endpoint ID from Cloud Manager, for example `us-east-1`, `nl-ams-1` or `us-sea-9`. It is not always the region name. | yes (not checked: the docs show only virtual-host) |
 | Cloudflare R2 | `https://<account-id>.r2.cloudflarestorage.com` | `auto` | yes |
 | Wasabi | `https://s3.<region>.wasabisys.com` | For example `eu-central-1` | yes |
-| DigitalOcean Spaces | `https://<region>.digitaloceanspaces.com` | The region in the endpoint, for example `fra1` | yes |
-| Hetzner Object Storage | `https://<location>.your-objectstorage.com` | The location, for example `fsn1`, `nbg1` or `hel1` | yes |
-| Scaleway Object Storage | `https://s3.<region>.scw.cloud` | For example `fr-par`, `nl-ams` or `pl-waw` | yes |
+| DigitalOcean Spaces | `https://<region>.digitaloceanspaces.com` | The region in the endpoint, for example `fra1`. DigitalOcean's SDK examples use `us-east-1`, and Spaces then takes the region from the endpoint. | yes |
+| Hetzner Object Storage | `https://<location>.your-objectstorage.com` | The location, for example `fsn1`, `nbg1` or `hel1` | yes (not checked: the docs show only virtual-host) |
+| Scaleway Object Storage | `https://s3.<region>.scw.cloud` | For example `fr-par`, `nl-ams`, `pl-waw` or `it-mil` | yes |
 | MinIO (self-hosted) | Your server, for example `https://minio.lan:9000` | `us-east-1`, unless you set another region in MinIO | yes |
 | Google Cloud Storage (XML API) | `https://storage.googleapis.com` | `auto` | yes |
 
@@ -146,7 +146,7 @@ Setup asks for the folder URL, the user name, the password and, if needed, a CA 
 | Synology (WebDAV Server package) | `https://<nas>:5006/<shared-folder>/<folder>` |
 | Apache `mod_dav` | The URL of the DAV location, for example `https://<host>/dav/<folder>` |
 
-For Nextcloud and ownCloud, use an **app password**, not your login password. In Nextcloud, create it under Settings, Security, Devices and sessions.
+For Nextcloud and ownCloud, use an **app password**, not your login password. In Nextcloud, create it under Personal settings, Security, at the bottom of the page.
 
 Each file is uploaded under a temporary name (`.<file>.uploading`) and then renamed with a WebDAV MOVE. A failed upload removes the temporary file. So a half upload never looks like a complete backup. Missing folders are created with MKCOL. Old day folders are removed with one DELETE each.
 

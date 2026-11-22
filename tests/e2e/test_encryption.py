@@ -139,6 +139,22 @@ def test_decrypt_on_another_pc_with_the_recovery_key(
     assert plain.read_text().lstrip().startswith("<?xml")
 
 
+def test_decrypt_of_a_cut_file_leaves_no_partial_copy(
+    cli_runner: CliRunner, seeded_config: AppConfig, with_leases, encrypted: str, tmp_path: Path
+) -> None:
+    assert cli_runner.invoke(app, RUN).exit_code == 0
+    record = next(r for r in _records(seeded_config) if r.backup_type.value == "config")
+    enc = seeded_config.backup_policy.resolved_root / "home-fw" / record.relative_path
+    cut = tmp_path / enc.name
+    cut.write_bytes(enc.read_bytes()[:-40])
+
+    result = cli_runner.invoke(app, ["backup", "decrypt", str(cut), "--decompress"])
+
+    assert result.exit_code == 1, _output(result)
+    assert "Could not decrypt" in _output(result)
+    assert not cut.with_name(cut.name.removesuffix(".gz.enc")).exists()
+
+
 def test_encrypt_existing_converts_plain_backups(
     cli_runner: CliRunner, seeded_config: AppConfig, with_leases, monkeypatch
 ) -> None:

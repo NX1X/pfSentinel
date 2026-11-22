@@ -85,6 +85,9 @@ class BackupOrchestrator:
         # 6. Second copy of the encrypted files (never fails the backup)
         self._second_copy(device_id)
 
+        # One success alert for the run, with every file, not only the config.
+        self._backup_svc.notifications.notify_success(records, label=device.label)
+
         # The config is saved, so the run counts as done, but a part that
         # failed every night went unnoticed: say so once per run.
         if failures:
@@ -144,6 +147,7 @@ class BackupOrchestrator:
             area=area,
             no_packages=no_packages,
             run=run,
+            notify=False,
         )
         records.append(config_record)
 

@@ -35,6 +35,16 @@ class BackupType(StrEnum):
     FS_ARCHIVE = "archive"
 
 
+def human_size(size_bytes: int) -> str:
+    """A byte count as text: 289.1 KB, 3.0 MB."""
+    size = float(size_bytes)
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024:
+            return f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} TB"
+
+
 class BackupRecord(BaseModel):
     """Persisted metadata for one backup file."""
 
@@ -88,12 +98,7 @@ class BackupRecord(BaseModel):
     @property
     def size_human(self) -> str:
         """Human-readable file size."""
-        size = float(self.size_bytes)
-        for unit in ("B", "KB", "MB", "GB"):
-            if size < 1024:
-                return f"{size:.1f} {unit}"
-            size /= 1024
-        return f"{size:.1f} TB"
+        return human_size(self.size_bytes)
 
     @property
     def changes_label(self) -> str:

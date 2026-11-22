@@ -69,7 +69,61 @@ class TestNotifySuccess:
         svc.notify_success(records)
         mock_send.assert_called_once()
         title_arg = mock_send.call_args[0][0]
-        assert "3 Backup(s)" in title_arg
+        assert "3 Backups Complete" in title_arg
+
+
+class TestSuccessMessage:
+    def _run(self):
+        common = {"run_number": 11, "encrypted": True}
+        return [
+            _make_record(
+                size_bytes=296_038,
+                pfsense_version="2.8.1-RELEASE",
+                device_hostname="pfsense.nx1xlab.arpa",
+                **common,
+            ),
+            _make_record(backup_type=BackupType.RRD, changes=[], size_bytes=3_145_728, **common),
+            _make_record(
+                backup_type=BackupType.CERTIFICATES, changes=[], size_bytes=531_456, **common
+            ),
+        ]
+
+    def test_lists_every_file_and_the_versions(self):
+        from pfsentinel import __version__
+        from pfsentinel.services.notifications import success_message
+
+        title, msg = success_message(self._run(), label="Home firewall")
+
+        assert title == "pfSentinel - 3 Backups Complete"
+        assert "Device: Home firewall (fw1)" in msg
+        assert "Host: pfsense.nx1xlab.arpa" in msg
+        assert "pfSense: 2.8.1-RELEASE" in msg
+        assert "Run: #11 at " in msg
+        assert "Files: 3, 3.8 MB in total, encrypted" in msg
+        assert "- config: 289.1 KB, changes: minor" in msg
+        assert "- rrd: 3.0 MB\n" in msg
+        assert "- certs: 519.0 KB" in msg
+        assert msg.endswith(f"pfSentinel: {__version__}")
+
+    def test_leaves_out_what_is_unknown(self):
+        from pfsentinel.services.notifications import success_message
+
+        title, msg = success_message([_make_record()], label="fw1")
+
+        assert title == "pfSentinel - Backup Complete"
+        assert "Device: fw1\n" in msg
+        assert "Host:" not in msg
+        assert "pfSense:" not in msg
+        assert "encrypted" not in msg
+
+    def test_caps_the_file_lines(self):
+        from pfsentinel.services.notifications import MAX_FILE_LINES, success_message
+
+        records = [_make_record() for _ in range(MAX_FILE_LINES + 3)]
+        _, msg = success_message(records)
+
+        assert msg.count("\n- config:") == MAX_FILE_LINES
+        assert "- and 3 more" in msg
 
 
 class TestNotifyFailure:

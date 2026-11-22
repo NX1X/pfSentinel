@@ -12,7 +12,7 @@ from xml.sax.saxutils import escape as xml_escape
 
 import requests
 
-from pfsentinel.models.backup import BackupRecord
+from pfsentinel.models.backup import BackupRecord, human_size
 from pfsentinel.models.config import NotificationConfig
 from pfsentinel.services import alert_history
 from pfsentinel.services.credentials import CredentialService
@@ -242,6 +242,46 @@ def telegram_text(title: str, message: str) -> str:
     return text[: TELEGRAM_MAX_CHARS - len(_TRUNCATED)] + _TRUNCATED
 
 
+MAX_FILE_LINES = 12
+
+
+def success_message(records: list[BackupRecord], label: str | None = None) -> tuple[str, str]:
+    """Title and text of a success alert for the files of one run.
+
+    One line per file, so a run that skipped an extra is plain to see.
+    The pfSense version and host name come from the config backup.
+    """
+    from pfsentinel import __version__
+
+    first = records[0]
+    device = first.device_id
+    name = f"{label} ({device})" if label and label != device else device
+    title = (
+        "pfSentinel - Backup Complete"
+        if len(records) == 1
+        else f"pfSentinel - {len(records)} Backups Complete"
+    )
+    lines = [f"Device: {name}"]
+    hostname = next((r.device_hostname for r in records if r.device_hostname), None)
+    if hostname:
+        lines.append(f"Host: {hostname}")
+    version = next((r.pfsense_version for r in records if r.pfsense_version), None)
+    if version:
+        lines.append(f"pfSense: {version}")
+    run = first.run_number or first.sequence
+    lines.append(f"Run: #{run} at {first.created_at.strftime('%Y-%m-%d %H:%M')}")
+    total = human_size(sum(r.size_bytes for r in records))
+    encrypted = ", encrypted" if all(r.encrypted for r in records) else ""
+    lines.append(f"Files: {len(records)}, {total} in total{encrypted}")
+    for r in records[:MAX_FILE_LINES]:
+        changes = f", changes: {r.changes_label}" if r.changes else ""
+        lines.append(f"- {r.type_label}: {r.size_human}{changes}")
+    if len(records) > MAX_FILE_LINES:
+        lines.append(f"- and {len(records) - MAX_FILE_LINES} more")
+    lines.append(f"pfSentinel: {__version__}")
+    return title, "\n".join(lines)
+
+
 class NotificationService:
     """Dispatches notifications to configured channels."""
 
@@ -249,34 +289,17 @@ class NotificationService:
         self._config = config
         self._creds = credential_service
 
-    def notify_success(self, record: BackupRecord | list[BackupRecord]) -> None:
+    def notify_success(
+        self, record: BackupRecord | list[BackupRecord], label: str | None = None
+    ) -> None:
         # With the daily digest on, successful backups are only in the digest.
         if not self._config.notify_on_success or self._config.digest_enabled:
             return
 
         records = record if isinstance(record, list) else [record]
-        if len(records) == 1:
-            r = records[0]
-            title = "pfSentinel - Backup Complete"
-            msg = (
-                f"Device: {r.device_id}\n"
-                f"Type: {r.type_label}\n"
-                f"File: {r.filename}\n"
-                f"Size: {r.size_bytes / 1024:.1f} KB\n"
-                f"Changes: {r.changes_label}"
-            )
-        else:
-            title = f"pfSentinel - {len(records)} Backup(s) Complete"
-            device = records[0].device_id
-            total_size = sum(r.size_bytes for r in records)
-            types = ", ".join(r.type_label for r in records)
-            msg = (
-                f"Device: {device}\n"
-                f"Files: {len(records)}\n"
-                f"Types: {types}\n"
-                f"Total size: {total_size / 1024:.1f} KB"
-            )
-
+        if not records:
+            return
+        title, msg = success_message(records, label)
         results = self._dispatch(title, msg, success=True, kind=AlertKind.BACKUP_OK)
         for channel, err in results.items():
             if err:
