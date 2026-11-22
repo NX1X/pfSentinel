@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from contextlib import ExitStack
+from datetime import datetime, timedelta
 
 from pfsentinel.models.backup import BackupIndexError, BackupRecord, BackupRun
 from pfsentinel.models.config import AppConfig
@@ -16,6 +17,10 @@ from pfsentinel.utils.locking import LockTimeoutError
 from pfsentinel.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+# The "backup folder cannot be locked" alert: at most once a week per device.
+LOCK_WARN_EVERY = timedelta(days=7)
+LOCK_WARN_STATE = "lock_warned.json"
 
 ProgressCallback = Callable[[str, int], None]
 WarningCallback = Callable[[str], None]
@@ -85,6 +90,9 @@ class BackupOrchestrator:
         # 6. Second copy of the encrypted files (never fails the backup)
         self._second_copy(device_id)
 
+        if self._retention.lock_unsupported(device_id):
+            self._warn_unlocked(device_id, on_warning)
+
         # One success alert for the run, with every file, not only the config.
         self._backup_svc.notifications.notify_success(records, label=device.label)
 
@@ -100,6 +108,46 @@ class BackupOrchestrator:
                 + "\n".join(f"- {f}" for f in failures[:10]),
             )
         return records
+
+    def _warn_unlocked(self, device_id: str, on_warning: WarningCallback | None) -> None:
+        """The backup folder cannot lock (some SMB and NFS shares): say so.
+
+        Two runs at once can then lose records of the backup index. The run
+        itself went on, as before 1.0.0. The alert goes out at most once in
+        LOCK_WARN_EVERY per device, so a share that never locks is not
+        reported every night.
+        """
+        from pfsentinel.services import alert_history
+        from pfsentinel.services.notifications import AlertKind
+
+        root = self._config.backup_policy.resolved_root
+        msg = (
+            f"Device: {device_id}\nThe backup folder {root} cannot be locked, so two "
+            "pfSentinel runs at once can lose records of the backup index. Keep the "
+            "backup folder on a local disk, or make sure only one run uses it at a time."
+        )
+        if on_warning:
+            on_warning(msg.split("\n", 1)[1])
+        state = alert_history.state_dir() / LOCK_WARN_STATE
+        sent = alert_history.read_json(state)
+        sent = sent if isinstance(sent, dict) else {}
+        now = datetime.now()
+        try:
+            last = datetime.fromisoformat(str(sent.get(device_id, "")))
+        except ValueError:
+            last = None
+        if last is not None and now - last < LOCK_WARN_EVERY:
+            return
+        self._backup_svc.notifications.alert(
+            AlertKind.LOCK_UNSUPPORTED,
+            f"pfSentinel - Backup folder cannot be locked for {device_id}",
+            msg,
+        )
+        sent[device_id] = now.isoformat()
+        try:
+            alert_history.write_private_json(state, sent)
+        except OSError as e:
+            logger.warning(f"Could not save {state.name}: {e}")
 
     def _run_locked(
         self,

@@ -30,6 +30,16 @@ logger = get_logger(__name__)
 _local = threading.local()
 
 
+# Lock files whose file system could not lock in this process: the work ran
+# without the lock. The orchestrator turns this into an alert.
+_unlocked: set[Path] = set()
+
+
+def ran_unlocked(path: Path) -> bool:
+    """True when a lock on ``path`` was skipped because the file system cannot lock."""
+    return path.resolve() in _unlocked
+
+
 def _held() -> set[Path]:
     if not hasattr(_local, "held"):
         _local.held = set()
@@ -106,6 +116,7 @@ def file_lock(path: Path, timeout: float = 900.0, poll: float = 1.0) -> Iterator
                     break
             except LockUnsupportedError as e:
                 logger.warning(f"Cannot lock {path} ({e}); running without the lock")
+                _unlocked.add(key)
                 yield
                 return
             if time.monotonic() >= deadline:

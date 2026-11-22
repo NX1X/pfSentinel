@@ -107,6 +107,47 @@ class TestRun:
         notify.assert_called_once_with(records, label=config.devices[0].label)
 
     @patch.object(BackupOrchestrator, "_resolve_targets", return_value=[])
+    def test_a_folder_that_cannot_lock_alerts_once_a_week(self, mock_resolve, tmp_path: Path):
+        """Before 1.0 a share without locks only logged it; scheduled runs showed nothing."""
+        from pfsentinel.services.notifications import AlertKind
+
+        config = _make_config(tmp_path)
+        orch = BackupOrchestrator(config, CredentialService())
+        notifications = orch._backup_svc.notifications
+        warnings: list[str] = []
+        with (
+            patch.object(orch._backup_svc, "run_backup", return_value=_make_record()),
+            patch.object(orch._retention, "start_run"),
+            patch.object(orch._retention, "apply"),
+            patch.object(orch._retention, "lock_unsupported", return_value=True),
+            patch.object(orch, "_second_copy"),
+            patch.object(notifications, "alert") as alert,
+        ):
+            orch.run("fw1", config_only=True, on_warning=warnings.append)
+            orch.run("fw1", config_only=True, on_warning=warnings.append)
+
+        assert alert.call_count == 1  # the second run is within the week
+        assert alert.call_args.args[0] == AlertKind.LOCK_UNSUPPORTED
+        assert "cannot be locked" in alert.call_args.args[2]
+        assert len(warnings) == 2  # but every manual run says so on screen
+        assert "cannot be locked" in warnings[0]
+
+    @patch.object(BackupOrchestrator, "_resolve_targets", return_value=[])
+    def test_a_folder_that_locks_sends_no_lock_alert(self, mock_resolve, tmp_path: Path):
+        config = _make_config(tmp_path)
+        orch = BackupOrchestrator(config, CredentialService())
+        with (
+            patch.object(orch._backup_svc, "run_backup", return_value=_make_record()),
+            patch.object(orch._retention, "start_run"),
+            patch.object(orch._retention, "apply"),
+            patch.object(orch, "_second_copy"),
+            patch.object(orch._backup_svc.notifications, "alert") as alert,
+        ):
+            orch.run("fw1", config_only=True)
+
+        alert.assert_not_called()
+
+    @patch.object(BackupOrchestrator, "_resolve_targets", return_value=[])
     def test_zfs_snapshot_runs_without_extras(self, mock_resolve, tmp_path: Path):
         config = _make_config(tmp_path)
         config.backup_policy.zfs.enabled = True

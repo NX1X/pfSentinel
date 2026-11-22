@@ -73,12 +73,13 @@ class AlertKind(IntEnum):
     UPDATE_AVAILABLE = 1006
     DAILY_DIGEST = 1007
     BACKUP_PARTIAL = 1008
+    LOCK_UNSUPPORTED = 1009
 
     @property
     def entry_type(self) -> str:
         if self in (AlertKind.BACKUP_OK, AlertKind.UPDATE_AVAILABLE, AlertKind.DAILY_DIGEST):
             return "Information"
-        if self in (AlertKind.RISKY_CHANGE, AlertKind.BACKUP_PARTIAL):
+        if self in (AlertKind.RISKY_CHANGE, AlertKind.BACKUP_PARTIAL, AlertKind.LOCK_UNSUPPORTED):
             return "Warning"
         return "Error"
 

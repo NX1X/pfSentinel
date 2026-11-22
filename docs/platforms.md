@@ -15,7 +15,7 @@ A scheduled backup runs on the PC where pfSentinel is installed, so the state of
 
 More things to know:
 
-- A missed daily run and a missed weekly run can start together. A lock file (`.pfsentinel.lock` in each device folder) makes the second run wait until the first is done. It waits at most 40 minutes.
+- A missed daily run and a missed weekly run can start together. A lock file (`.pfsentinel.lock` in each device folder) makes the second run wait until the first is done. It waits at most 40 minutes. Some network shares (SMB, NFS) cannot lock. The run then goes on without the lock, and pfSentinel sends alert 1009 at most once in 7 days per device. A manual run also shows it on screen.
 - The no-recent-backup check runs daily at 12:00. On Windows it also runs 5 minutes after each sign-in. On Linux, `pfsentinel-check.timer` also runs it 5 minutes after your systemd user session starts (at login, or at boot with lingering on). If no backup succeeded for `notifications.stale_after_days` days (default 3), it sends an alert. This catches a PC that stayed off for days.
 - On Windows, the tasks run as you, with your normal rights. They do not need an administrator. Each task has a time limit of 1 hour.
 - On a Linux desktop, the desktop keyring stays locked until you log in, so a run before login cannot read the passwords. On a headless system pfSentinel uses its encrypted file store, which works without a login.

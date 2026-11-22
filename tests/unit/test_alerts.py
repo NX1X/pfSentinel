@@ -25,7 +25,9 @@ def test_event_ids_are_fixed() -> None:
         "UPDATE_AVAILABLE": 1006,
         "DAILY_DIGEST": 1007,
         "BACKUP_PARTIAL": 1008,
+        "LOCK_UNSUPPORTED": 1009,
     }
+    assert AlertKind.LOCK_UNSUPPORTED.entry_type == "Warning"
     assert AlertKind.BACKUP_OK.entry_type == "Information"
     assert AlertKind.RISKY_CHANGE.entry_type == "Warning"
     assert AlertKind.NO_RECENT_BACKUP.entry_type == "Error"

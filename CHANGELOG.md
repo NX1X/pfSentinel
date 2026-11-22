@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A new alert, event ID 1009 "Backup folder cannot be locked" (Warning). Some network shares (SMB, NFS) cannot lock the `.pfsentinel.lock` file. The run then goes on without the lock, as before, but two runs at once can lose records of the backup index. Before, only the log said so. The alert goes out at most once in 7 days per device, and a manual run also shows it on screen.
 - docs/restore.md: how to open an encrypted backup and put a config back on pfSense, on the same PC or another one, with notes on extras and ZFS streams.
 - docs/platforms.md: what runs when the PC is off, asleep or signed out, and a table of every command group on Windows and Linux. A new test fails when a command group is missing from the table or works on one system only.
 

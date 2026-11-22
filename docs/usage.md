@@ -453,6 +453,7 @@ Writes every alert to the Application log with source `pfSentinel` (Linux: syslo
 | 1005 | Error | Second copy failed |
 | 1006 | Information | A new pfSentinel release is out (once per release; `notifications.update_alerts`) |
 | 1008 | Warning | Backup partly failed: the config was saved, but an extra, the ZFS snapshot or the archive failed |
+| 1009 | Warning | The backup folder cannot be locked (some SMB and NFS shares), so two runs at once can lose index records. At most once in 7 days per device |
 
 ### Alerts
 
