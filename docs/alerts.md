@@ -28,6 +28,7 @@ ID, and each email ends with a line such as `pfSentinel event 1001
 | 1006 | Update available     | At once, once per release                |
 | 1007 | Daily digest         | Once a day, if the digest is on          |
 | 1008 | Backup partly failed | At once: the config was saved, an extra, the ZFS snapshot or the archive failed |
+| 1009 | Backup folder cannot be locked | After a run, at most once in 7 days per device |
 
 The daily check also sends 1003 when the backup index of a device cannot
 be read. The title then says "Backup index of DEVICE cannot be read". See

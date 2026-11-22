@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from pfsentinel.utils.locking import LockTimeoutError, file_lock
+from pfsentinel.utils.locking import LockTimeoutError, file_lock, ran_unlocked
 
 
 def _hold_in_child(path: Path, seconds: float) -> subprocess.Popen[str]:
@@ -100,6 +100,8 @@ class TestLockErrors:
                 ran = True
         assert ran
         assert "running without the lock" in caplog.text
+        assert ran_unlocked(tmp_path / ".lock")
+        assert not ran_unlocked(tmp_path / "other.lock")
 
     def test_another_error_is_raised_at_once(self, tmp_path: Path) -> None:
         import errno

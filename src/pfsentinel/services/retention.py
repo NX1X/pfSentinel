@@ -23,7 +23,7 @@ from pfsentinel.models.backup import (
     BackupType,
 )
 from pfsentinel.models.config import BackupPolicy
-from pfsentinel.utils.locking import file_lock
+from pfsentinel.utils.locking import file_lock, ran_unlocked
 from pfsentinel.utils.logging import get_logger
 from pfsentinel.utils.permissions import restrict_to_owner
 
@@ -121,6 +121,10 @@ class RetentionService:
         folder = self._backup_root / device_id
         folder.mkdir(parents=True, exist_ok=True)
         return file_lock(folder / LOCK_FILE, timeout=timeout)
+
+    def lock_unsupported(self, device_id: str) -> bool:
+        """True when this process ran the device's lock without locking."""
+        return ran_unlocked(self._backup_root / device_id / LOCK_FILE)
 
     def apply(self, device_id: str) -> list[BackupRecord]:
         """Apply retention policy per backup type. Returns list of deleted records."""
