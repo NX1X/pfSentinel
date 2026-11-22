@@ -10,8 +10,8 @@ from pydantic import BaseModel, Field
 class ZfsSnapshot(BaseModel):
     """Represents a ZFS snapshot on a remote pfSense device."""
 
-    name: str  # e.g. "zroot/ROOT@pfsentinel-20250706-143022"
-    dataset: str  # e.g. "zroot/ROOT"
+    name: str  # e.g. "pfSense/ROOT/default@pfsentinel-20250706-143022"
+    dataset: str  # e.g. "pfSense/ROOT/default"
     tag: str  # e.g. "pfsentinel-20250706-143022"
     created_at: datetime = Field(default_factory=datetime.now)
     transferred: bool = False
