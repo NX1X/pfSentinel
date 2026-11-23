@@ -1,4 +1,4 @@
 # Security scanners for .github/workflows/security.yml, installed with
 # --require-hashes from security-tools.lock (regenerate: CONTRIBUTING.md).
 bandit[toml]>=1.9.4,<2
-zizmor>=1.5,<2
+zizmor>=1.32.0,<2
