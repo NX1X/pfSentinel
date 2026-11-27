@@ -540,19 +540,20 @@ class TestInstall:
 
 
 class TestInstallWinget:
-    @responses.activate
     def test_install_never_replaces_a_winget_binary(self, tmp_path):
-        responses.add(responses.GET, GITHUB_API_URL, json=FAKE_RELEASE, status=200)
-
+        """Also with no network: winget is named before GitHub is asked."""
         svc = _make_service(tmp_path)
         with (
             patch.object(svc, "_detect_install_method", return_value="winget"),
+            patch.object(svc, "check") as check,
             patch.object(svc, "_install_binary") as install_binary,
         ):
             with pytest.raises(UpdateError, match="winget upgrade NX1X.pfSentinel"):
                 svc.install()
+        check.assert_not_called()
         install_binary.assert_not_called()
         assert "previous_version" not in svc._state
+        assert svc.last_method == "winget"
 
     def test_the_cli_names_winget_and_changes_nothing(self):
         from typer.testing import CliRunner
@@ -560,17 +561,15 @@ class TestInstallWinget:
         from pfsentinel.cli.app import app
 
         with (
-            patch.object(
-                UpdateService,
-                "check",
-                return_value={"current": "1", "latest": "2", "install_method": "winget"},
-            ),
+            patch.object(UpdateService, "install_method", return_value="winget"),
+            patch.object(UpdateService, "check") as check,
             patch.object(UpdateService, "install") as install,
         ):
             result = CliRunner().invoke(app, ["update", "install", "--yes"])
         out = " ".join((result.stdout + (result.stderr or "")).split())
         assert result.exit_code == 0
         assert "winget upgrade NX1X.pfSentinel" in out
+        check.assert_not_called()  # works with no network, and when already up to date
         install.assert_not_called()
 
     def test_update_check_names_the_winget_command(self):

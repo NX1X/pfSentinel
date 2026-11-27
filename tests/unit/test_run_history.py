@@ -122,6 +122,15 @@ class TestLoad:
             f.write("[1, 2]\n")
         assert len(run_history.load()) == 1
 
+    def test_a_line_cut_inside_a_character_hides_nothing_else(self) -> None:
+        """A short write can end in the middle of a UTF-8 character."""
+        run_history.finish(run_history.begin("fw1", now=T0), files=1, now=T0)
+        with run_history.history_path().open("ab") as f:
+            f.write(b'{"id": "x", "error": "caf' + b"\xc3\n")
+        later = T0 + timedelta(days=1)
+        run_history.finish(run_history.begin("fw1", now=later), files=1, now=later)
+        assert [e.started.day for e in run_history.load()] == [29, 28]
+
 
 class TestFile:
     @pytest.mark.skipif(sys.platform == "win32", reason="POSIX file modes")

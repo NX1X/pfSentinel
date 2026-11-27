@@ -55,6 +55,11 @@ def update_install(
     """
     svc = UpdateService()
 
+    if svc.install_method() == "winget":
+        # Before the GitHub check, and nothing is changed: winget owns this pfs.exe.
+        print_info(WINGET_NOTE)
+        return
+
     print_info("Checking for updates...")
     try:
         result = svc.check(force=True, prerelease=pre)
@@ -72,11 +77,6 @@ def update_install(
     console.print(f"  [bold]Update:[/] v{result['current']} -> [green]v{result['latest']}[/]")
     console.print(f"  [bold]Method:[/] {result['install_method']}")
     console.print()
-
-    if result.get("install_method") == "winget":
-        # Nothing is changed here: winget owns this pfs.exe.
-        print_info(WINGET_NOTE)
-        return
 
     if not yes:
         confirm = typer.confirm("Proceed with update?", default=True)

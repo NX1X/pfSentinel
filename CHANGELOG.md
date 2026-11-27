@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `pfs backup history`: every run of `pfs backup run`, scheduled or by hand, with its result. A run that failed made no file, so `pfs backup list` never showed it, and on Windows only the last task result remained. The results are `OK`, `Partial` (the config was saved, a part failed), `Failed` and `No end` (the run was stopped before its end, for example by a shutdown). Options: `-d` for one device, `-n` for the number of runs, `--problems`, `--json`. The history is `run_history.jsonl` next to `config.json`, and it starts with this version. See docs/usage.md (Run History).
+- `pfs backup history`: the runs of `pfs backup run` and `pfs schedule run-now`, scheduled or by hand, with their result. A run that failed made no file, so `pfs backup list` never showed it, and on Windows only the last task result remained. The results are `OK`, `Partial` (the config was saved, a part failed), `Failed` and `No end` (the run was stopped before its end, for example by a shutdown). Options: `-d` for one device, `-n` for the number of runs, `--problems`, `--json`. The history is `run_history.jsonl` next to `config.json`, and it starts with this version. It is best effort: a history file that cannot be written never stops a backup. See docs/usage.md (Run History).
 - pfSentinel now knows when winget installed it (planned from 1.0.0). `pfs update install` then changes nothing and names `winget upgrade NX1X.pfSentinel`, and so does the update alert. The manifest template is in packaging/winget.
 
 ### Changed
@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `pfs schedule run-now` saved only the config: no extras, no second copy, no ZFS snapshot or archive. It also ended with exit code 0 when a backup failed. Its help said "same as backup run". Now it runs a full backup like `pfs backup run --non-interactive`, and a failed device gives exit code 1.
 - docs/usage.md named a log file (`~/.pfsentinel/logs/pfsentinel.log`) that pfSentinel never wrote, and a `pfs --debug` option that does not exist. The log goes to the console, and the level is `log_level` in `config.json`. The Self-Update section named `pfs update` as the command; the commands are `pfs update check`, `install` and `revert`.
 
 ## [1.0.0-rc.4] - 2026-11-22

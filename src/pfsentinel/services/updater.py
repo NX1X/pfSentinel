@@ -190,6 +190,10 @@ class UpdateService:
 
     # ── Detection ──────────────────────────────────────────────────────
 
+    def install_method(self) -> str:
+        """How pfSentinel was installed: winget, binary, pipx or pip."""
+        return self._detect_install_method()
+
     def _detect_install_method(self) -> str:
         """Detect how pfSentinel was installed: winget, binary, pipx, or pip."""
         if getattr(sys, "frozen", False):
@@ -348,6 +352,12 @@ class UpdateService:
 
         Raises UpdateError on failure.
         """
+        if self._detect_install_method() == "winget":
+            # Before the GitHub check: winget is the answer also when GitHub
+            # cannot be reached. winget records the version it installed, so
+            # a swap here would leave that record wrong.
+            self.last_method = "winget"
+            raise UpdateError(WINGET_NOTE)
         try:
             result = self.check(force=True, prerelease=prerelease)
         except requests.RequestException as e:
@@ -357,10 +367,6 @@ class UpdateService:
 
         method = self._detect_install_method()
         self.last_method = method
-        if method == "winget":
-            # winget records the version it installed: a swap here would
-            # leave that record wrong, and "winget upgrade" would undo it.
-            raise UpdateError(WINGET_NOTE)
         if method != "binary":
             # A binary install saves these only once it has backed up the
             # current binary: a download that fails must not point revert

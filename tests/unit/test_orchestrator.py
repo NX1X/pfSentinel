@@ -420,7 +420,7 @@ class TestLockScope:
         assert held_during_copy == [set()]
 
     def test_run_backup_alone_takes_the_lock(self, tmp_path: Path):
-        """pfs schedule run-now and backup watch call run_backup directly."""
+        """pfs backup watch calls run_backup directly."""
         from contextlib import contextmanager
 
         from pfsentinel.utils.locking import LockTimeoutError

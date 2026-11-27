@@ -136,15 +136,17 @@ def _from_dict(raw: Any) -> RunEntry | None:
 def _read(path: Path) -> list[RunEntry]:
     """Every run in the file, oldest first. The end line of a run replaces its start line."""
     try:
-        text = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
+        data = path.read_bytes()
+    except OSError:
         return []
     runs: dict[str, RunEntry] = {}
-    for line in text.splitlines():
+    # Line by line, also the decoding: a crash can cut a line short, even
+    # inside a UTF-8 character. That one line is skipped, the rest stays.
+    for raw in data.split(b"\n"):
         try:
-            entry = _from_dict(json.loads(line))
-        except ValueError:
-            continue  # a line cut short by a crash: skip it, keep the rest
+            entry = _from_dict(json.loads(raw.decode("utf-8")))
+        except ValueError:  # UnicodeDecodeError and JSONDecodeError are ValueErrors
+            continue
         if entry is not None:
             runs[entry.id] = entry
     return sorted(runs.values(), key=lambda e: e.started)

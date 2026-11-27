@@ -87,7 +87,7 @@ pfs list -d home-fw
 
 ### Run History
 
-`pfs backup list` shows the files that exist. A run that failed made no file, so it is not in that list. `pfs backup history` shows every run of `pfs backup run`, scheduled or by hand, with its result:
+`pfs backup list` shows the files that exist. A run that failed made no file, so it is not in that list. `pfs backup history` shows the runs of `pfs backup run` and `pfs schedule run-now`, scheduled or by hand, with their result:
 
 ```bash
 pfs backup history                 # the newest 20 runs
@@ -107,8 +107,9 @@ pfs backup history --json          # for scripts
 Things to know:
 
 - The history starts with pfSentinel 1.0.0. Older runs are not in it.
-- A run that never started is not in the history. This is the case when the PC was off at the scheduled time. The no-recent-backup check covers that case (see [Alerts](#alerts)).
-- `pfs backup snapshot`, `pfs backup archive` and `pfs backup watch` are not recorded, only `pfs backup run`.
+- A run that never started is not in the history. When the PC is off at the scheduled time, the missed run starts later (see [Windows and Linux](platforms.md)), and that later run is in the history with its real start time. If the PC stays off, nothing is recorded. The no-recent-backup check covers that case (see [Alerts](#alerts)).
+- `pfs backup snapshot`, `pfs backup archive` and `pfs backup watch` are not recorded.
+- The history is best effort. It never stops a backup: if the history file cannot be written (a full disk, a read-only folder), the backup still runs, and that run is missing from the history.
 - The history is the file `run_history.jsonl` next to `config.json`. It keeps at least the newest 1000 runs. Error texts are cut to 300 characters, and tokens in them are removed.
 
 ### Verify Integrity

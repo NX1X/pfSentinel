@@ -67,7 +67,8 @@ class TestPrintBackupTable:
         out = self._narrow(monkeypatch, [record], width=width)
         assert "\u2026" not in out
         cells = [line.split("\u2502")[3].strip() for line in out.splitlines() if "\u2502" in line]
-        assert "".join(cells) == self.LONG
+        # On Windows the header row uses the same border character as the rows.
+        assert "".join(c for c in cells if c != "Filename") == self.LONG
 
     def test_one_device_has_no_device_column(self, monkeypatch):
         out = self._narrow(monkeypatch, [_make_record(), _make_record()])
@@ -247,6 +248,7 @@ class TestPrintRunHistory:
         assert "1m 05s" in out
         assert "No end" in out
         assert "Device" not in out
+        assert "Backup runs for fw1" in out
 
     def test_two_devices_have_a_device_column(self, monkeypatch):
         con, buf = _capture_console()

@@ -92,7 +92,12 @@ def _took(seconds: float | None) -> str:
 
 def print_run_history(entries: list[RunEntry], title: str = "Backup runs") -> None:
     """One row per backup run, newest first, failed runs included."""
-    show_device = len({e.device for e in entries}) > 1
+    devices = {e.device for e in entries}
+    show_device = len(devices) > 1
+    if len(devices) == 1:
+        # No Device column, so the title must say whose runs these are.
+        only = escape(next(iter(devices)))
+        title = title if title.endswith(only) else f"{title} for {only}"
     table = Table(title=title, show_header=True, header_style="bold cyan")
     table.add_column("Started", style="green", no_wrap=True)
     if show_device:

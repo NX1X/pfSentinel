@@ -388,7 +388,7 @@ def backup_history(
             print_info("No runs in the history yet. It starts with the next 'pfs backup run'.")
         return
 
-    print_run_history(entries, title=f"Backup runs{' for ' + device if device else ''}")
+    print_run_history(entries)
     print_info(f"History file: {run_history.history_path()}")
 
 
