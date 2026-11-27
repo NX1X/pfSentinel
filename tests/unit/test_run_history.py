@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import stat
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest
@@ -68,6 +68,25 @@ class TestBeginAndFinish:
         assert lines[0]["id"] == lines[1]["id"]
         assert lines[0]["result"] == "unfinished" and lines[1]["result"] == "ok"
         assert len(run_history.load()) == 1
+
+    def test_times_carry_their_utc_offset(self) -> None:
+        run_history.finish(run_history.begin("fw1", now=T0), files=1, now=T0)
+        (line_start, line_end) = _lines()
+        (run,) = run_history.load()
+        assert run.started.utcoffset() is not None
+        assert run.ended is not None and run.ended.utcoffset() is not None
+        assert datetime.fromisoformat(line_start["started"]).utcoffset() is not None
+        assert datetime.fromisoformat(line_end["ended"]).utcoffset() is not None
+
+    def test_a_run_across_the_autumn_clock_change_has_the_right_length(self) -> None:
+        """01:59:50 summer time to 01:00:10 winter time is 20 seconds, not minus an hour."""
+        summer = timezone(timedelta(hours=3))
+        winter = timezone(timedelta(hours=2))
+        start = datetime(2026, 10, 25, 1, 59, 50, tzinfo=summer)
+        end = datetime(2026, 10, 25, 1, 0, 10, tzinfo=winter)
+        run_history.finish(run_history.begin("fw1", now=start), files=1, now=end)
+        (run,) = run_history.load()
+        assert run.seconds == 20
 
     def test_the_version_is_recorded(self) -> None:
         from pfsentinel import __version__

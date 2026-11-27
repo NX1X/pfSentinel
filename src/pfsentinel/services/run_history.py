@@ -53,6 +53,7 @@ class RunEntry:
 
     id: str
     device: str
+    # Both times carry their UTC offset (see _aware).
     started: datetime
     ended: datetime | None = None
     result: str = UNFINISHED
@@ -97,6 +98,15 @@ class RunEntry:
         }
 
 
+def _aware(when: datetime | None = None) -> datetime:
+    """A time with its UTC offset. A time without one is taken as local time.
+
+    With the offset, the length and the order of runs stay right when the
+    clock goes back an hour in autumn.
+    """
+    return (when or datetime.now()).astimezone()
+
+
 def history_path() -> Path:
     return alert_history.state_dir() / HISTORY_FILE
 
@@ -118,8 +128,8 @@ def _from_dict(raw: Any) -> RunEntry | None:
         return RunEntry(
             id=str(raw["id"]),
             device=str(raw["device"]),
-            started=datetime.fromisoformat(str(raw["started"])),
-            ended=datetime.fromisoformat(str(ended)) if ended else None,
+            started=_aware(datetime.fromisoformat(str(raw["started"]))),
+            ended=_aware(datetime.fromisoformat(str(ended))) if ended else None,
             result=str(raw.get("result") or UNFINISHED),
             run=int(raw["run"]) if raw.get("run") is not None else None,
             files=int(raw.get("files") or 0),
@@ -205,7 +215,7 @@ def begin(device: str, now: datetime | None = None) -> RunEntry:
     entry = RunEntry(
         id=uuid.uuid4().hex[:12],
         device=device,
-        started=now or datetime.now(),
+        started=_aware(now),
         version=__version__,
     )
     _write(entry, trim=False)
@@ -224,7 +234,7 @@ def finish(
     now: datetime | None = None,
 ) -> RunEntry:
     """Record how a run ended: failed with an error, partial with problems, else ok."""
-    entry.ended = now or datetime.now()
+    entry.ended = _aware(now)
     entry.run = run if isinstance(run, int) else None
     entry.files = int(files)
     entry.size_bytes = int(size_bytes)

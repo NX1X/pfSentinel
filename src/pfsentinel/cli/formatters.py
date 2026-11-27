@@ -112,7 +112,7 @@ def print_run_history(entries: list[RunEntry], title: str = "Backup runs") -> No
 
     for e in entries:
         row = [
-            e.started.strftime("%Y-%m-%d %H:%M"),
+            e.started.astimezone().strftime("%Y-%m-%d %H:%M"),
             f"#{e.run}" if e.run is not None else "-",
             _RUN_RESULT_STYLE.get(e.result, escape(e.result)),
             str(e.files) if e.files else "-",
