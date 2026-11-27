@@ -13,6 +13,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-rc.5] - 2026-11-28
+
+The fifth release candidate. It adds a history of backup runs, makes `pfs schedule run-now` a full run, and gets pfSentinel ready for winget. It is a GitHub pre-release. The 14-day stability gate for 1.0.0 keeps its dates (2026-11-20 to 2026-12-04).
+
+**To try it:** `pfs update install --pre`.
+
+**What changes for you:**
+
+- `pfs backup history` shows past runs with their result, failed runs included. The history starts with the first run after this update.
+- `pfs schedule run-now` now saves the extras and makes the second copy too, like a scheduled run. Before, it saved only the config.
+- `pfs backup list` no longer cuts long file names in a narrow window.
+- Nothing changes in the scheduled tasks. You do not need to run `pfs schedule enable` again.
+
 ### Added
 
 - `pfs backup history`: the runs of `pfs backup run` and `pfs schedule run-now`, scheduled or by hand, with their result. A run that failed made no file, so `pfs backup list` never showed it, and on Windows only the last task result remained. The results are `OK`, `Partial` (the config was saved, a part failed), `Failed` and `No end` (the run was stopped before its end, for example by a shutdown). Options: `-d` for one device, `-n` for the number of runs, `--problems`, `--json`. The history is `run_history.jsonl` next to `config.json`, and it starts with this version. It is best effort: a history file that cannot be written never stops a backup. See docs/usage.md (Run History).
