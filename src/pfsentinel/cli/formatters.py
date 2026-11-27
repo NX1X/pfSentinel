@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from rich.console import Console
 from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 
-from pfsentinel.models.backup import BackupRecord
+from pfsentinel.models.backup import BackupRecord, human_size
 from pfsentinel.models.device import DeviceConfig, DeviceStatus
 from pfsentinel.utils.logging import set_before_console_line
+
+if TYPE_CHECKING:
+    from pfsentinel.services.run_history import RunEntry
 
 console = Console()
 err_console = Console(stderr=True)
@@ -32,15 +37,20 @@ set_before_console_line(end_progress_line)
 
 
 def print_backup_table(records: list[BackupRecord], title: str = "Backups") -> None:
+    # One device: its ID is the same in every row and at the start of every
+    # file name, so the column only takes room. In a narrow window the file
+    # name is folded over two lines, never cut: the name is what you copy.
+    show_device = len({r.device_id for r in records}) > 1
     table = Table(title=title, show_header=True, header_style="bold cyan")
-    table.add_column("Run", style="dim", justify="right")
-    table.add_column("Type", style="magenta", width=8)
-    table.add_column("Device", style="cyan")
-    table.add_column("Filename")
-    table.add_column("Size", justify="right")
-    table.add_column("Date", style="green")
-    table.add_column("Changes", style="yellow")
-    table.add_column("Status")
+    table.add_column("Run", style="dim", justify="right", no_wrap=True)
+    table.add_column("Type", style="magenta", no_wrap=True)
+    if show_device:
+        table.add_column("Device", style="cyan", overflow="fold")
+    table.add_column("Filename", overflow="fold")
+    table.add_column("Size", justify="right", no_wrap=True)
+    table.add_column("Date", style="green", no_wrap=True)
+    table.add_column("Changes", style="yellow", overflow="fold")
+    table.add_column("Status", no_wrap=True)
 
     for r in records:
         date_str = r.created_at.strftime("%Y-%m-%d %H:%M")
@@ -49,16 +59,66 @@ def print_backup_table(records: list[BackupRecord], title: str = "Backups") -> N
         else:
             size_str = f"{r.size_bytes / 1048576:.1f} MB"
         status = "[green]OK[/]" if r.verified else "[yellow]?[/]"
-        table.add_row(
+        row = [
             f"#{r.run_number}" if r.run_number is not None else "-",
             r.type_label,
-            r.device_id,
             r.filename,
             size_str,
             date_str,
             r.changes_label,
             status,
-        )
+        ]
+        if show_device:
+            row.insert(2, r.device_id)
+        table.add_row(*row)
+
+    console.print(table)
+
+
+_RUN_RESULT_STYLE = {
+    "ok": "[green]OK[/]",
+    "partial": "[yellow]Partial[/]",
+    "failed": "[red]Failed[/]",
+    "unfinished": "[yellow]No end[/]",
+}
+
+
+def _took(seconds: float | None) -> str:
+    if seconds is None:
+        return "-"
+    minutes, secs = divmod(int(round(seconds)), 60)
+    return f"{minutes}m {secs:02d}s" if minutes else f"{secs}s"
+
+
+def print_run_history(entries: list[RunEntry], title: str = "Backup runs") -> None:
+    """One row per backup run, newest first, failed runs included."""
+    show_device = len({e.device for e in entries}) > 1
+    table = Table(title=title, show_header=True, header_style="bold cyan")
+    table.add_column("Started", style="green", no_wrap=True)
+    if show_device:
+        table.add_column("Device", style="cyan", overflow="fold")
+    table.add_column("Run", style="dim", justify="right", no_wrap=True)
+    table.add_column("Result", no_wrap=True)
+    table.add_column("Files", justify="right", no_wrap=True)
+    table.add_column("Size", justify="right", no_wrap=True)
+    table.add_column("Took", justify="right", no_wrap=True)
+    table.add_column("Changes", style="yellow", overflow="fold")
+    table.add_column("Detail", overflow="fold")
+
+    for e in entries:
+        row = [
+            e.started.strftime("%Y-%m-%d %H:%M"),
+            f"#{e.run}" if e.run is not None else "-",
+            _RUN_RESULT_STYLE.get(e.result, escape(e.result)),
+            str(e.files) if e.files else "-",
+            human_size(e.size_bytes) if e.files else "-",
+            _took(e.seconds),
+            e.changes or "-",
+            escape(e.detail),
+        ]
+        if show_device:
+            row.insert(1, e.device)
+        table.add_row(*row)
 
     console.print(table)
 

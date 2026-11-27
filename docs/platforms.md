@@ -19,6 +19,7 @@ More things to know:
 - The no-recent-backup check runs daily at 12:00. On Windows it also runs 5 minutes after each sign-in. On Linux, `pfsentinel-check.timer` also runs it 5 minutes after your systemd user session starts (at login, or at boot with lingering on). If no backup succeeded for `notifications.stale_after_days` days (default 3), it sends an alert. This catches a PC that stayed off for days.
 - On Windows, the tasks run as you, with your normal rights. They do not need an administrator. Each task has a time limit of 1 hour.
 - On a Linux desktop, the desktop keyring stays locked until you log in, so a run before login cannot read the passwords. On a headless system pfSentinel uses its encrypted file store, which works without a login.
+- `pfs backup history` lists every run with its result. A run that the PC stopped half way (shutdown, the 1 hour task limit) shows as `No end`. A run that never started, because the PC was off, is not in the history.
 - Cron (when systemd is not there, for example in WSL without systemd or in a container) has no catch-up. A run missed while the machine was off does not start later.
 
 ## Features on each system

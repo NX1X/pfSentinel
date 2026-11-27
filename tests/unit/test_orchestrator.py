@@ -302,6 +302,103 @@ class TestRunSafety:
         run_backup.assert_not_called()
 
 
+class TestRunHistory:
+    """Every run adds one entry to the run history, also a run that fails."""
+
+    @patch.object(BackupOrchestrator, "_resolve_targets", return_value=[])
+    def test_a_clean_run_is_recorded_as_ok(self, mock_resolve, tmp_path: Path):
+        from pfsentinel.services import run_history
+
+        orch = BackupOrchestrator(_make_config(tmp_path), CredentialService())
+        record = _make_record()
+        record.size_bytes = 2048
+        with patch.object(orch._backup_svc, "run_backup", return_value=record):
+            orch.run("fw1")
+        (entry,) = run_history.load()
+        assert (entry.device, entry.result, entry.files) == ("fw1", "ok", 1)
+        assert entry.size_bytes == 2048
+        assert entry.changes == "minor"
+        assert entry.run == 1
+        assert entry.ended is not None
+
+    def test_a_failed_config_backup_is_recorded_as_failed(self, tmp_path: Path):
+        from pfsentinel.services import run_history
+
+        orch = BackupOrchestrator(_make_config(tmp_path), CredentialService())
+        with patch.object(
+            orch._backup_svc, "run_backup", side_effect=BackupError("SSH connection refused")
+        ):
+            with pytest.raises(BackupError):
+                orch.run("fw1")
+        (entry,) = run_history.load()
+        assert entry.result == "failed"
+        assert entry.files == 0
+        assert entry.error == "SSH connection refused"
+
+    @patch.object(BackupOrchestrator, "_resolve_targets", return_value=["rrd"])
+    def test_a_failed_extra_is_recorded_as_partial(self, mock_resolve, tmp_path: Path):
+        from pfsentinel.services import run_history
+
+        orch = BackupOrchestrator(_make_config(tmp_path), CredentialService())
+        with (
+            patch.object(orch._backup_svc, "run_backup", return_value=_make_record()),
+            patch.object(orch._extra_svc, "backup_target", side_effect=Exception("RRD fail")),
+        ):
+            orch.run("fw1")
+        (entry,) = run_history.load()
+        assert entry.result == "partial"
+        assert entry.files == 1
+        assert "RRD fail" in entry.detail
+
+    @patch.object(BackupOrchestrator, "_resolve_targets", return_value=[])
+    def test_a_failed_second_copy_is_recorded_as_partial(self, mock_resolve, tmp_path: Path):
+        from pfsentinel.services import run_history
+
+        orch = BackupOrchestrator(_make_config(tmp_path), CredentialService())
+        with (
+            patch.object(orch._backup_svc, "run_backup", return_value=_make_record()),
+            patch.object(orch, "_second_copy", return_value=["bucket not found"]),
+        ):
+            orch.run("fw1")
+        (entry,) = run_history.load()
+        assert entry.result == "partial"
+        assert entry.detail == "Second copy failed: bucket not found"
+
+    def test_an_unknown_device_is_recorded_as_failed(self, tmp_path: Path):
+        from pfsentinel.services import run_history
+
+        orch = BackupOrchestrator(_make_config(tmp_path), CredentialService())
+        with pytest.raises(BackupError):
+            orch.run("nonexistent")
+        (entry,) = run_history.load()
+        assert (entry.device, entry.result) == ("nonexistent", "failed")
+
+    def test_a_run_stopped_with_ctrl_c_has_an_end(self, tmp_path: Path):
+        from pfsentinel.services import run_history
+
+        orch = BackupOrchestrator(_make_config(tmp_path), CredentialService())
+        with patch.object(orch._backup_svc, "run_backup", side_effect=KeyboardInterrupt):
+            with pytest.raises(KeyboardInterrupt):
+                orch.run("fw1")
+        (entry,) = run_history.load()
+        assert entry.result == "failed"
+        assert entry.error == "KeyboardInterrupt"
+
+    @patch.object(BackupOrchestrator, "_resolve_targets", return_value=[])
+    def test_a_history_that_cannot_be_written_never_fails_the_backup(
+        self, mock_resolve, tmp_path: Path
+    ):
+        from pfsentinel.services import run_history
+
+        orch = BackupOrchestrator(_make_config(tmp_path), CredentialService())
+        with (
+            patch.object(orch._backup_svc, "run_backup", return_value=_make_record()),
+            patch.object(run_history, "_append", side_effect=OSError("read-only")),
+        ):
+            records = orch.run("fw1")
+        assert len(records) == 1
+
+
 class TestLockScope:
     def test_the_second_copy_runs_after_the_lock_is_released(self, tmp_path: Path):
         """An upload can take long: a waiting run must not time out on it."""
@@ -316,7 +413,7 @@ class TestLockScope:
             patch.object(
                 orch,
                 "_second_copy",
-                side_effect=lambda d: held_during_copy.append(set(locking._held())),
+                side_effect=lambda d: held_during_copy.append(set(locking._held())) or [],
             ),
         ):
             orch.run("fw1")

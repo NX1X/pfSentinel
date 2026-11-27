@@ -24,6 +24,39 @@ from pfsentinel.utils.platform import app_config_dir, is_windows
 
 logger = get_logger(__name__)
 
+# The package name on winget (Windows Package Manager), from 1.0.0 on.
+WINGET_ID = "NX1X.pfSentinel"
+_WINGET_DIR = "\\microsoft\\winget\\"
+
+
+def installed_by_winget(executable: str | None = None) -> bool:
+    """True when this pfs.exe sits in winget's own folders.
+
+    winget keeps a portable program in
+    %LOCALAPPDATA%\\Microsoft\\WinGet\\Packages\\<id>... and starts it
+    through a link in ...\\WinGet\\Links. winget records the version it
+    installed, so pfSentinel must not replace that file itself.
+    """
+    if not is_windows() and executable is None:
+        return False
+    exe = str(executable or sys.executable)
+    paths = [exe]
+    with contextlib.suppress(OSError):
+        paths.append(str(Path(exe).resolve()))
+    return any(_WINGET_DIR in p.replace("/", "\\").lower() for p in paths)
+
+
+def update_command(method: str) -> str:
+    """The command that updates an install of this kind."""
+    return f"winget upgrade {WINGET_ID}" if method == "winget" else "pfs update install"
+
+
+WINGET_NOTE = (
+    "pfSentinel was installed with winget, so winget updates it. "
+    f"Run: winget upgrade {WINGET_ID}. "
+    "A new release can take a few days to reach winget, and winget has no release candidates."
+)
+
 
 # Library search variables a PyInstaller build rewrites to point at its bundle.
 _LOADER_VARS = (
@@ -118,7 +151,7 @@ class UpdateService:
         self._state_path = self._config_dir / "update_check.json"
         self._backup_dir = self._config_dir / "update_backup"
         self._state: dict = self._load_state()
-        # The method of the last install() call: "binary", "pipx" or "pip".
+        # The method of the last install() call: "winget", "binary", "pipx" or "pip".
         self.last_method: str | None = None
         # True when a failed update could not put the old binary back.
         self.restore_failed = False
@@ -158,9 +191,9 @@ class UpdateService:
     # ── Detection ──────────────────────────────────────────────────────
 
     def _detect_install_method(self) -> str:
-        """Detect how pfSentinel was installed: binary, pipx, or pip."""
+        """Detect how pfSentinel was installed: winget, binary, pipx, or pip."""
         if getattr(sys, "frozen", False):
-            return "binary"
+            return "winget" if installed_by_winget() else "binary"
 
         prefix = str(Path(sys.prefix).resolve()).lower()
         if "pipx" in prefix:
@@ -292,7 +325,7 @@ class UpdateService:
                     return (
                         f"Update available: v{cached['latest']} "
                         f"(current: v{cached['current']}). "
-                        f"Run: pfs update install"
+                        f"Run: {update_command(cached.get('install_method', ''))}"
                     )
                 return None
 
@@ -301,7 +334,7 @@ class UpdateService:
                 return (
                     f"Update available: v{result['latest']} "
                     f"(current: v{result['current']}). "
-                    f"Run: pfs update install"
+                    f"Run: {update_command(result.get('install_method', ''))}"
                 )
             return None
         except Exception:
@@ -324,6 +357,10 @@ class UpdateService:
 
         method = self._detect_install_method()
         self.last_method = method
+        if method == "winget":
+            # winget records the version it installed: a swap here would
+            # leave that record wrong, and "winget upgrade" would undo it.
+            raise UpdateError(WINGET_NOTE)
         if method != "binary":
             # A binary install saves these only once it has backed up the
             # current binary: a download that fails must not point revert

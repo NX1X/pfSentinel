@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.10.0.schema.json
+PackageIdentifier: NX1X.pfSentinel
+PackageVersion: {{VERSION}}
+InstallerType: portable
+Commands:
+- pfs
+ReleaseDate: {{RELEASE_DATE}}
+Installers:
+- Architecture: x64
+  InstallerUrl: https://github.com/NX1X/pfSentinel/releases/download/v{{VERSION}}/pfs.exe
+  InstallerSha256: {{SHA256}}
+ManifestType: installer
+ManifestVersion: 1.10.0

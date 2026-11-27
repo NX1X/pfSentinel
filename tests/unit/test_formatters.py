@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import re
 
+import pytest
 from rich.console import Console
 
 from pfsentinel.cli import formatters
@@ -46,6 +47,37 @@ def _make_device(**overrides):
 
 
 class TestPrintBackupTable:
+    LONG = "firewall-homelab-local_2026-11-27_180731_#015_minor.xml.gz.enc"
+
+    def _narrow(self, monkeypatch, records, width=118) -> str:
+        buf = io.StringIO()
+        monkeypatch.setattr(
+            formatters, "console", Console(file=buf, force_terminal=True, width=width)
+        )
+        formatters.print_backup_table(records)
+        return _plain(buf)
+
+    @pytest.mark.parametrize("width", [118, 80])
+    def test_a_narrow_window_never_cuts_the_file_name(self, monkeypatch, width):
+        """At 118 columns the name was cut to "firewall-homelab-l...": nothing to read.
+
+        Now the name is folded over more lines, and every character is there.
+        """
+        record = _make_record(device_id="firewall-homelab-local", filename=self.LONG)
+        out = self._narrow(monkeypatch, [record], width=width)
+        assert "\u2026" not in out
+        cells = [line.split("\u2502")[3].strip() for line in out.splitlines() if "\u2502" in line]
+        assert "".join(cells) == self.LONG
+
+    def test_one_device_has_no_device_column(self, monkeypatch):
+        out = self._narrow(monkeypatch, [_make_record(), _make_record()])
+        assert "Device" not in out
+
+    def test_two_devices_have_a_device_column(self, monkeypatch):
+        out = self._narrow(monkeypatch, [_make_record(), _make_record(device_id="fw2")])
+        assert "Device" in out
+        assert "fw2" in out
+
     def test_empty_list_no_error(self, monkeypatch):
         con, buf = _capture_console()
         monkeypatch.setattr(formatters, "console", con)
@@ -172,3 +204,54 @@ class TestPrintHelpers:
         monkeypatch.setattr(formatters, "console", con)
         formatters.print_record_detail(_make_record(description="before [b]upgrade[/b]"))
         assert "before [b]upgrade[/b]" in _plain(buf)
+
+
+class TestPrintRunHistory:
+    def _entries(self):
+        from datetime import datetime
+
+        from pfsentinel.services.run_history import RunEntry
+
+        start = datetime(2026, 11, 28, 2, 0, 3)
+        return [
+            RunEntry(
+                id="b",
+                device="fw1",
+                started=start,
+                ended=datetime(2026, 11, 28, 2, 1, 8),
+                result="failed",
+                error="SSH connection refused [x]",
+            ),
+            RunEntry(
+                id="a",
+                device="fw1",
+                started=datetime(2026, 11, 27, 2, 0, 3),
+                ended=datetime(2026, 11, 27, 2, 0, 38),
+                result="ok",
+                run=15,
+                files=6,
+                size_bytes=4 * 1024 * 1024,
+                changes="minor",
+            ),
+            RunEntry(id="c", device="fw1", started=datetime(2026, 11, 26, 2, 0, 3)),
+        ]
+
+    def test_each_run_is_one_row(self, monkeypatch):
+        con, buf = _capture_console()
+        monkeypatch.setattr(formatters, "console", con)
+        formatters.print_run_history(self._entries())
+        out = _plain(buf)
+        assert "2026-11-28 02:00" in out and "Failed" in out
+        assert "SSH connection refused [x]" in out  # brackets are text, not markup
+        assert "#15" in out and "OK" in out and "4.0 MB" in out and "35s" in out
+        assert "1m 05s" in out
+        assert "No end" in out
+        assert "Device" not in out
+
+    def test_two_devices_have_a_device_column(self, monkeypatch):
+        con, buf = _capture_console()
+        monkeypatch.setattr(formatters, "console", con)
+        entries = self._entries()
+        entries[0].device = "fw2"
+        formatters.print_run_history(entries)
+        assert "Device" in _plain(buf)

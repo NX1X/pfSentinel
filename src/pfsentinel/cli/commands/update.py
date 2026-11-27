@@ -5,7 +5,7 @@ from __future__ import annotations
 import typer
 
 from pfsentinel.cli.formatters import console, print_error, print_info, print_success
-from pfsentinel.services.updater import UpdateError, UpdateService
+from pfsentinel.services.updater import WINGET_NOTE, UpdateError, UpdateService, update_command
 
 app = typer.Typer(help="Check for updates and manage versions", no_args_is_help=True)
 
@@ -39,7 +39,8 @@ def update_check(
     console.print(f"  [bold]Install method:[/]   {result['install_method']}")
     console.print(f"  [bold]Release notes:[/]    {result['release_url']}")
     console.print()
-    print_info("Run [bold]pfs update install[/] to update", markup=True)
+    command = update_command(result.get("install_method", ""))
+    print_info(f"Run [bold]{command}[/] to update", markup=True)
 
 
 @app.command("install")
@@ -71,6 +72,11 @@ def update_install(
     console.print(f"  [bold]Update:[/] v{result['current']} -> [green]v{result['latest']}[/]")
     console.print(f"  [bold]Method:[/] {result['install_method']}")
     console.print()
+
+    if result.get("install_method") == "winget":
+        # Nothing is changed here: winget owns this pfs.exe.
+        print_info(WINGET_NOTE)
+        return
 
     if not yes:
         confirm = typer.confirm("Proceed with update?", default=True)
