@@ -1,10 +1,10 @@
 # pfSentinel - Roadmap
 
-Goal: get pfSentinel to a solid **1.0**, then move it to **maintenance mode**.
+pfSentinel reached **1.0** and is now in **maintenance mode**.
 Maintenance mode means a slower pace focused on the Planned list, while security fixes, dependency
 updates and pfSense compatibility fixes keep landing (see the end of this file).
 
-Last updated: 2026-11-20
+Last updated: 2026-12-04
 
 ---
 
@@ -40,117 +40,71 @@ From the homelab field test of 2026-11-20:
 
 ---
 
-## Path to 1.0 (decided 2026-11-20)
+## Shipped (v1.0.0)
 
-Four steps, each ending with a real-world test on a homelab:
+1.0.0 came out after a release candidate ran 14 days in a row on a homelab PC without a failed
+backup (2026-11-20 to 2026-12-04, Windows 11 against pfSense 2.8.1).
 
-- **0.4.0 Hardening:** self-update hardening, Windows file permissions, an alert when the number of
-  firewall rules, users or certificates drops sharply, an update-available alert, a binary smoke test
-  in CI, the TUI removed and mypy required in CI.
-- **0.5.0 Alerts and destinations:** email (SMTP) alerts for any mail server, a daily digest, Linux
-  desktop notifications, an S3-compatible second copy (experimental; encrypted backups only), and an
-  `age` encryption mode readable with the standard `age` tool.
-- **0.6.0 Polish:** scheduling without admin on Windows, `--json` output, 80% test coverage, and the
-  remaining docs below.
-- **1.0.0:** a release candidate that runs 14 days in a row without a failed backup, then 1.0.0.
+**The same on Windows and Linux**
 
-The lists below hold the details.
+- Desktop notifications on Linux (`notify-send`), next to the Windows toast
+- Scheduling without administrator rights on Windows
+- Owner-only access on Windows too, for the config folder and each device's backup folder
+- One page on what runs when the PC is off, asleep or signed out (docs/platforms.md)
+- A CI test that fails when a command group works on one system only
 
-## Before 1.0 (required)
+**Self-update hardening**
 
-### Full cross-platform parity (Windows and Linux)
+- The signed build attestation and the SHA-256 are checked before a binary is installed
+- The download is staged next to the binary, owner-only, and capped at 200 MB
+- Downloads only over https from GitHub hosts, checked again after each redirect
+- Revert uses only a backup path that the updater derives itself
+- As root, a binary in a folder that is not root-owned is refused
 
-1.0 means every feature works the same way on Windows and Linux, and CI proves it on both.
+**Alerts and destinations**
 
-- [ ] **Desktop notifications on Linux.** Windows has toasts; Linux gets freedesktop notifications
-      (the same mechanism `notify-send` uses), with the same on/off setting
-- [x] **System log on both** (0.3.0): Windows Event Log on Windows, syslog/journald on Linux. The
-      setting keeps its first name, `windows_event_log_enabled`, so existing configs work
-- [ ] **Linux-native backup directory.** The default is `~/Documents/pfSentinel` on both systems.
-      Linux should use `~/pfSentinel` (or an XDG path), with a migration for anyone who never set
-      `backup_policy.backup_root`, so existing backups are not orphaned
-- [ ] **File permissions on Windows.** On Linux, config, backups and the secret store are `0600`/`0700`.
-      On Windows `chmod` does nothing, so set explicit owner-only ACLs as well
-- [ ] **Scheduling without admin on Windows.** Linux needs no root; Windows currently needs an elevated shell
-      because tasks live in a `\pfSentinel` folder. Register in a location a normal user can write
-- [ ] **One scheduling story in the docs:** what runs when you are logged out, asleep or powered off,
-      on each OS, side by side
-- [ ] **Parity check in CI:** a test that fails if a user-facing feature is gated to one OS without a
-      counterpart on the other
+- Email (SMTP) alerts, a daily digest, and one "backup OK" message per run with every file
+- Alerts for a backup that failed in part (1008) and a backup folder that cannot lock (1009)
+- An alert when firewall rules, users or certificates drop sharply, and an update alert
+- Second copy to S3-compatible storage, Azure Blob Storage or WebDAV (experimental)
+- The `age` encryption mode, readable with the standard `age` tool
 
-### Self-update hardening
+**Operations**
 
-From the 2026-11 security review. The updater already checks SHA-256 against the release checksums, but:
+- `pfs backup history`: every run with its result, failed runs included
+- A lock per device, so two runs at once cannot lose records of the backup index
+- ZFS snapshots of the dataset mounted at `/`; restore and decrypt copy in 1 MiB steps
+- `--json` output for `backup list`, `backup history`, `device list` and `schedule status`
+- A restore guide (docs/restore.md)
+- A container image for `linux/amd64` and `linux/arm64` (experimental)
+- The TUI was removed; mypy is required in CI; test coverage is above 80%
 
-- [ ] **Verify the signed build provenance** before installing. Releases are attested from 0.2.5;
-      the updater should check that attestation, not only a checksum fetched from the same release
-- [ ] **Stage the download next to the binary** (`mkstemp` in the install folder, owner-only, hash
-      while streaming), so there is no window between the checksum and the replace. This also fixes
-      updates failing when `~/.pfsentinel` and the install folder are on different file systems
-- [ ] **Revert only to a backup path the updater derives itself**, not one read from the state file
-- [ ] **Refuse a binary update run as root** unless the staging folder is root-owned
-- [ ] Cap the download size, and accept download URLs only on `https` GitHub hosts
+**Not done, moved to Planned**
 
-### Verification
-
-These features exist and are unit tested, but have never been observed working for real:
-
-- [x] **Windows scheduled backup, end to end.** Observed 2026-11-20 on Windows 11 (v0.2.6): the
-      registered task ran and reported `Last result: OK`. Not yet observed: a key passphrase read from
-      Credential Manager by a scheduled run
-- [ ] **Linux systemd timer, end to end.** `pfs schedule enable`, then
-      `systemctl --user start pfsentinel-backup.service` and check `journalctl --user -u pfsentinel-backup`
-- [ ] **Real pfSense smoke test.** SSH and HTTPS backup against current pfSense CE and pfSense Plus
-      (the e2e suite only covers fake servers)
-- [ ] **Windows toast** shows on a real desktop (new built-in implementation)
-
-### Clean-up
-
-- [x] **TUI: remove it, or ship it.** Removed in 0.4.0. `src/pfsentinel/tui/` is not reachable from `pfs`, and it imports
-      `textual`, which is not a declared dependency. Recommendation: remove it
-- [x] **mypy clean and gated in CI** (0.4.0: no errors; part of the required lint job)
-- [x] **Test coverage 67% -> 80%**: 92% with the CLI tests added before 1.0; CI fails below 80%
-- [ ] **Document restore.** A written "how to restore this file to pfSense" page
-- [ ] **Move the Linux CI jobs onto the Dagger pipeline** once it has run green for a while
-
-### Release hygiene
-
-- [x] `SECURITY.md` states which versions get fixes (latest minor only)
-- [ ] README states the project status (1.0, maintenance mode) and what that means for users
-
----
-
-## Optional before 1.0
-
-Small features worth doing only if there is time. Each one is self-contained.
-
-- [ ] `--json` output for `device list` and `schedule status` (`backup list` has it)
-- [ ] Richer Telegram messages (size, pfSense version, hostname)
-- [ ] Email (SMTP) notifications for any mail server (planned for 0.5.0)
-- [ ] Daily digest: one message a day for all devices (planned for 0.5.0)
-- [ ] S3-compatible second copy, experimental (planned for 0.5.0)
-- [ ] `age` encryption mode (planned for 0.5.0)
-- [ ] Alert when rules, users or certificates drop sharply between backups (planned for 0.4.0)
+- A Linux-native default backup folder. The default stays `~/Documents/pfSentinel` on both
+  systems, because a new default would move the backups of everyone who never set it.
+- The Linux CI jobs still run beside the Dagger pipeline, not on it.
 
 ---
 
 ## Planned (1.x)
 
-Bigger features that are planned after 1.0. Maintenance mode pauses new work, not these.
+Maintenance mode slows new work down. These items are still planned.
 
-- [ ] **pfSense REST API backend** (pfSense Plus 23.09+ and the REST API package), as a third
-      connection method next to SSH and HTTPS
-- [ ] **More backup destinations:** a folder and SFTP shipped in 0.3.0 (`pfs copy`), S3 is planned for
-      0.5.0; WebDAV (Nextcloud without the desktop client) remains
 - [ ] **Baseline comparison:** mark a backup as "known good" and report every change against it
 - [ ] **Slack Block Kit cards** for richer Slack notifications
+- [ ] **A read-only web UI** (not soon)
+- [ ] **A Linux-native default backup folder**, with a migration for existing installs
+- [ ] **ZFS snapshots of the child datasets** (`/var`, `/cf`, ...), not only the root dataset
+- [ ] Move the Linux CI jobs onto the Dagger pipeline
 
 ---
 
 ## Not planned
 
 - OPNsense support (different config paths and web UI; effectively a second product)
-- Web UI, Docker image, Windows installer, AppImage
+- The pfSense REST API as a third connection method (dropped 2026-11-20)
+- Windows installer, AppImage
 - Code signing for the binaries (paid certificate)
 
 **Want something on this list, or something that is not on the roadmap at all?** Open an issue at
@@ -159,7 +113,7 @@ considered positively, including items listed as not planned, and well-scoped pu
 
 ---
 
-## Maintenance mode (after 1.0)
+## Maintenance mode
 
 What keeps happening:
 

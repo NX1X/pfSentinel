@@ -10,6 +10,12 @@ Automated backup and monitoring tool for pfSense firewalls. Built for homelabs.
 
 pfSentinel connects to your pfSense devices over SSH or HTTPS and backs up configuration files, RRD data, package configs, DHCP leases, certificates, logs, ZFS snapshots, and full filesystem archives. It includes change detection, a restore check, encryption at rest, a second copy off the PC, scheduled backups, and alerts by Telegram, Slack, email, desktop notification or the system log.
 
+## Project Status
+
+pfSentinel 1.0.0 is the stable release. Before it came out, a release candidate ran 14 days in a row on a homelab PC without a failed backup (Windows 11, pfSense 2.8.1).
+
+The project is now in maintenance mode. Security fixes, dependency updates and pfSense compatibility fixes keep coming. New features come at a slower pace; the [roadmap](ROADMAP.md) lists what is planned. Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html), and only the latest release line gets fixes ([Security Policy](SECURITY.md)).
+
 ## A Word From the Developer
 
 I was looking for a feature-rich, modern pfSense backup tool and only found projects that were no longer maintained. Since pfSense backups are part of my own [homelab backup infrastructure](https://github.com/NX1X/homelab), I decided to build pfSentinel and share it with the pfSense community.
@@ -27,6 +33,7 @@ If you have a request or an idea, I'd love to hear it, please [open a feature re
 - **Encryption at rest** (optional) -- AES-256-GCM with a key in the OS keystore and a recovery key, or a passphrase, or the open age format; [details](docs/encryption.md)
 - **Second copy** of the encrypted backups to a folder or SFTP, and (experimental) S3-compatible storage, Azure Blob Storage or WebDAV; [details](docs/second-copy.md)
 - **Long-term retention** -- daily backups, plus weekly and monthly ones kept longer
+- **Run history** -- `pfs backup history` lists every run with its result, failed runs included
 - **Scheduled backups** via Windows Task Scheduler, systemd user timers or cron
 - **Alerts** -- Telegram, Slack, email (any SMTP server), Windows toast or Linux desktop notification, Windows Event Log or syslog, and an optional daily digest; for a failed backup, a risky change, no recent backup, a failed restore check or a failed second copy; [details](docs/alerts.md)
 - **SSH key authentication** -- no password required
@@ -78,7 +85,7 @@ See the [Installation Guide](docs/installation.md) for all installation methods.
 | [Contributing](CONTRIBUTING.md) | Development setup, code style, pull requests |
 | [Code of Conduct](CODE_OF_CONDUCT.md) | How we treat each other, and how to report a problem |
 | [CI with Dagger](docs/ci-dagger.md) | Run the CI pipeline locally |
-| [Roadmap](ROADMAP.md) | Path to 1.0 and what is planned |
+| [Roadmap](ROADMAP.md) | What shipped in 1.0 and what is planned |
 | [Changelog](CHANGELOG.md) | Version history |
 
 ## What Gets Backed Up
