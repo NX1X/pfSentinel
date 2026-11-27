@@ -17,6 +17,7 @@ from pfsentinel.cli.formatters import (
     print_info,
     print_progress,
     print_record_detail,
+    print_run_history,
     print_success,
     print_warning,
 )
@@ -358,6 +359,39 @@ def backup_list(
     print_backup_table(records, title=f"Backups{' for ' + device if device else ''}")
 
 
+@app.command("history")
+def backup_history(
+    device: str | None = typer.Option(None, "--device", "-d", help="Filter by device ID"),
+    limit: int = typer.Option(20, "--limit", "-n", min=1, help="Show the newest N runs"),
+    problems: bool = typer.Option(
+        False, "--problems", help="Only runs that failed, failed in part or have no end"
+    ),
+    output_json: bool = typer.Option(False, "--json", help="Output as JSON"),
+) -> None:
+    """Show past backup runs, failed runs included.
+
+    'pfs backup list' shows the files that exist. A run that failed made no
+    file, so only this command shows it. The history starts with 1.0.0.
+    """
+    from pfsentinel.services import run_history
+
+    entries = run_history.load(device=device, limit=limit, problems_only=problems)
+
+    if output_json:
+        console.print_json(json.dumps([e.to_dict() for e in entries]))
+        return
+
+    if not entries:
+        if problems:
+            print_info("No run with a problem in the history.")
+        else:
+            print_info("No runs in the history yet. It starts with the next 'pfs backup run'.")
+        return
+
+    print_run_history(entries)
+    print_info(f"History file: {run_history.history_path()}")
+
+
 @app.command("verify")
 def backup_verify(
     filename: str | None = typer.Argument(
@@ -581,7 +615,7 @@ def _send_digest_if_due(config: AppConfig, svc: BackupService) -> None:
 def _alert_new_release(svc: BackupService) -> None:
     """Alert once per new release. Any error here is ignored: it is a courtesy."""
     from pfsentinel.services.notifications import AlertKind
-    from pfsentinel.services.updater import UpdateService
+    from pfsentinel.services.updater import UpdateService, update_command
 
     try:
         updater = UpdateService()
@@ -593,7 +627,7 @@ def _alert_new_release(svc: BackupService) -> None:
             AlertKind.UPDATE_AVAILABLE,
             f"pfSentinel - Update available: v{result['latest']}",
             f"Installed: v{result['current']}\nRelease notes: {result['release_url']}\n"
-            "Update with: pfs update install",
+            f"Update with: {update_command(result.get('install_method', ''))}",
         )
         updater.state["alerted_version"] = result["latest"]
         updater.save_state()

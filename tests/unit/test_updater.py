@@ -150,6 +150,47 @@ class TestDetectInstallMethod:
                 result = svc._detect_install_method()
         assert result == "binary"
 
+    def test_frozen_binary_in_the_winget_folder(self, tmp_path, monkeypatch):
+        """winget owns that pfs.exe: pfSentinel must not replace it."""
+        svc = _make_service(tmp_path)
+        monkeypatch.setattr("sys.frozen", True, raising=False)
+        with patch("pfsentinel.services.updater.installed_by_winget", return_value=True):
+            assert svc._detect_install_method() == "winget"
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            r"C:\Users\me\AppData\Local\Microsoft\WinGet\Links\pfs.exe",
+            r"C:\Users\me\AppData\Local\Microsoft\WinGet\Packages"
+            r"\NX1X.pfSentinel_Microsoft.Winget.Source_8wekyb3d8bbwe\pfs.exe",
+            "c:/users/me/appdata/local/microsoft/winget/links/pfs.exe",
+        ],
+    )
+    def test_winget_paths_are_recognised(self, path):
+        from pfsentinel.services.updater import installed_by_winget
+
+        assert installed_by_winget(path) is True
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            r"C:\Users\me\Downloads\pfs.exe",
+            r"C:\Tools\winget-stuff\pfs.exe",
+            "/usr/local/bin/pfs",
+        ],
+    )
+    def test_other_paths_are_not_winget(self, path):
+        from pfsentinel.services.updater import installed_by_winget
+
+        assert installed_by_winget(path) is False
+
+    def test_the_update_command_depends_on_the_install(self):
+        from pfsentinel.services.updater import update_command
+
+        assert update_command("winget") == "winget upgrade NX1X.pfSentinel"
+        for method in ("binary", "pipx", "pip"):
+            assert update_command(method) == "pfs update install"
+
     def test_pipx_in_prefix(self, tmp_path, monkeypatch):
         svc = _make_service(tmp_path)
         monkeypatch.setattr("sys.prefix", "/home/user/.local/pipx/venvs/pfsentinel")
@@ -496,6 +537,60 @@ class TestInstall:
         with patch.object(svc, "_detect_install_method", return_value="binary"):
             with pytest.raises(UpdateError, match="No binary download URL"):
                 svc.install()
+
+
+class TestInstallWinget:
+    def test_install_never_replaces_a_winget_binary(self, tmp_path):
+        """Also with no network: winget is named before GitHub is asked."""
+        svc = _make_service(tmp_path)
+        with (
+            patch.object(svc, "_detect_install_method", return_value="winget"),
+            patch.object(svc, "check") as check,
+            patch.object(svc, "_install_binary") as install_binary,
+        ):
+            with pytest.raises(UpdateError, match="winget upgrade NX1X.pfSentinel"):
+                svc.install()
+        check.assert_not_called()
+        install_binary.assert_not_called()
+        assert "previous_version" not in svc._state
+        assert svc.last_method == "winget"
+
+    def test_the_cli_names_winget_and_changes_nothing(self):
+        from typer.testing import CliRunner
+
+        from pfsentinel.cli.app import app
+
+        with (
+            patch.object(UpdateService, "install_method", return_value="winget"),
+            patch.object(UpdateService, "check") as check,
+            patch.object(UpdateService, "install") as install,
+        ):
+            result = CliRunner().invoke(app, ["update", "install", "--yes"])
+        out = " ".join((result.stdout + (result.stderr or "")).split())
+        assert result.exit_code == 0
+        assert "winget upgrade NX1X.pfSentinel" in out
+        check.assert_not_called()  # works with no network, and when already up to date
+        install.assert_not_called()
+
+    def test_update_check_names_the_winget_command(self):
+        from typer.testing import CliRunner
+
+        from pfsentinel.cli.app import app
+
+        with patch.object(
+            UpdateService,
+            "check",
+            return_value={
+                "current": "1",
+                "latest": "2",
+                "install_method": "winget",
+                "release_url": "https://example.invalid/r",
+            },
+        ):
+            result = CliRunner().invoke(app, ["update", "check"])
+        out = " ".join((result.stdout + (result.stderr or "")).split())
+        assert "winget upgrade NX1X.pfSentinel" in out
+        assert "pfs update install" not in out
 
 
 class TestInstallPip:
