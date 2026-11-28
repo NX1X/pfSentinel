@@ -163,6 +163,19 @@ def _no_desktop_session(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_default_backup_dir(tmp_path_factory, monkeypatch):
+    """Keep backups out of the real ~/Documents/pfSentinel.
+
+    A config with no backup_root falls back to that folder. Before this
+    fixture, the test of a scheduled run with no folder set wrote a real
+    backup there on every run of the suite.
+    """
+    root = tmp_path_factory.mktemp("default-backups")
+    monkeypatch.setattr("pfsentinel.utils.platform.default_backup_dir", lambda: root)
+    yield root
+
+
+@pytest.fixture(autouse=True)
 def _isolate_alert_state(tmp_path_factory, monkeypatch):
     """Keep the digest's alert history and state file out of the real ~/.pfsentinel."""
     state = tmp_path_factory.mktemp("alert-state")

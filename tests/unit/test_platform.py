@@ -60,6 +60,8 @@ class TestPaths:
         """One default for both systems; config.resolved_root must agree with it."""
         from pfsentinel.models.config import BackupPolicy
 
+        # conftest points the default at a tmp folder; this test checks the real one.
+        monkeypatch.setattr(platform_mod, "default_backup_dir", default_backup_dir)
         expected = Path.home() / "Documents" / "pfSentinel"
         for platform_name in ("win32", "linux", "darwin"):
             monkeypatch.setattr(sys, "platform", platform_name)
