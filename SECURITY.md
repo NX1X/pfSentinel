@@ -22,8 +22,8 @@ I will do my best to acknowledge your report promptly and work toward a fix. Thi
 
 | Version | Supported |
 |---------|-----------|
-| 0.3.x (current) | Yes |
-| 0.2.x and older | No: update with `pfs update install` |
+| 1.0.x (current) | Yes |
+| 0.3.x and older | No: update with `pfs update install` |
 
 ---
 
