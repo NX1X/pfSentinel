@@ -110,7 +110,7 @@ def config_validate() -> None:
 
 @app.command("set")
 def config_set(
-    key: str = typer.Argument(..., help="Setting key: backup-dir or extras"),
+    key: str = typer.Argument(..., help="Setting key: backup-dir, extras or update-check"),
     value: str = typer.Argument(..., help="New value"),
 ) -> None:
     """Change a configuration setting.
@@ -120,11 +120,19 @@ def config_set(
       extras       What scheduled backups save in addition to the config:
                    a comma list of rrd, pkg, dhcp, aliases, certs, logs;
                    or all; or none. Example: pfs config set extras rrd,pkg,certs
+      update-check on or off. On (the default): the daily check task asks
+                   GitHub once a day for a new release and alerts once per
+                   release. Off: pfSentinel contacts GitHub only when you
+                   run pfs update check or pfs update install.
     """
     config = AppConfig.load()
 
     if key == "extras":
         _set_extras(config, value)
+        return
+
+    if key == "update-check":
+        _set_update_check(config, value)
         return
 
     if key == "backup-dir":
@@ -136,8 +144,32 @@ def config_set(
         if not new_path.exists():
             print_info("Directory will be created on next backup run")
     else:
-        print_error(f"Unknown setting '{key}'. Supported: backup-dir, extras")
+        print_error(f"Unknown setting '{key}'. Supported: backup-dir, extras, update-check")
         raise typer.Exit(1)
+
+
+_ON = {"on", "true", "yes", "1"}
+_OFF = {"off", "false", "no", "0"}
+
+
+def _set_update_check(config: AppConfig, value: str) -> None:
+    """Turn the daily release check of the check task on or off."""
+    choice = value.strip().lower()
+    if choice not in _ON | _OFF:
+        print_error(f"Unknown value {value!r} for update-check. Use on or off.")
+        raise typer.Exit(1)
+    config.notifications.update_alerts = choice in _ON
+    config.save()
+    if config.notifications.update_alerts:
+        print_success("Daily release check: on")
+        print_info(
+            "The daily check task asks GitHub for a new release, and alerts once per release."
+        )
+    else:
+        print_success("Daily release check: off")
+        print_info(
+            "pfSentinel contacts GitHub only when you run pfs update check or pfs update install."
+        )
 
 
 def _set_extras(config: AppConfig, value: str) -> None:

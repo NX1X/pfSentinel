@@ -262,6 +262,32 @@ class TestSetExtras:
         assert json.loads(cli_config_path.read_text(encoding="utf-8")) == before
 
 
+class TestSetUpdateCheck:
+    """The daily release check is the only network call that the user did not ask for."""
+
+    def test_off_then_on(self, cli_runner: CliRunner, saved_config: AppConfig) -> None:
+        assert AppConfig.load().notifications.update_alerts is True
+
+        off = cli_runner.invoke(app, ["config", "set", "update-check", "OFF"])
+        assert off.exit_code == 0, _out(off)
+        assert "Daily release check: off" in _out(off)
+        assert AppConfig.load().notifications.update_alerts is False
+
+        on = cli_runner.invoke(app, ["config", "set", "update-check", "on"])
+        assert on.exit_code == 0, _out(on)
+        assert AppConfig.load().notifications.update_alerts is True
+
+    def test_a_bad_value_changes_nothing(
+        self, cli_runner: CliRunner, saved_config: AppConfig, cli_config_path: Path
+    ) -> None:
+        before = json.loads(cli_config_path.read_text(encoding="utf-8"))
+        result = cli_runner.invoke(app, ["config", "set", "update-check", "weekly"])
+
+        assert result.exit_code == 1
+        assert "Use on or off" in _out(result)
+        assert json.loads(cli_config_path.read_text(encoding="utf-8")) == before
+
+
 def test_path_prints_the_config_file_location(cli_runner: CliRunner, cli_config_path: Path) -> None:
     result = cli_runner.invoke(app, ["config", "path"])
 
