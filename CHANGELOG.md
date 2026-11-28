@@ -13,6 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-rc.6] - 2026-11-28
+
+The sixth release candidate. It adds a setting that turns off the release check, and a list of every network connection pfSentinel makes. The backup path does not change. It is a GitHub pre-release. The 14-day stability gate for 1.0.0 keeps its dates (2026-11-20 to 2026-12-04).
+
+**To try it:** `pfs update install --pre`.
+
+**What changes for you:**
+
+- `pfs config set update-check off` stops the check task from asking GitHub for new releases. It is on by default, as before.
+- Nothing changes in the scheduled tasks. You do not need to run `pfs schedule enable` again.
+
 ### Added
 
 - `pfs config set update-check off` turns off the release check. The check task then makes no request to GitHub. Before, the only way was to edit `notifications.update_alerts` in config.json. `pfs notify status` shows the setting.
