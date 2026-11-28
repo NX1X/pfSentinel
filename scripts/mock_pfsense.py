@@ -17,6 +17,7 @@ test. The password is a test value: it opens nothing but this mock.
 from __future__ import annotations
 
 import argparse
+import shlex
 import sys
 import threading
 from pathlib import Path
@@ -73,7 +74,11 @@ MOCK_XML = """<?xml version="1.0"?>
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--username", default="admin")
-    parser.add_argument("--password", default=DEFAULT_PASSWORD)
+    parser.add_argument(
+        "--password",
+        default=DEFAULT_PASSWORD,
+        help="Test password (default: mock-only-not-a-real-password)",
+    )
     parser.add_argument("--id", default="mock-fw", help="Device ID for the printed command")
     args = parser.parse_args(argv)
     sys.stdout.reconfigure(line_buffering=True)  # type: ignore[union-attr]
@@ -83,13 +88,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(f"Mock pfSense web UI: https://127.0.0.1:{server.port}/ (self-signed certificate)")
     print(f"Username: {args.username}")
-    print(f"Password: {args.password}")
+    # Not printed: a password in output is a bad habit, even a test one.
+    print("Password: the --password value (default: see --help)")
     print()
     print("In another terminal, add it as a device:")
-    print(
-        f"  pfs device add --host 127.0.0.1 --id {args.id} --label 'Mock pfSense'"
-        f" --method https --https-port {server.port} --username {args.username} --no-verify-ssl"
-    )
+    command = [
+        "pfs", "device", "add", "--host", "127.0.0.1", "--id", args.id,
+        "--label", "Mock pfSense", "--method", "https", "--https-port", str(server.port),
+        "--username", args.username, "--no-verify-ssl",
+    ]  # fmt: skip
+    print("  " + shlex.join(command))
     print()
     print("Serving until Ctrl+C. Keep this terminal open for the whole test.")
     try:

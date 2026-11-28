@@ -346,14 +346,14 @@ pfs config set extras rrd,pkg,dhcp,aliases,certs
 
 Scheduled backups save the config plus these extras. Valid names: `rrd`, `pkg`, `dhcp`, `aliases`, `certs` and `logs`, or `all`, or `none`. In a new config, scheduled backups save the config only. See [Scheduled Backups](extended-backups.md#scheduled-backups).
 
-### Daily Release Check
+### Release Check
 
 ```bash
 pfs config set update-check off
 pfs config set update-check on
 ```
 
-On (the default), the daily check task asks GitHub once a day for a new release and alerts you once per release. Off, pfSentinel contacts GitHub only when you run `pfs update check` or `pfs update install`. `pfs notify status` shows the setting. Every network connection pfSentinel makes is listed in [Privacy and network connections](privacy.md).
+On (the default), the check task asks GitHub for a new release each time it runs: at start-up or sign-in, daily at 12:00, and at the daily digest time if the digest is on. It alerts you once per release. Off, pfSentinel contacts GitHub only when you run `pfs update check` or `pfs update install`. `pfs notify status` shows the setting. Every network connection pfSentinel makes is listed in [Privacy and network connections](privacy.md).
 
 ### Key Config Fields
 
@@ -792,7 +792,7 @@ Tokens and webhook addresses are removed from the log lines. Still read the file
 | `config path` | Print config file path |
 | `config set backup-dir PATH` | Change backup directory |
 | `config set extras LIST` | Extras for scheduled backups (`rrd,pkg,...`, `all` or `none`) |
-| `config set update-check on\|off` | Turn the daily release check on or off |
+| `config set update-check on\|off` | Turn the release check of the check task on or off |
 
 ### `pfs schedule`
 

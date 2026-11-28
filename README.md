@@ -74,7 +74,7 @@ See the [Installation Guide](docs/installation.md) for all installation methods.
 | [Second Copy](docs/second-copy.md) | Folder, SFTP, S3-compatible, Azure, WebDAV (experimental) |
 | [Container](docs/docker.md) | Docker image and Kubernetes CronJob (experimental) |
 | [Windows and Linux](docs/platforms.md) | PC off, asleep or signed out; each feature on each system |
-| [Privacy](docs/privacy.md) | Every network connection, and how to turn off the daily release check |
+| [Privacy](docs/privacy.md) | Every network connection, and how to turn off the release check |
 | [Security Policy](SECURITY.md) | Vulnerability reporting, design decisions, credential storage |
 | [Contributing](CONTRIBUTING.md) | Development setup, code style, pull requests |
 | [Code of Conduct](CODE_OF_CONDUCT.md) | How we treat each other, and how to report a problem |

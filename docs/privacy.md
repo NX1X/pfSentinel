@@ -24,17 +24,17 @@ pfSentinel connects only to these places.
 | `api.telegram.org` | Only if you turn on Telegram alerts | To send the alert to your chat |
 | `hooks.slack.com` | Only if you turn on Slack alerts | To send the alert to your channel |
 | Your mail server (SMTP) | Only if you turn on email alerts | To send the alert by email |
-| `api.github.com` | Once a day from the daily check task, unless you turn it off (see below) | To see if a new pfSentinel release is out |
+| `api.github.com` | Each time the check task runs (usually one to three times a day), unless you turn it off (see below) | To see if a new pfSentinel release is out |
 | `api.github.com`, `github.com` and GitHub's download hosts | Only when you run `pfs update check` or `pfs update install` | To check for, download and verify a new release |
 | PyPI (`pypi.org`) | Only when you run `pfs update install` on a pip or pipx install | pip or pipx downloads the new version |
 
 Windows notifications, the Windows Event Log, Linux desktop notifications and
 syslog/journald are local. They make no network connection.
 
-## The daily release check
+## The release check
 
-The daily check task (`pfs backup check-recent`) asks the GitHub API once a
-day for the latest release. If a newer release is out, it alerts you once
+The check task (`pfs backup check-recent`) asks the GitHub API for the
+latest release each time it runs: at start-up or sign-in, daily at 12:00, and at the daily digest time if the digest is on. If a newer release is out, it alerts you once
 for that release. The request goes to
 `https://api.github.com/repos/NX1X/pfSentinel/releases/latest` with the
 User-Agent `pfSentinel-updater`. It sends nothing about you, your firewalls

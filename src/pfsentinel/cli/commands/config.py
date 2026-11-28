@@ -120,8 +120,9 @@ def config_set(
       extras       What scheduled backups save in addition to the config:
                    a comma list of rrd, pkg, dhcp, aliases, certs, logs;
                    or all; or none. Example: pfs config set extras rrd,pkg,certs
-      update-check on or off. On (the default): the daily check task asks
-                   GitHub once a day for a new release and alerts once per
+      update-check on or off. On (the default): each time the check task
+                   runs (at start-up or sign-in, at 12:00, and at the digest
+                   time), it asks GitHub for a new release. It alerts once per
                    release. Off: pfSentinel contacts GitHub only when you
                    run pfs update check or pfs update install.
     """
@@ -153,7 +154,7 @@ _OFF = {"off", "false", "no", "0"}
 
 
 def _set_update_check(config: AppConfig, value: str) -> None:
-    """Turn the daily release check of the check task on or off."""
+    """Turn the release check of the check task on or off."""
     choice = value.strip().lower()
     if choice not in _ON | _OFF:
         print_error(f"Unknown value {value!r} for update-check. Use on or off.")
@@ -161,12 +162,12 @@ def _set_update_check(config: AppConfig, value: str) -> None:
     config.notifications.update_alerts = choice in _ON
     config.save()
     if config.notifications.update_alerts:
-        print_success("Daily release check: on")
+        print_success("Release check: on")
         print_info(
-            "The daily check task asks GitHub for a new release, and alerts once per release."
+            "The check task asks GitHub for a new release each time it runs, and alerts once per release."
         )
     else:
-        print_success("Daily release check: off")
+        print_success("Release check: off")
         print_info(
             "pfSentinel contacts GitHub only when you run pfs update check or pfs update install."
         )

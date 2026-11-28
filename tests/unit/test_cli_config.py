@@ -270,7 +270,7 @@ class TestSetUpdateCheck:
 
         off = cli_runner.invoke(app, ["config", "set", "update-check", "OFF"])
         assert off.exit_code == 0, _out(off)
-        assert "Daily release check: off" in _out(off)
+        assert "Release check: off" in _out(off)
         assert AppConfig.load().notifications.update_alerts is False
 
         on = cli_runner.invoke(app, ["config", "set", "update-check", "on"])
