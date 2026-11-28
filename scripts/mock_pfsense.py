@@ -27,6 +27,8 @@ sys.path.insert(0, str(REPO))
 
 from tests.e2e.fake_https_server import FakeHTTPSServer  # noqa: E402
 
+USERNAME = "admin"
+DEVICE_ID = "mock-fw"
 DEFAULT_PASSWORD = "mock-only-not-a-real-password"  # noqa: S105 (a test value)
 
 # Small, but complete enough to pass the restore check: an admin user, two
@@ -73,29 +75,25 @@ MOCK_XML = """<?xml version="1.0"?>
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--username", default="admin")
     parser.add_argument(
         "--password",
         default=DEFAULT_PASSWORD,
         help="Test password (default: mock-only-not-a-real-password)",
     )
-    parser.add_argument("--id", default="mock-fw", help="Device ID for the printed command")
     args = parser.parse_args(argv)
     sys.stdout.reconfigure(line_buffering=True)  # type: ignore[union-attr]
 
-    server = FakeHTTPSServer.start(
-        username=args.username, password=args.password, config_xml=MOCK_XML
-    )
+    server = FakeHTTPSServer.start(username=USERNAME, password=args.password, config_xml=MOCK_XML)
     print(f"Mock pfSense web UI: https://127.0.0.1:{server.port}/ (self-signed certificate)")
-    print(f"Username: {args.username}")
+    print(f"Username: {USERNAME}")
     # Not printed: a password in output is a bad habit, even a test one.
     print("Password: the --password value (default: see --help)")
     print()
     print("In another terminal, add it as a device:")
     command = [
-        "pfs", "device", "add", "--host", "127.0.0.1", "--id", args.id,
+        "pfs", "device", "add", "--host", "127.0.0.1", "--id", DEVICE_ID,
         "--label", "Mock pfSense", "--method", "https", "--https-port", str(server.port),
-        "--username", args.username, "--no-verify-ssl",
+        "--username", USERNAME, "--no-verify-ssl",
     ]  # fmt: skip
     print("  " + shlex.join(command))
     print()
