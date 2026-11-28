@@ -346,6 +346,15 @@ pfs config set extras rrd,pkg,dhcp,aliases,certs
 
 Scheduled backups save the config plus these extras. Valid names: `rrd`, `pkg`, `dhcp`, `aliases`, `certs` and `logs`, or `all`, or `none`. In a new config, scheduled backups save the config only. See [Scheduled Backups](extended-backups.md#scheduled-backups).
 
+### Release Check
+
+```bash
+pfs config set update-check off
+pfs config set update-check on
+```
+
+On (the default), the check task asks GitHub for a new release each time it runs: at start-up or sign-in, daily at 12:00, and at the daily digest time if the digest is on. It alerts you once per release. Off, pfSentinel contacts GitHub only when you run `pfs update check` or `pfs update install`. `pfs notify status` shows the setting. Every network connection pfSentinel makes is listed in [Privacy and network connections](privacy.md).
+
 ### Key Config Fields
 
 ```json
@@ -478,7 +487,7 @@ Writes every alert to the Application log with source `pfSentinel` (Linux: syslo
 | 1003 | Error | No recent backup, or the backup index cannot be read |
 | 1004 | Error | Restore check failed |
 | 1005 | Error | Second copy failed |
-| 1006 | Information | A new pfSentinel release is out (once per release; `notifications.update_alerts`) |
+| 1006 | Information | A new pfSentinel release is out (once per release; turn off with `pfs config set update-check off`) |
 | 1008 | Warning | Backup partly failed: the config was saved, but an extra, the ZFS snapshot or the archive failed |
 | 1009 | Warning | The backup folder cannot be locked (some SMB and NFS shares), so two runs at once can lose index records. At most once in 7 days per device |
 
@@ -783,6 +792,7 @@ Tokens and webhook addresses are removed from the log lines. Still read the file
 | `config path` | Print config file path |
 | `config set backup-dir PATH` | Change backup directory |
 | `config set extras LIST` | Extras for scheduled backups (`rrd,pkg,...`, `all` or `none`) |
+| `config set update-check on\|off` | Turn the release check of the check task on or off |
 
 ### `pfs schedule`
 

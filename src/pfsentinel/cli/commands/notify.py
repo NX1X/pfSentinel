@@ -890,4 +890,6 @@ def notify_status() -> None:
     console.print(f"  Notify on success: {on_success}")
     console.print(f"  Notify on failure: {on_failure} (also risky changes and other alerts)")
     console.print(f"  No-recent-backup alert after: {config.notifications.stale_after_days} day(s)")
+    release_check = "on" if config.notifications.update_alerts else "off"
+    console.print(f"  Release check: {release_check} (pfs config set update-check on|off)")
     console.print()

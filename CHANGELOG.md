@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `pfs config set update-check off` turns off the release check. The check task then makes no request to GitHub. Before, the only way was to edit `notifications.update_alerts` in config.json. `pfs notify status` shows the setting.
+- `docs/privacy.md` lists every network connection pfSentinel makes. pfSentinel has no telemetry.
+- `scripts/mock_pfsense.py` starts a mock pfSense web UI on 127.0.0.1, to test a build without a real firewall.
 - winget: the CI job `publish-winget` sends each stable release to `microsoft/winget-pkgs` (package `NX1X.pfSentinel`), after the maintainer approves it. Release candidates are not sent. The manifest uses schema 1.28.0.
 
 ### Fixed
