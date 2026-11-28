@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.10.0.schema.json
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.28.0.schema.json
 PackageIdentifier: NX1X.pfSentinel
 PackageVersion: {{VERSION}}
 PackageLocale: en-US
@@ -24,4 +24,4 @@ Tags:
 - pfsense
 ReleaseNotesUrl: https://github.com/NX1X/pfSentinel/releases/tag/v{{VERSION}}
 ManifestType: defaultLocale
-ManifestVersion: 1.10.0
+ManifestVersion: 1.28.0

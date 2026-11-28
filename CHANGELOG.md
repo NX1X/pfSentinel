@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- winget: the CI job `publish-winget` sends each stable release to `microsoft/winget-pkgs` (package `NX1X.pfSentinel`), after the maintainer approves it. Release candidates are not sent. The manifest uses schema 1.28.0.
+
+### Fixed
+
+- Tests no longer write a backup into the real `~/Documents/pfSentinel` folder.
+
 ## [1.0.0-rc.5] - 2026-11-28
 
 The fifth release candidate. It adds a history of backup runs, makes `pfs schedule run-now` a full run, and gets pfSentinel ready for winget. It is a GitHub pre-release. The 14-day stability gate for 1.0.0 keeps its dates (2026-11-20 to 2026-12-04).

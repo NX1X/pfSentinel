@@ -4,11 +4,33 @@ These three files are the template of the winget manifest. winget installs `pfs.
 
 pfSentinel is on winget from 1.0.0 on. Release candidates are not published there: winget has no pre-release channel.
 
-Status: not submitted yet. The first submission is made by hand when 1.0.0 is out.
+Status: not submitted yet. The CI job `publish-winget` sends 1.0.0 as the first version.
 
-## Fill in the template
+## How a release gets to winget
 
-Each release needs three values:
+The job `publish-winget` in `.github/workflows/ci.yml` runs after the GitHub release, for stable versions only (`X.Y.Z`, no `-rc.N`). It:
+
+1. Waits for approval in the `winget` environment (reviewer: the maintainer, branch: main).
+2. Downloads `pfs.exe` and `checksums-sha256.txt` from the release, and checks the hash and the build attestation.
+3. Fills in this template with `scripts/winget_manifest.py` (version, release date, SHA-256 of `pfs.exe`).
+4. Downloads Microsoft's `wingetcreate.exe` (pinned version and SHA-256), with telemetry off.
+5. Runs `wingetcreate submit`. It validates the manifest, forks `microsoft/winget-pkgs` into the token owner's account once, and opens the pull request.
+
+The token is the repository secret `WINGET_TOKEN`: a classic GitHub token with the `public_repo` scope. Microsoft's README asks for the `repo` scope. `public_repo` should be enough, because the job only writes to public repositories. This is not verified yet. If the submit step fails with a permission error, give the token the `repo` scope.
+
+On the first pull request, the bot asks for the Microsoft contributor agreement (CLA). Sign it once in the pull request. Then wait for the validation pipeline: it installs the package and scans `pfs.exe` with antivirus engines. A moderator merges the first version by hand.
+
+If the job fails after the release, fix the cause and re-run the job in GitHub Actions. The release stays as it is.
+
+To bump `wingetcreate`, change the version and the SHA-256 in the job together. Take the SHA-256 from the release page of `microsoft/winget-create`.
+
+## Fill in the template by hand
+
+```bash
+python scripts/winget_manifest.py --version 1.0.0 --date 2026-12-04 --checksums checksums-sha256.txt --out build/winget
+```
+
+It writes the three files to `build/winget/manifests/n/NX1X/pfSentinel/1.0.0/` and prints that folder. It stops for a release candidate, a missing `pfs.exe` checksum or a placeholder left in a file.
 
 | Placeholder | Value | Where it comes from |
 |---|---|---|
@@ -16,9 +38,9 @@ Each release needs three values:
 | `{{RELEASE_DATE}}` | for example `2026-12-04` | the date of the GitHub release |
 | `{{SHA256}}` | 64 hex characters, upper case | the `pfs.exe` line in `checksums-sha256.txt` of the release |
 
-Copy the three files to a new folder, and replace the placeholders. Do not change the file names.
-
 ## Test a manifest on a Windows PC
+
+Do not test on a PC whose scheduled backups you depend on: step 6 moves the tasks to the winget copy of `pfs.exe`.
 
 1. Open PowerShell as administrator, and run `winget settings --enable LocalManifestFiles`. This is needed once.
 2. Run `winget validate --manifest <folder>`. Expected: `Manifest validation succeeded.`
@@ -27,19 +49,6 @@ Copy the three files to a new folder, and replace the placeholders. Do not chang
 5. Run `pfs update check`. If there is a newer release, the output names `winget upgrade NX1X.pfSentinel`.
 6. Run `pfs schedule enable`, then `pfs schedule status`. Expected: the tasks are registered.
 7. To remove the test install, run `pfs schedule disable`, then `winget uninstall NX1X.pfSentinel`.
-
-## Submit
-
-1. Fork `microsoft/winget-pkgs`.
-2. Put the three filled-in files in `manifests/n/NX1X/pfSentinel/<version>/`.
-3. Open a pull request. On the first one, sign the contributor agreement that the bot asks for.
-4. Wait for the validation pipeline. It installs the package and scans `pfs.exe` with antivirus engines.
-
-After the first version is accepted, a later version can be submitted with Microsoft's `wingetcreate`:
-
-```powershell
-wingetcreate update NX1X.pfSentinel --version <version> --urls https://github.com/NX1X/pfSentinel/releases/download/v<version>/pfs.exe --submit --token <token>
-```
 
 ## What pfSentinel does for a winget install
 

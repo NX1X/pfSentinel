@@ -587,3 +587,97 @@ jobs:
         uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
         with:
           attestations: true
+
+  # ---------------------------------------------------------------------------
+  # 11. Submit stable releases to winget (a PR to microsoft/winget-pkgs)
+  # ---------------------------------------------------------------------------
+  # Stable versions only: winget has no pre-release channel, so 1.0.0-rc.N is
+  # never sent. The `winget` environment waits for the maintainer's approval.
+  # WINGET_TOKEN is a classic token with the public_repo scope; wingetcreate
+  # forks winget-pkgs into the token owner's account and opens the PR from
+  # there. The first PR (a new package) needs the Microsoft CLA signed once.
+  publish-winget:
+    name: Submit to winget
+    runs-on: windows-latest
+    needs: [resolve-version, release]
+    if: >-
+      needs.resolve-version.outputs.should_release == 'true' &&
+      !contains(needs.resolve-version.outputs.version, '-')
+    environment: winget
+    permissions:
+      contents: read
+      attestations: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: '3.14'
+
+      # winget users get exactly this file: check it against the release
+      # checksums and its build attestation before it goes into the manifest.
+      - name: Download and check pfs.exe from the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.resolve-version.outputs.tag }}
+        run: |
+          mkdir -p winget-check
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --dir winget-check --pattern pfs.exe --pattern checksums-sha256.txt
+          cd winget-check
+          grep -E '^[0-9a-f]{64} [ *]pfs\.exe$' checksums-sha256.txt | sha256sum -c -
+          gh attestation verify pfs.exe --repo "$GITHUB_REPOSITORY"
+
+      - name: Fill in the winget manifest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.resolve-version.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.resolve-version.outputs.version }}
+        run: |
+          RELEASE_DATE=$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --json publishedAt --jq '.publishedAt[0:10]')
+          MANIFEST_DIR=$(python scripts/winget_manifest.py --version "$RELEASE_VERSION" \
+            --date "$RELEASE_DATE" --checksums winget-check/checksums-sha256.txt --out winget-build)
+          echo "MANIFEST_DIR=$MANIFEST_DIR" >> "$GITHUB_ENV"
+          for f in "$MANIFEST_DIR"/*.yaml; do echo "== $f"; cat "$f"; done
+
+      # Pinned release and SHA-256 (v1.28.1.0, 2026-11-11). Bump both together.
+      - name: Download wingetcreate (pinned, hash-checked)
+        shell: pwsh
+        env:
+          WINGETCREATE_VERSION: v1.28.1.0
+          WINGETCREATE_SHA256: 63d980ba79e97042395bd6eb5992c2db9e01e9e7a8a22958a95c288f27310413
+        run: |
+          $url = "https://github.com/microsoft/winget-create/releases/download/$env:WINGETCREATE_VERSION/wingetcreate.exe"
+          Invoke-WebRequest -Uri $url -OutFile wingetcreate.exe
+          $hash = (Get-FileHash wingetcreate.exe -Algorithm SHA256).Hash
+          if ($hash -ne $env:WINGETCREATE_SHA256) { throw "wingetcreate.exe SHA-256 $hash does not match the pin" }
+          # Telemetry off, no browser. The schema needs every section.
+          $dir = Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsPackageManagerManifestCreator'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          @'
+          {
+            "$schema": "https://aka.ms/wingetcreate-settings.schema.0.1.json",
+            "Telemetry": { "disable": true },
+            "CleanUp": { "intervalInDays": 7, "disable": false },
+            "WindowsPackageManagerRepository": { "owner": "microsoft", "name": "winget-pkgs" },
+            "Manifest": { "format": "yaml" },
+            "Visual": { "anonymizePaths": true },
+            "PullRequest": { "openInBrowser": false }
+          }
+          '@ | Set-Content -Encoding utf8 -Path (Join-Path $dir 'settings.json')
+
+      # submit validates the manifest first. The token goes in through the
+      # environment variable wingetcreate reads, never on the command line.
+      - name: Submit the pull request to microsoft/winget-pkgs
+        shell: pwsh
+        env:
+          WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        run: .\wingetcreate.exe submit --no-open "$env:MANIFEST_DIR"
