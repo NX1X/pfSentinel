@@ -645,6 +645,8 @@ jobs:
             --json publishedAt --jq '.publishedAt[0:10]')
           MANIFEST_DIR=$(python scripts/winget_manifest.py --version "$RELEASE_VERSION" \
             --date "$RELEASE_DATE" --checksums winget-check/checksums-sha256.txt --out winget-build)
+          # Python on Windows ends the line with CRLF; bash keeps the CR.
+          MANIFEST_DIR=${MANIFEST_DIR%$'\r'}
           echo "MANIFEST_DIR=$MANIFEST_DIR" >> "$GITHUB_ENV"
           for f in "$MANIFEST_DIR"/*.yaml; do echo "== $f"; cat "$f"; done
 

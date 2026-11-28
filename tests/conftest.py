@@ -172,7 +172,7 @@ def _isolate_default_backup_dir(tmp_path_factory, monkeypatch):
     """
     root = tmp_path_factory.mktemp("default-backups")
     monkeypatch.setattr("pfsentinel.utils.platform.default_backup_dir", lambda: root)
-    yield root
+    return root
 
 
 @pytest.fixture(autouse=True)

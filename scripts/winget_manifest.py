@@ -71,7 +71,15 @@ def render(version: str, release_date: str, sha256: str, template_dir: Path = TE
 
 
 def write(files: dict, version: str, out: Path) -> Path:
+    # The version becomes a folder name: only X.Y.Z, so it cannot leave <out>.
+    if not _STABLE.match(version):
+        raise ManifestError(f"{version!r} is not a stable version (X.Y.Z)")
     folder = out / "manifests" / "n" / "NX1X" / "pfSentinel" / version
+    if not folder.resolve().is_relative_to(out.resolve()):
+        raise ManifestError(f"{folder} is outside {out}")
+    unknown = set(files) - set(FILES)
+    if unknown:
+        raise ManifestError(f"Unknown manifest files: {sorted(unknown)}")
     folder.mkdir(parents=True, exist_ok=True)
     for name, text in files.items():
         (folder / name).write_text(text, encoding="utf-8", newline="\n")
@@ -88,7 +96,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         sha = exe_sha256(args.checksums.read_text(encoding="utf-8"))
         folder = write(render(args.version, args.date, sha), args.version, args.out)
-    except (ManifestError, ValueError, OSError) as e:
+    except (ValueError, OSError) as e:  # ManifestError is a ValueError
         print(f"error: {e}", file=sys.stderr)
         return 1
     # Forward slashes: the CI job reads this path in bash on Windows too.

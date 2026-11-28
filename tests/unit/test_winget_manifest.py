@@ -9,7 +9,8 @@ import pytest
 
 _SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "winget_manifest.py"
 _spec = importlib.util.spec_from_file_location("winget_manifest", _SCRIPT)
-assert _spec and _spec.loader
+assert _spec is not None
+assert _spec.loader is not None
 wm = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(wm)
 
@@ -97,6 +98,17 @@ def test_main_writes_the_winget_pkgs_layout(tmp_path, capsys):
     folder = out / "manifests" / "n" / "NX1X" / "pfSentinel" / "1.2.3"
     assert capsys.readouterr().out.strip() == folder.as_posix()
     assert sorted(p.name for p in folder.iterdir()) == sorted(wm.FILES)
+
+
+def test_write_refuses_a_version_that_is_a_path(tmp_path):
+    files = wm.render("1.0.0", "2026-12-04", SHA)
+    with pytest.raises(wm.ManifestError, match="not a stable version"):
+        wm.write(files, "../../evil", tmp_path)
+
+
+def test_write_refuses_unknown_file_names(tmp_path):
+    with pytest.raises(wm.ManifestError, match="Unknown manifest files"):
+        wm.write({"../x.yaml": "x"}, "1.0.0", tmp_path)
 
 
 def test_main_fails_for_a_release_candidate(tmp_path, capsys):
