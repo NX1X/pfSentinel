@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from contextlib import ExitStack
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from pfsentinel.models.backup import BackupIndexError, BackupRecord, BackupRun
@@ -24,6 +25,15 @@ LOCK_WARN_STATE = "lock_warned.json"
 
 ProgressCallback = Callable[[str, int], None]
 WarningCallback = Callable[[str], None]
+
+
+@dataclass
+class _Outcome:
+    """What a run did so far, for the run history, also when it fails half way."""
+
+    records: list[BackupRecord] = field(default_factory=list)
+    problems: list[str] = field(default_factory=list)
+    run_number: int | None = None
 
 
 class BackupOrchestrator:
@@ -50,8 +60,56 @@ class BackupOrchestrator:
     ) -> list[BackupRecord]:
         """Run a complete backup session for a device.
 
-        Returns list of all BackupRecords created.
+        Returns list of all BackupRecords created. Every run, failed or not,
+        is added to the run history (services/run_history.py).
         """
+        from pfsentinel.services import run_history
+
+        entry = run_history.begin(device_id)
+        outcome = _Outcome()
+        error = ""
+        try:
+            return self._run(
+                device_id,
+                include_extras,
+                all_extras,
+                config_only,
+                description,
+                progress,
+                on_warning,
+                area,
+                no_packages,
+                outcome,
+            )
+        except BaseException as e:
+            # Also Ctrl+C: the run has an end, so the history must say why.
+            error = str(e) or type(e).__name__
+            raise
+        finally:
+            config = next((r for r in outcome.records if r.backup_type.value == "config"), None)
+            run_history.finish(
+                entry,
+                run=outcome.run_number,
+                files=len(outcome.records),
+                size_bytes=sum(r.size_bytes for r in outcome.records),
+                changes=config.changes_label if config else "",
+                error=error,
+                problems=outcome.problems,
+            )
+
+    def _run(
+        self,
+        device_id: str,
+        include_extras: list[str] | None,
+        all_extras: bool,
+        config_only: bool,
+        description: str | None,
+        progress: ProgressCallback | None,
+        on_warning: WarningCallback | None,
+        area: str,
+        no_packages: bool,
+        outcome: _Outcome,
+    ) -> list[BackupRecord]:
         from pfsentinel.services.backup import BackupError
 
         device = self._config.get_device(device_id)
@@ -83,12 +141,13 @@ class BackupOrchestrator:
                 on_warning,
                 area,
                 no_packages,
+                outcome,
             )
 
         # After the lock: the second copy only reads the index, and an upload
         # can take long. Holding the lock made a waiting run time out.
         # 6. Second copy of the encrypted files (never fails the backup)
-        self._second_copy(device_id)
+        outcome.problems.extend(f"Second copy failed: {p}" for p in self._second_copy(device_id))
 
         if self._retention.lock_unsupported(device_id):
             self._warn_unlocked(device_id, on_warning)
@@ -160,16 +219,22 @@ class BackupOrchestrator:
         on_warning: WarningCallback | None,
         area: str,
         no_packages: bool,
+        outcome: _Outcome,
     ) -> tuple[list[BackupRecord], list[str]]:
-        """The steps that change the index. Returns the records and the failed parts."""
+        """The steps that change the index. Returns the records and the failed parts.
+
+        ``outcome`` gets every record and failed part as it happens, so the
+        run history is right when a later step raises.
+        """
         from pfsentinel.services.backup import BackupError
 
         device_id = device.id
-        records: list[BackupRecord] = []
+        records = outcome.records
         failures: list[str] = []
 
         def warn(msg: str) -> None:
             failures.append(msg)
+            outcome.problems.append(msg)
             if on_warning:
                 on_warning(msg)
 
@@ -186,6 +251,7 @@ class BackupOrchestrator:
             raise BackupError(msg) from e
         timestamp = run.started_at
         sequence = run.number
+        outcome.run_number = run.number
 
         # 1. Config backup (always, unless area/no_packages are specific)
         config_record = self._backup_svc.run_backup(
@@ -260,9 +326,10 @@ class BackupOrchestrator:
         self._retention.apply(device_id)
         return records, failures
 
-    def _second_copy(self, device_id: str) -> None:
+    def _second_copy(self, device_id: str) -> list[str]:
+        """Copy the encrypted files to the second place. Returns the problems."""
         if not self._config.backup_policy.second_copy.enabled:
-            return
+            return []
         from pfsentinel.services.notifications import AlertKind
         from pfsentinel.services.second_copy import SecondCopyService
 
@@ -296,6 +363,7 @@ class BackupOrchestrator:
                 f"pfSentinel - Second copy failed for {device_id}",
                 f"Device: {device_id}\n" + "\n".join(problems[:5]),
             )
+        return problems
 
     def run_all(
         self,

@@ -13,6 +13,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-rc.6] - 2026-11-28
+
+The sixth release candidate. It adds a setting that turns off the release check, and a list of every network connection pfSentinel makes. The backup path does not change. It is a GitHub pre-release. The 14-day stability gate for 1.0.0 keeps its dates (2026-11-20 to 2026-12-04).
+
+**To try it:** `pfs update install --pre`.
+
+**What changes for you:**
+
+- `pfs config set update-check off` stops the check task from asking GitHub for new releases. It is on by default, as before.
+- Nothing changes in the scheduled tasks. You do not need to run `pfs schedule enable` again.
+
+### Added
+
+- `pfs config set update-check off` turns off the release check. The check task then makes no request to GitHub. Before, the only way was to edit `notifications.update_alerts` in config.json. `pfs notify status` shows the setting.
+- `docs/privacy.md` lists every network connection pfSentinel makes. pfSentinel has no telemetry.
+- `scripts/mock_pfsense.py` starts a mock pfSense web UI on 127.0.0.1, to test a build without a real firewall.
+- winget: the CI job `publish-winget` sends each stable release to `microsoft/winget-pkgs` (package `NX1X.pfSentinel`), after the maintainer approves it. Release candidates are not sent. The manifest uses schema 1.28.0.
+
+### Fixed
+
+- Tests no longer write a backup into the real `~/Documents/pfSentinel` folder.
+
+## [1.0.0-rc.5] - 2026-11-28
+
+The fifth release candidate. It adds a history of backup runs, makes `pfs schedule run-now` a full run, and gets pfSentinel ready for winget. It is a GitHub pre-release. The 14-day stability gate for 1.0.0 keeps its dates (2026-11-20 to 2026-12-04).
+
+**To try it:** `pfs update install --pre`.
+
+**What changes for you:**
+
+- `pfs backup history` shows past runs with their result, failed runs included. The history starts with the first run after this update.
+- `pfs schedule run-now` now saves the extras and makes the second copy too, like a scheduled run. Before, it saved only the config.
+- `pfs backup list` no longer cuts long file names in a narrow window.
+- Nothing changes in the scheduled tasks. You do not need to run `pfs schedule enable` again.
+
+### Added
+
+- `pfs backup history`: the runs of `pfs backup run` and `pfs schedule run-now`, scheduled or by hand, with their result. A run that failed made no file, so `pfs backup list` never showed it, and on Windows only the last task result remained. The results are `OK`, `Partial` (the config was saved, a part failed), `Failed` and `No end` (the run was stopped before its end, for example by a shutdown). Options: `-d` for one device, `-n` for the number of runs, `--problems`, `--json`. The history is `run_history.jsonl` next to `config.json`, and it starts with this version. It is best effort: a history file that cannot be written never stops a backup. See docs/usage.md (Run History).
+- pfSentinel now knows when winget installed it (planned from 1.0.0). `pfs update install` then changes nothing and names `winget upgrade NX1X.pfSentinel`, and so does the update alert. The manifest template is in packaging/winget.
+
+### Changed
+
+- `pfs backup list` in a narrow window cut the file names with "...". Now a long file name is folded over more lines, and with one device the Device column is left out.
+
+### Fixed
+
+- `pfs schedule run-now` saved only the config: no extras, no second copy, no ZFS snapshot or archive. It also ended with exit code 0 when a backup failed. Its help said "same as backup run". Now it runs a full backup like `pfs backup run --non-interactive`, and a failed device gives exit code 1.
+- docs/usage.md named a log file (`~/.pfsentinel/logs/pfsentinel.log`) that pfSentinel never wrote, and a `pfs --debug` option that does not exist. The log goes to the console, and the level is `log_level` in `config.json`. The Self-Update section named `pfs update` as the command; the commands are `pfs update check`, `install` and `revert`.
+
 ## [1.0.0-rc.4] - 2026-11-22
 
 The fourth release candidate. It fixes the ZFS snapshot default for pfSense 2.8.1, makes restore and decrypt work on large files, and adds the lock alert and a richer "backup OK" message. It is a GitHub pre-release. The 14-day stability gate for 1.0.0 keeps its dates (2026-11-20 to 2026-12-04).

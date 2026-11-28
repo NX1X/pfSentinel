@@ -85,6 +85,33 @@ pfs list                        # shortcut
 pfs list -d home-fw
 ```
 
+### Run History
+
+`pfs backup list` shows the files that exist. A run that failed made no file, so it is not in that list. `pfs backup history` shows the runs of `pfs backup run` and `pfs schedule run-now`, scheduled or by hand, with their result:
+
+```bash
+pfs backup history                 # the newest 20 runs
+pfs backup history -n 100          # the newest 100 runs
+pfs backup history -d home-fw      # one device
+pfs backup history --problems      # only runs that are not OK
+pfs backup history --json          # for scripts
+```
+
+| Result | Meaning |
+|--------|---------|
+| `OK` | Every part of the run worked. |
+| `Partial` | The config was saved, but an extra, the ZFS snapshot, the archive or the second copy failed. The Detail column names the part. |
+| `Failed` | The run made no backup. The Detail column gives the error. |
+| `No end` | The run started and wrote no end. It is still running, or it was stopped before the end: the PC shut down, or the task reached its time limit. |
+
+Things to know:
+
+- The history starts with pfSentinel 1.0.0. Older runs are not in it.
+- A run that never started is not in the history. When the PC is off at the scheduled time, the missed run starts later (see [Windows and Linux](platforms.md)), and that later run is in the history with its real start time. If the PC stays off, nothing is recorded. The no-recent-backup check covers that case (see [Alerts](#alerts)).
+- `pfs backup snapshot`, `pfs backup archive` and `pfs backup watch` are not recorded.
+- The history is best effort. It never stops a backup: if the history file cannot be written (a full disk, a read-only folder), the backup still runs, and that run is missing from the history.
+- The history is the file `run_history.jsonl` next to `config.json`. It keeps at least the newest 1000 runs. Error texts are cut to 300 characters, and tokens in them are removed.
+
 ### Verify Integrity
 
 ```bash
@@ -319,6 +346,15 @@ pfs config set extras rrd,pkg,dhcp,aliases,certs
 
 Scheduled backups save the config plus these extras. Valid names: `rrd`, `pkg`, `dhcp`, `aliases`, `certs` and `logs`, or `all`, or `none`. In a new config, scheduled backups save the config only. See [Scheduled Backups](extended-backups.md#scheduled-backups).
 
+### Release Check
+
+```bash
+pfs config set update-check off
+pfs config set update-check on
+```
+
+On (the default), the check task asks GitHub for a new release each time it runs: at start-up or sign-in, daily at 12:00, and at the daily digest time if the digest is on. It alerts you once per release. Off, pfSentinel contacts GitHub only when you run `pfs update check` or `pfs update install`. `pfs notify status` shows the setting. Every network connection pfSentinel makes is listed in [Privacy and network connections](privacy.md).
+
 ### Key Config Fields
 
 ```json
@@ -451,7 +487,7 @@ Writes every alert to the Application log with source `pfSentinel` (Linux: syslo
 | 1003 | Error | No recent backup, or the backup index cannot be read |
 | 1004 | Error | Restore check failed |
 | 1005 | Error | Second copy failed |
-| 1006 | Information | A new pfSentinel release is out (once per release; `notifications.update_alerts`) |
+| 1006 | Information | A new pfSentinel release is out (once per release; turn off with `pfs config set update-check off`) |
 | 1008 | Warning | Backup partly failed: the config was saved, but an extra, the ZFS snapshot or the archive failed |
 | 1009 | Warning | The backup folder cannot be locked (some SMB and NFS shares), so two runs at once can lose index records. At most once in 7 days per device |
 
@@ -506,13 +542,23 @@ pfs notify status
 
 ## 7. Self-Update
 
-Check for new releases and update the binary:
-
 ```bash
-pfs update
+pfs update check              # is there a newer release?
+pfs update install            # install it
+pfs update install --pre      # also accept a release candidate
+pfs update revert             # go back to the version before the last update
 ```
 
-This checks GitHub Releases for a newer version and downloads it if available.
+`pfs update install` works by install kind:
+
+| Install | What `pfs update install` does |
+|---------|--------------------------------|
+| Binary (`pfs.exe`, `pfs`) | Downloads the new binary from GitHub Releases. It replaces the old one only after the SHA-256 matches the release checksums and the signed build attestation verifies. |
+| pipx | Runs `pipx upgrade pfsentinel`. |
+| pip | Runs `pip install --upgrade pfsentinel`. |
+| winget (planned from 1.0.0) | Changes nothing, and tells you to run `winget upgrade NX1X.pfSentinel`. winget records the version it installed, so pfSentinel does not replace that file itself. A new release can take a few days to reach winget, and winget has no release candidates. |
+
+Before `winget uninstall NX1X.pfSentinel`, run `pfs schedule disable`. If you do not, the scheduled tasks stay and point at a file that is gone.
 
 ---
 
@@ -661,13 +707,26 @@ pfs device add
 
 Secure the file: `chmod 600 ~/.local/share/python_keyring/keyring_pass.cfg`
 
+### See what a past run did
+
+Run `pfs backup history`. It lists every run with its result and, for a failed run, the error. See [Run History](#run-history).
+
 ### Enable debug logging
 
-```bash
-pfs --debug backup run
-```
+pfSentinel writes its log to the console (stderr), not to a file. To see more detail:
 
-Logs are written to `~/.pfsentinel/logs/pfsentinel.log`.
+1. Open `config.json` (`pfs config path` shows where it is).
+2. Set `"log_level": "DEBUG"`.
+3. Run the command again, and save the output to a file:
+
+   ```bash
+   pfs backup run --non-interactive 2>&1 | tee pfs-debug.log        # Linux
+   cmd /c "pfs backup run --non-interactive > pfs-debug.log 2>&1"   # Windows
+   ```
+
+4. Set `"log_level"` back to `"INFO"`.
+
+Tokens and webhook addresses are removed from the log lines. Still read the file before you share it: it names your hosts and paths.
 
 ---
 
@@ -692,6 +751,7 @@ Logs are written to `~/.pfsentinel/logs/pfsentinel.log`.
 | `backup run --non-interactive` | Never prompt; use the backup policy from config (what scheduled runs use) |
 | `backup list` | List all backups |
 | `backup list -d ID` | List backups for one device |
+| `backup history [-d ID] [-n N] [--problems]` | Show past runs with their result, failed runs included |
 | `backup verify FILENAME` | Verify one file and save the result |
 | `backup verify [-d ID]` | Verify every backup with status `?` |
 | `backup diff FILE_A FILE_B` | Diff two backup configs |
@@ -732,6 +792,7 @@ Logs are written to `~/.pfsentinel/logs/pfsentinel.log`.
 | `config path` | Print config file path |
 | `config set backup-dir PATH` | Change backup directory |
 | `config set extras LIST` | Extras for scheduled backups (`rrd,pkg,...`, `all` or `none`) |
+| `config set update-check on\|off` | Turn the release check of the check task on or off |
 
 ### `pfs schedule`
 
@@ -774,7 +835,9 @@ Logs are written to `~/.pfsentinel/logs/pfsentinel.log`.
 
 | Command | Description |
 |---------|-------------|
-| `update` | Check for updates and install |
+| `update check [--pre]` | Check for a newer release |
+| `update install [--pre] [--yes]` | Install the newest release (a winget install is updated with `winget upgrade NX1X.pfSentinel`) |
+| `update revert` | Go back to the version before the last update |
 
 ### Top-Level Commands
 

@@ -350,6 +350,26 @@ def test_run_now_reports_a_device_that_fails(
     result = cli_runner.invoke(app, ["schedule", "run-now"])
 
     output = _out(result)
-    assert result.exit_code == 0, output
+    assert result.exit_code == 1, output  # like `backup run`: a failed device is exit code 1
     assert "Backing up down-fw" in output
     assert "down-fw:" in output
+
+
+def test_run_now_is_a_full_run_with_extras_and_history(
+    cli_runner: CliRunner, saved_config: AppConfig
+) -> None:
+    """Before 1.0.0 run-now saved only the config, with no second copy and no history."""
+    from unittest.mock import patch
+
+    from pfsentinel.models.backup import BackupRecord
+    from pfsentinel.services.orchestrator import BackupOrchestrator
+
+    saved_config.add_device(DeviceConfig(id="fw1", label="FW", host="127.0.0.1"))
+    saved_config.save()
+    record = BackupRecord(device_id="fw1", filename="fw1_config.xml.gz", relative_path="a/b")
+    with patch.object(BackupOrchestrator, "run", return_value=[record]) as run:
+        result = cli_runner.invoke(app, ["schedule", "run-now"])
+
+    assert result.exit_code == 0, _out(result)
+    assert run.call_args.args == ("fw1",)
+    assert "fw1_config.xml.gz" in _out(result)

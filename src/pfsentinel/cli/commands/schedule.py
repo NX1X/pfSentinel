@@ -342,24 +342,31 @@ def _format_systemd_timer(label: str, timer: dict) -> list[str]:
 
 @app.command("run-now")
 def schedule_run_now() -> None:
-    """Trigger an immediate backup for all devices (same as backup run)."""
+    """Back up all devices now, like a scheduled run (same as backup run --non-interactive)."""
     from pfsentinel.cli.formatters import print_progress
-    from pfsentinel.services.backup import BackupService
     from pfsentinel.services.credentials import CredentialService
+    from pfsentinel.services.orchestrator import BackupOrchestrator
 
     config = AppConfig.load()
-    creds = CredentialService()
-    svc = BackupService(config, creds)
+    orchestrator = BackupOrchestrator(config, CredentialService())
 
     devices = config.enabled_devices()
     if not devices:
         print_error("No enabled devices configured")
         raise typer.Exit(1)
 
+    # The orchestrator, not the config backup alone: the extras, the second
+    # copy and the run history are part of a run. Before 1.0.0 this command
+    # saved only the config and ended with exit code 0 after a failure.
+    failed = 0
     for device in devices:
         print_info(f"Backing up {device.id}...")
         try:
-            record = svc.run_backup(device.id, progress=print_progress)
-            print_success(f"{device.id}: {record.filename}")
+            records = orchestrator.run(device.id, progress=print_progress, on_warning=print_warning)
+            for record in records:
+                print_success(f"{device.id}: [{record.type_label}] {record.filename}")
         except Exception as e:
             print_error(f"{device.id}: {e}")
+            failed += 1
+    if failed:
+        raise typer.Exit(1)

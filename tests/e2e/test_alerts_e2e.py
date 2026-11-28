@@ -136,3 +136,30 @@ def test_update_available_alerts_once_per_release(
     for _ in range(2):
         cli_runner.invoke(app, ["backup", "check-recent"])
     assert [k for k, _, _ in alerts] == [AlertKind.UPDATE_AVAILABLE], "once, not every day"
+
+
+@pytest.mark.release_check
+def test_update_check_off_makes_no_github_call(
+    cli_runner: CliRunner, seeded_config: AppConfig, alerts, tmp_path, monkeypatch
+) -> None:
+    """Off means the check task does not contact GitHub at all, not only no alert."""
+    from pfsentinel.services import updater
+
+    monkeypatch.setattr(updater, "app_config_dir", lambda: tmp_path / "state")
+    calls: list[bool] = []
+
+    def _check(self, force=False):
+        calls.append(force)
+        return None
+
+    monkeypatch.setattr(updater.UpdateService, "check", _check)
+    assert cli_runner.invoke(app, RUN).exit_code == 0
+
+    cli_runner.invoke(app, ["backup", "check-recent"])
+    assert calls == [True], "on by default: one check per run"
+
+    off = cli_runner.invoke(app, ["config", "set", "update-check", "off"])
+    assert off.exit_code == 0, _output(off)
+    calls.clear()
+    cli_runner.invoke(app, ["backup", "check-recent"])
+    assert calls == []
