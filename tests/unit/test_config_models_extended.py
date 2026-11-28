@@ -22,9 +22,10 @@ class TestBackupPolicyResolvedRoot:
         policy = BackupPolicy(backup_root=tmp_path / "custom")
         assert policy.resolved_root == tmp_path / "custom"
 
-    def test_default_when_none(self):
+    def test_default_when_none(self, _isolate_default_backup_dir):
+        # The real default (~/Documents/pfSentinel) is in test_platform.py.
         policy = BackupPolicy(backup_root=None)
-        assert policy.resolved_root == Path.home() / "Documents" / "pfSentinel"
+        assert policy.resolved_root == _isolate_default_backup_dir
 
     def test_expanduser(self):
         policy = BackupPolicy(backup_root=Path("~/backups"))
