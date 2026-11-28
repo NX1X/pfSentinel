@@ -13,6 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-12-04
+
+The first stable release. The code is the same as 1.0.0-rc.6. Before it came out, the release candidates ran 14 days in a row (2026-11-20 to 2026-12-04) on a homelab PC with Windows 11 and pfSense 2.8.1, without a failed backup.
+
+**To update:** `pfs update install`. It works for the binary and for pip and pipx installs.
+
+**What changes for you:**
+
+- Nothing in your configuration or your scheduled tasks. You do not need to run `pfs schedule enable` again.
+
+The changes since 0.3.0 are in the 1.0.0-rc.1 to 1.0.0-rc.6 entries below.
+
 ## [1.0.0-rc.6] - 2026-11-28
 
 The sixth release candidate. It adds a setting that turns off the release check, and a list of every network connection pfSentinel makes. The backup path does not change. It is a GitHub pre-release. The 14-day stability gate for 1.0.0 keeps its dates (2026-11-20 to 2026-12-04).
